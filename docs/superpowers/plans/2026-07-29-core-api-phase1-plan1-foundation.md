@@ -4117,6 +4117,23 @@ git commit -m "feat(core-api): add the migrate CLI so npm run migrate exits 1 on
 
 ## Part 3 — Test harness and the enforcement suites
 
+> **Tasks 25-28 are the LAST tasks in this plan, and they are a single unit.**
+>
+> Task 25 builds the walker plus the helpers `rule()` and `stripComments()`; Tasks 26, 27 and 28 all use them, so none of the four can be done on its own — Task 28 looks self-contained from its assertions and is not.
+>
+> The walker's meta-test names three sentinels and C1/C3 pin exact caller sets, so these suites need files later parts create:
+>
+> | Needed by | File | Created in |
+> | --- | --- | --- |
+> | Task 25 sentinel | `db/index.js` | Task 34 |
+> | Task 25 sentinel | `http/routes/health.js` | Task 44 |
+> | Task 26 C3 | `http/router.js` | Task 41 |
+> | Task 26 | `db/health.js` | Task 37 |
+>
+> Tasks 26 and 27 also scan `repositories/` and `lib/`, which **Plan 1 never creates at all** — they arrive with Plan 2. Task 26 guards the `repositories/platform/` case with `skip: fs.existsSync(...)`; the `lib/` purity rule in Task 27 and the exempt-zone budgets in C6 have no such guard and will need one, or the tasks move to Plan 2.
+>
+> Do not "fix" a failure here by editing a sentinel or a caller list. Those lists are the whole mechanism: C1 asserting `deepEqual(pgRequirers, ["db/pool.js"])` is what stops a second file reaching for `pg`, and a list edited to make today green stops biting tomorrow.
+
 **Ordering.** Every task in this area runs **after** the other areas' tasks. The harness tasks need `db/migrate.js` and `migrations/0001_init.sql` to exist; the `source-structure.test.js` tasks must be the **last tasks in the merged plan**, because the walker meta-test's three sentinels (`db/index.js`, `http/routes/health.js`, `migrations/0001_init.sql`), C1's `deepEqual` on `["db/pool.js"]` and C3's `deepEqual` on `["http/router.js"]` all name files other areas create.
 
 **`test/source-structure.test.js` already exists** when this area starts — scaffold-config created it with the `node:assert/strict` / `node:fs` / `node:path` / `node:test` requires, the constants `appRoot` and `repoRoot`, the helpers `readText(...segments)` (joins its arguments, returns UTF-8 with CRLF normalised to LF) and `readJson(...segments)`, and its own tests including C11 and C12. Everything below **appends** to that file and reuses those names. Never re-require `assert`/`fs`/`path`/`test`, never redeclare `appRoot`, `repoRoot` or `readText`, and never create or edit `/.gitattributes`, `/.dockerignore` or the root `package.json` — scaffold-config owns all three.
