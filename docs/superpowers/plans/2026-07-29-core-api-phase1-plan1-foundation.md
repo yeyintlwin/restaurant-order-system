@@ -16,9 +16,9 @@
 
 ## Execution log
 
-**Status: 24 of 48 tasks done.** The next thing to do is **Task 25** — and Tasks 25-28 must be the LAST tasks in the plan, because the source walker names files Parts 4 and 5 have not created yet. A local Postgres is required from here on.
+**Status: 48 of 48 tasks done. Plan 1 is complete.** `apps/core-api` boots, validates its configuration, migrates before it listens, serves `/health` and `/health/ready`, and carries the tenant choke point with the enforcement suites that keep it honest. 242 tests, 241 passing, 1 visible skip. The next work is **Plan 2** (menu in the database + admin CRUD), which has not been written yet.
 
-**Task 17 is BLOCKED and deliberately skipped.** *(Chain corrected 2026-07-29: it needs Tasks 31, 32, 34 AND 35 — not just 33 and 34. `db/index.js` is created by Task 34, whose test requires `db/scope.js` from Tasks 31-32, and the pool re-exports the CLI imports only arrive in Task 35. Task 33 is now done.)* Its CLI block does `require("./index")`, and `db/index.js` is created by **Task 34**, which in turn needs `db/pool.js` from **Task 33**. Written now, its `--check` case would exit 1 for the wrong reason - `MODULE_NOT_FOUND` rather than a pending migration - and its apply case could not pass at all. Do Task 17 after Task 34. Everything else in Part 2 is finished, and `runMigrations` itself has no dependency on the pool.
+**RESOLVED 2026-07-29 — Task 17 is done.** *(Kept for the record: it was blocked on Tasks 31, 32, 34 and 35, which is a longer chain than first recorded.)* Originally: *(Chain corrected 2026-07-29: it needs Tasks 31, 32, 34 AND 35 — not just 33 and 34. `db/index.js` is created by Task 34, whose test requires `db/scope.js` from Tasks 31-32, and the pool re-exports the CLI imports only arrive in Task 35. Task 33 is now done.)* Its CLI block does `require("./index")`, and `db/index.js` is created by **Task 34**, which in turn needs `db/pool.js` from **Task 33**. Written now, its `--check` case would exit 1 for the wrong reason - `MODULE_NOT_FOUND` rather than a pending migration - and its apply case could not pass at all. Do Task 17 after Task 34. Everything else in Part 2 is finished, and `runMigrations` itself has no dependency on the pool.
 
 **Correction to the execution order below.** The note says to do Task 18 and "the `createEmptyDatabase` half of Task 19" before Task 10. The first half is right and the second is not: everything Task 19 appends sits below a `require("../db/migrate")`, so no part of it can load until `db/migrate.js` exists. `db/migrate.js` is created by **Task 11**. The order that actually works is **18, 10, 11, 19, 12-17** - Tasks 10 and 11 need nothing but `node:fs`, and Task 19 only needs the module to exist, not to be finished.
 
@@ -38,6 +38,7 @@ commit exists.
 | 2026-07-29 | Tasks 18 and 10. Local Postgres 16 started on 5433. `testing/database.js` pure half, and `0001_init.sql` copied from Appendix A - digest matches the plan exactly. Smoke-applied against the real cluster: 11 tables, clean. **Found the execution-order note to be half wrong**; the corrected order is recorded above. | **11/48** | `5a3c2df`, `d4a0f49` | Task 11 |
 | 2026-07-29 | Tasks 11-16 and 19. `db/migrate.js` complete except its CLI: preflight, bounded advisory lock, one-string-one-transaction apply, the four verdicts, and `migrationsStatus`. Task 19 closed green once Task 14 landed - 8 passed, 0 cancelled, from 3 and 5. 67 tests across six suites, all green against a real PostgreSQL 16. **Task 17 skipped, blocked on Tasks 33-34** (see the note above). | **18/48** | `5b465ab`, `b1301c5`, `82a293f`, `5050558`, `2ead9e0`, `f7fc4ad` | Task 20 |
 | 2026-07-29 | Tasks 33, 20, 21, 22, 23, 24. `db/pool.js`; `pretest`, which finally makes `npm --prefix apps/core-api test` run end to end; `db:reset`; the two-tenant fixture; and schema invariants S1-S7 green against the live catalogue. 105 tests, all passing. **Two more plan defects found and fixed** — see the corrections on Tasks 23 and 24. **Task 17 is still blocked, and its chain is longer than first recorded.** | **24/48** | `06022a9`, `1e7ffc6`, `8580796`, `0f7c98a`, `81589ab` | Task 25, last |
+| 2026-07-29 | Tasks 29-32, 34-36, 37-48 and finally 25-28. Built the Part 4 choke point and the Part 5 HTTP shell to satisfy the two sentinels the walker asserts on, which closed Part 2 via Task 17 along the way. **Plan 1 complete.** 242 tests, 241 passing, 1 visible skip (C6, guarded on Plan 2's repositories/platform/). Repository-wide `npm test` green across all four suites. Two more plan defects found and fixed - see Tasks 34 and 35. | **48/48** | `d9b478b`, `78f1173`, `a70a888`, `ba23276`, `a769bcd`, `a1b5748`, `9d6d318`, `404857d` | Plan 2 |
 
 ## How to pick this up
 
@@ -4117,6 +4118,8 @@ git commit -m "feat(core-api): add the migrate CLI so npm run migrate exits 1 on
 
 ## Part 3 — Test harness and the enforcement suites
 
+> **RESOLVED 2026-07-29 — Tasks 25-28 are done.** The prerequisites below were built first, in the order given. Kept because the dependency map is still the reason these four must come last in any re-run.
+>
 > **Tasks 25-28 are the LAST tasks in this plan, and they are a single unit.**
 >
 > Task 25 builds the walker plus the helpers `rule()` and `stripComments()`; Tasks 26, 27 and 28 all use them, so none of the four can be done on its own — Task 28 looks self-contained from its assertions and is not.

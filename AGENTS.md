@@ -18,8 +18,25 @@ written to be read cold — you do not need the conversation that produced them.
 
 **Where the work stopped is recorded in the plan's "Execution log" table, at the
 very top of the file.** Read it first; it says which task was last finished and
-which one is next. As of 2026-07-29 it reads *0 of 48 tasks done, no code
-written yet* — the spec and the plan exist, `apps/core-api` does not.
+which one is next. As of 2026-07-29 **Plan 1 is complete — 48 of 48 tasks.**
+`apps/core-api` boots, validates its configuration, migrates before it listens,
+serves `/health` and `/health/ready`, and carries the tenant choke point.
+
+Running its tests needs a local PostgreSQL and one variable:
+
+```sh
+docker run -d --name core-db-dev -e POSTGRES_USER=core_api_owner -e POSTGRES_PASSWORD=devpassword \
+  -e POSTGRES_DB=core -p 127.0.0.1:5433:5432 postgres:16-alpine
+export CORE_API_TEST_DATABASE_URL='postgres://core_api_owner:devpassword@127.0.0.1:5433/postgres'
+```
+
+Without it the database suites **throw** rather than skip, by design. The single
+`CORE_API_SKIP_DB_TESTS=1` hatch turns them into *visible* TAP skips.
+
+**Plan 2 has not been written.** It covers the menu in the database plus admin
+CRUD; brainstorm and write it before touching code, the same way Plan 1 was
+produced. Phase 1's spec §10 lists what was deliberately deferred and to which
+phase.
 
 Keep that log honest. At the end of a working session, append a row: the date,
 what you did, the last task actually finished, the commits, and the next task. A
