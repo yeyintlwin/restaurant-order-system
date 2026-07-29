@@ -5479,7 +5479,7 @@ git commit -m "test(core-api): two-tenant fixture with the suspended and unassig
 - Create: `apps/core-api/test/schema-invariants.test.js`
 - Test: `apps/core-api/test/schema-invariants.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -5724,12 +5724,12 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/schema-invariants.test.js`
 Expected: FAIL with `ReferenceError: tablesMissingTenantColumn is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append the four predicates to `apps/core-api/test/schema-invariants.test.js`. They are function declarations, so they are in scope for the tests above.
 
@@ -5774,11 +5774,11 @@ function reshapedAnchors(uniques) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/schema-invariants.test.js`  Expected: PASS (9 tests; under `CORE_API_SKIP_DB_TESTS=1` the four pure ones pass and the five database-backed ones report as visible TAP skips)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/schema-invariants.test.js
