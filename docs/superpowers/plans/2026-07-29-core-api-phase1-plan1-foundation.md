@@ -4674,7 +4674,7 @@ git commit -m "test(core-api): clone a per-file database from a self-healing tem
 - Create: `apps/core-api/scripts/setup-template-db.js`
 - Test: `apps/core-api/test/scripts.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -4732,12 +4732,12 @@ test("setup-template-db exits non-zero when the URL is set but unreachable", () 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/scripts.test.js`
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 1 !== 0` — the child exited 1 because its `output` reads `Cannot find module '…/apps/core-api/scripts/setup-template-db.js'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/scripts/setup-template-db.js`:
 
@@ -4775,11 +4775,11 @@ main().catch((error) => {
 });
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/scripts.test.js`  Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/scripts/setup-template-db.js apps/core-api/test/scripts.test.js
