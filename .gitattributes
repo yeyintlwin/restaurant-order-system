@@ -1,0 +1,10 @@
+# apps/core-api/db/migrate.js stores a SHA-256 of every migration file and treats a
+# changed digest as a fatal, unrecoverable error. The developer works on win32 and
+# images build on ubuntu-latest; with Git for Windows' default autocrlf=true the
+# same untouched file hashes two different ways. The runner also normalises CRLF
+# before hashing -- this is the belt to that braces.
+*.sql text eol=lf
+
+# A shell script checked out with CRLF fails on the Lightsail box with the
+# unhelpful "\r: command not found" on its first line.
+*.sh text eol=lf

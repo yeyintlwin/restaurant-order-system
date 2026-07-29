@@ -54,3 +54,19 @@ test("core-api declares the scripts, dependencies and engine the image and runbo
     "apps/core-api/package-lock.json must be committed: the Dockerfile runs npm ci"
   );
 });
+
+test("C12 - the repository pins SQL line endings and keeps per-app .env out of images", () => {
+  const attributes = readText(repoRoot, ".gitattributes");
+  const dockerignore = readText(repoRoot, ".dockerignore");
+
+  // The migration runner's checksum is the whole point: see spec 9.4.
+  assert.match(attributes, /^\*\.sql text eol=lf$/m);
+  assert.match(attributes, /^\*\.sh text eol=lf$/m);
+
+  // No `*.js` rule, deliberately: adding one would renormalise every existing .js
+  // file in the repository on the next checkout.
+  assert.doesNotMatch(attributes, /^\*\.js\b/m);
+
+  assert.match(dockerignore, /^\.env$/m);
+  assert.match(dockerignore, /^apps\/\*\/\.env$/m);
+});
