@@ -98,3 +98,34 @@ test("the core-api environment example names every required variable and ships n
     /^(?:SESSION_|PAIRING_|TERMINAL_TOKEN_|LOGIN_|SCRYPT_|PAIR_|ADMIN_MINT_|PASSWORD_ABUSE_|ROTATE_|AUDIT_|DB_POOL_)/m
   );
 });
+
+test("the core-api README carries the runbook entries the definition of done greps for", () => {
+  const readme = readText(appRoot, "README.md");
+
+  // Spec 12, verbatim:
+  //   grep -q create-platform-admin apps/core-api/README.md
+  //   grep -q CORE_API_TEST_DATABASE_URL apps/core-api/README.md
+  assert.match(readme, /create-platform-admin/);
+  assert.match(readme, /CORE_API_TEST_DATABASE_URL/);
+
+  // The one escape hatch for a laptop with no Postgres has to be discoverable, or
+  // the developer's repair for a red pretest is to delete the database suites.
+  assert.match(readme, /CORE_API_SKIP_DB_TESTS/);
+
+  // db/health.js's fatal 28P01 message names this section by title. A renamed
+  // heading turns that message into a dead pointer during an outage.
+  assert.match(readme, /^## Rotating database passwords$/m);
+
+  // ...and the message must point at the file that actually carries the heading.
+  // The plan quoted infra/README.md, which has no such section. db/health.js is
+  // written in Task 37 and copies this string, so the pointer is fixed here before
+  // it can propagate.
+  // Matched without a leading "see": the quoted message wraps, and the blockquote
+  // marker sits between the two words.
+  assert.match(readme, /apps\/core-api\/README\.md 'Rotating database passwords'/);
+  assert.doesNotMatch(readme, /infra\/README\.md 'Rotating database passwords'/);
+
+  // The local recipe, including the deliberate 5433.
+  assert.match(readme, /docker run -d --name core-db-dev/);
+  assert.match(readme, /127\.0\.0\.1:5433:5432/);
+});
