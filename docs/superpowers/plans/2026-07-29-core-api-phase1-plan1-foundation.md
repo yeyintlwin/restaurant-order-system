@@ -4126,7 +4126,7 @@ git commit -m "feat(core-api): add the migrate CLI so npm run migrate exits 1 on
 - Create: `apps/core-api/testing/database.js`
 - Test: `apps/core-api/test/testing-database.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -4214,12 +4214,12 @@ test("the truncate set names all ten non-infrastructure tables", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/testing-database.test.js`
 Expected: FAIL with `Error: Cannot find module '../testing/database'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/testing/database.js`:
 
@@ -4309,11 +4309,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/testing-database.test.js`  Expected: PASS (6 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/testing/database.js apps/core-api/test/testing-database.test.js
