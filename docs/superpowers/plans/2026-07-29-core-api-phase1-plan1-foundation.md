@@ -7465,7 +7465,7 @@ git commit -m "feat(core-api): refuse unstamped and incomplete tenant scopes"
 - Create: `apps/core-api/db/pool.js`
 - Test: `apps/core-api/test/db-index.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/db-index.test.js`. Later tasks append to this same file; nothing here
 touches a database, so it runs with no environment variables set.
@@ -7526,12 +7526,12 @@ test("closing an unopened pool is a no-op, so the fatal-exit path cannot throw",
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/db-index.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/pool'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/pool.js`:
 
@@ -7650,11 +7650,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-index.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/pool.js apps/core-api/test/db-index.test.js
