@@ -6986,7 +6986,7 @@ git commit -m "feat(core-api): map pg SQLSTATEs to HTTP without copying driver t
 - Create: `apps/core-api/db/scope.js`
 - Test: `apps/core-api/test/scope.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/scope.test.js`. Note the whole-scope comparisons use
 `Object.fromEntries(Object.entries(scope))` and not `{ ...scope }`: `node:assert/strict` compares own
@@ -7194,12 +7194,12 @@ test("createScope rejects malformed input instead of emitting a half-scope", () 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/scope.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/scope'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/scope.js`. The stamp must stay an **own, enumerable** Symbol: the next task's
 `assertTenantScope` tests build stamped-but-broken fixtures with `{ ...tenantScope() }`, and a
@@ -7314,11 +7314,11 @@ function createScope(input) {
 module.exports = { createScope };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/scope.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/scope.js apps/core-api/test/scope.test.js
@@ -7333,7 +7333,7 @@ git commit -m "feat(core-api): materialise tenant scopes with no null-means-all 
 - Modify: `apps/core-api/db/scope.js` (insert one function above `module.exports`, then replace the export line)
 - Test: `apps/core-api/test/scope.test.js` (change the require line, append six tests)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Change the `require` line of `apps/core-api/test/scope.test.js` to:
 
@@ -7424,12 +7424,12 @@ test("a stamped scope with no companyId is refused", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/scope.test.js`
 Expected: FAIL with `TypeError: assertTenantScope is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/scope.js`, insert this function immediately above `module.exports`. It reads the
 same module-private `SCOPE_STAMP`, which is why the stamp cannot be moved or made non-enumerable
@@ -7468,11 +7468,11 @@ and replace the export line with:
 module.exports = { createScope, assertTenantScope };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/scope.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/scope.js apps/core-api/test/scope.test.js
