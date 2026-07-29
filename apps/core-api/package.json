@@ -1,0 +1,21 @@
+{
+  "name": "core-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-tenant restaurant platform API: companies, shops, dining tables, users and terminals. pg is the only dependency NEW to this repository; apps/epaper-hub already ships express@^4.21.2.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "pretest": "node scripts/setup-template-db.js",
+    "test": "node --test",
+    "migrate": "node db/migrate.js",
+    "db:reset": "node scripts/reset-database.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
