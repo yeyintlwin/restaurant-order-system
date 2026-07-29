@@ -4,12 +4,23 @@
 // process.env, no clock, no filesystem -- so every rule below is exercised by
 // handing it a plain object. server.js is the only production caller and it passes
 // process.env, after env-file.js's loadDotEnv() has filled the gaps.
+//
+// Naming rule: every DEFAULTED config key is the camelCase of its environment
+// variable name (ADMIN_MINT_RATE_PER_10MIN -> adminMintRatePer10min). Derived keys
+// -- isProduction, databaseAppPassword, databaseMigration* -- have no environment
+// variable of their own.
 
 const ORIGIN_LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
 
 // Hosts a Postgres connection may reach without TLS: the Compose service name and
 // the loopback addresses. Anything else crosses a network we do not own.
 const LOCAL_DATABASE_HOSTS = ["core-db", "localhost", "127.0.0.1", "::1"];
+
+// The only three addresses HOST may take. 0.0.0.0 is correct INSIDE a container:
+// a process bound to 127.0.0.1 there is unreachable from docker-proxy and answers
+// nothing. The "not reachable except through Nginx" property comes from the
+// Compose mapping 127.0.0.1:3200:3200, not from this bind.
+const BIND_ADDRESSES = ["127.0.0.1", "::1", "0.0.0.0"];
 
 const UNBOUNDED = Number.MAX_SAFE_INTEGER;
 
@@ -54,6 +65,10 @@ function parseInteger(name, raw, min, max) {
     throw new ConfigurationError(name, `must be an integer ${bound}, got "${raw}"`);
   }
   return value;
+}
+
+function readInteger(env, name, fallback, min, max) {
+  return parseInteger(name, readValue(env, name) ?? fallback, min, max);
 }
 
 function decodeComponent(name, part, value) {
@@ -137,6 +152,28 @@ function parseOrigin(name, raw, allowHttpLoopback) {
     : `must use https:, got "${raw}"`);
 }
 
+function parseOriginList(name, raw) {
+  const origins = [];
+  for (const entry of raw.split(",").map((part) => part.trim()).filter((part) => part !== "")) {
+    // https unconditionally, with no loopback relaxation: these origins name
+    // browser apps on real subdomains, and an http entry would make the terminal
+    // CORS responder advertise a plaintext origin from a production box.
+    const origin = parseOrigin(name, entry, false);
+    if (origins.includes(origin)) {
+      throw new ConfigurationError(name, `lists ${origin} more than once`);
+    }
+    origins.push(origin);
+  }
+  return Object.freeze(origins);
+}
+
+function parseBindAddress(name, raw) {
+  if (!BIND_ADDRESSES.includes(raw)) {
+    throw new ConfigurationError(name, `must be one of ${BIND_ADDRESSES.join(", ")}, got "${raw}"`);
+  }
+  return raw;
+}
+
 function startupConfiguration(env) {
   if (env === null || typeof env !== "object") {
     throw new TypeError("startupConfiguration(env) requires an environment object");
@@ -198,9 +235,23 @@ function startupConfiguration(env) {
   }
   const trustedProxyHops = parseInteger("TRUSTED_PROXY_HOPS", trustedProxyHopsRaw ?? "0", 0, UNBOUNDED);
 
+  const sessionIdleSeconds = readInteger(env, "SESSION_IDLE_SECONDS", "28800", 1, UNBOUNDED);
+  const sessionAbsoluteSeconds = readInteger(env, "SESSION_ABSOLUTE_SECONDS", "604800", 1, UNBOUNDED);
+  if (sessionAbsoluteSeconds <= sessionIdleSeconds) {
+    // Otherwise every session violates user_sessions_idle_within_absolute on its
+    // first renewal.
+    throw new ConfigurationError(
+      "SESSION_ABSOLUTE_SECONDS",
+      `must be strictly greater than SESSION_IDLE_SECONDS (${sessionIdleSeconds}), got ${sessionAbsoluteSeconds}`
+    );
+  }
+
   return Object.freeze({
     nodeEnv,
     isProduction,
+
+    port: readInteger(env, "PORT", "3200", 1, 65535),
+    host: parseBindAddress("HOST", readValue(env, "HOST") ?? "0.0.0.0"),
 
     postgresPassword,
     // The decoded password component of DATABASE_URL. db/migrate.js feeds it to
@@ -217,7 +268,32 @@ function startupConfiguration(env) {
     databaseMigrationDatabase: migration.database,
 
     apiPublicOrigin,
-    trustedProxyHops
+    terminalAllowedOrigins: parseOriginList(
+      "TERMINAL_ALLOWED_ORIGINS",
+      readValue(env, "TERMINAL_ALLOWED_ORIGINS") ?? ""
+    ),
+    trustedProxyHops,
+
+    sessionIdleSeconds,
+    sessionAbsoluteSeconds,
+    pairingCodeTtlSeconds: readInteger(env, "PAIRING_CODE_TTL_SECONDS", "900", 1, UNBOUNDED),
+    terminalTokenTtlSeconds: readInteger(env, "TERMINAL_TOKEN_TTL_SECONDS", "7776000", 1, UNBOUNDED),
+    loginRatePerMinute: readInteger(env, "LOGIN_RATE_PER_MINUTE", "30", 1, UNBOUNDED),
+    // 250 ms floor: the budget must exceed worst-case scrypt (~100 ms) with margin
+    // or the fixed-time login property leaks through overrun.
+    loginTimeBudgetMs: readInteger(env, "LOGIN_TIME_BUDGET_MS", "400", 250, UNBOUNDED),
+    // Above 8 the memory-hard parameters put the process inside OOM-killer range
+    // on a 512 MB container that shares the box with Postgres.
+    scryptSlots: readInteger(env, "SCRYPT_SLOTS", "2", 1, 8),
+    pairRatePerMinute: readInteger(env, "PAIR_RATE_PER_MINUTE", "20", 1, UNBOUNDED),
+    adminMintRatePer10min: readInteger(env, "ADMIN_MINT_RATE_PER_10MIN", "20", 1, UNBOUNDED),
+    pairingMintRatePer10min: readInteger(env, "PAIRING_MINT_RATE_PER_10MIN", "30", 1, UNBOUNDED),
+    passwordAbuseThreshold: readInteger(env, "PASSWORD_ABUSE_THRESHOLD", "5", 1, UNBOUNDED),
+    rotateRatePerHour: readInteger(env, "ROTATE_RATE_PER_HOUR", "5", 1, UNBOUNDED),
+    auditRetentionDays: readInteger(env, "AUDIT_RETENTION_DAYS", "365", 1, UNBOUNDED),
+    // Sized against max_connections=40, leaving room for psql, pg_dump and the
+    // migration connection.
+    dbPoolMax: readInteger(env, "DB_POOL_MAX", "8", 1, 20)
   });
 }
 

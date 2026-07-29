@@ -1506,7 +1506,7 @@ git commit -m "feat(core-api): validate credentials, DSNs and the public origin 
 - Modify: `apps/core-api/config.js` (complete replacement below)
 - Test: `apps/core-api/test/config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/config.test.js`:
 
@@ -1636,13 +1636,13 @@ test("SESSION_ABSOLUTE_SECONDS must strictly exceed SESSION_IDLE_SECONDS", () =>
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/config.test.js`
 
 Expected: FAIL in `PORT and HOST default to the container's values and reject anything else` with `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:` / `undefined !== 3200`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/config.js` in full:
 
@@ -1950,11 +1950,11 @@ function startupConfiguration(env) {
 module.exports = { startupConfiguration, ConfigurationError };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/config.test.js`  Expected: PASS (21 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/config.js apps/core-api/test/config.test.js

@@ -240,3 +240,127 @@ test("startupConfiguration refuses anything that is not an environment object", 
     assert.throws(() => startupConfiguration(value), TypeError);
   }
 });
+
+test("PORT and HOST default to the container's values and reject anything else", () => {
+  const config = startupConfiguration(DEV_ENV);
+  assert.equal(config.port, 3200);
+  assert.equal(config.host, "0.0.0.0");
+
+  assert.equal(startupConfiguration(withEnv(DEV_ENV, { PORT: "65535" })).port, 65535);
+  for (const port of ["0", "65536", "3.5", "3200abc", "-1"]) {
+    assertRefusal(withEnv(DEV_ENV, { PORT: port }), "PORT");
+  }
+
+  for (const host of ["127.0.0.1", "::1", "0.0.0.0"]) {
+    assert.equal(startupConfiguration(withEnv(DEV_ENV, { HOST: host })).host, host);
+  }
+  // HOST is a closed set of three: a public-IP typo here would publish the API
+  // past Nginx. Note 0.0.0.0 is correct INSIDE a container -- a process bound to
+  // 127.0.0.1 there is unreachable from docker-proxy and answers nothing.
+  for (const host of ["localhost", "192.0.2.10", "0.0.0.0:3200"]) {
+    assertRefusal(withEnv(DEV_ENV, { HOST: host }), "HOST");
+  }
+});
+
+test("TERMINAL_ALLOWED_ORIGINS is an empty, frozen list by default", () => {
+  const origins = startupConfiguration(DEV_ENV).terminalAllowedOrigins;
+
+  assert.deepEqual(origins, []);
+  assert.ok(Object.isFrozen(origins));
+  assert.deepEqual(
+    startupConfiguration(withEnv(DEV_ENV, { TERMINAL_ALLOWED_ORIGINS: "" })).terminalAllowedOrigins,
+    []
+  );
+});
+
+test("TERMINAL_ALLOWED_ORIGINS accepts exact https origins and nothing else", () => {
+  assert.deepEqual(
+    startupConfiguration(withEnv(DEV_ENV, {
+      TERMINAL_ALLOWED_ORIGINS: "https://kitchen.example.test, https://counter.example.test"
+    })).terminalAllowedOrigins,
+    ["https://kitchen.example.test", "https://counter.example.test"]
+  );
+
+  for (const value of [
+    "https://kitchen.example.test/app",                            // trailing path
+    "https://kitchen.example.test,https://kitchen.example.test/",  // duplicate
+    "http://localhost:3200",                                       // plaintext, even loopback
+    "kitchen.example.test"                                         // not absolute
+  ]) {
+    assertRefusal(withEnv(DEV_ENV, { TERMINAL_ALLOWED_ORIGINS: value }), "TERMINAL_ALLOWED_ORIGINS");
+  }
+});
+
+test("the tunables default to the container's values", () => {
+  const config = startupConfiguration(DEV_ENV);
+
+  assert.equal(config.sessionIdleSeconds, 28800);
+  assert.equal(config.sessionAbsoluteSeconds, 604800);
+  assert.equal(config.pairingCodeTtlSeconds, 900);
+  assert.equal(config.terminalTokenTtlSeconds, 7776000);
+  assert.equal(config.loginRatePerMinute, 30);
+  assert.equal(config.loginTimeBudgetMs, 400);
+  assert.equal(config.scryptSlots, 2);
+  assert.equal(config.pairRatePerMinute, 20);
+  assert.equal(config.adminMintRatePer10min, 20);
+  assert.equal(config.pairingMintRatePer10min, 30);
+  assert.equal(config.passwordAbuseThreshold, 5);
+  assert.equal(config.rotateRatePerHour, 5);
+  assert.equal(config.auditRetentionDays, 365);
+  assert.equal(config.dbPoolMax, 8);
+});
+
+test("every count-style tunable refuses zero, a negative and a non-integer", () => {
+  for (const variable of [
+    "SESSION_IDLE_SECONDS", "SESSION_ABSOLUTE_SECONDS", "PAIRING_CODE_TTL_SECONDS",
+    "TERMINAL_TOKEN_TTL_SECONDS", "LOGIN_RATE_PER_MINUTE", "SCRYPT_SLOTS",
+    "PAIR_RATE_PER_MINUTE", "ADMIN_MINT_RATE_PER_10MIN", "PAIRING_MINT_RATE_PER_10MIN",
+    "PASSWORD_ABUSE_THRESHOLD", "ROTATE_RATE_PER_HOUR", "AUDIT_RETENTION_DAYS", "DB_POOL_MAX"
+  ]) {
+    for (const bad of ["0", "-1", "1.5", "lots"]) {
+      assertRefusal(withEnv(DEV_ENV, { [variable]: bad }), variable);
+    }
+  }
+});
+
+test("LOGIN_TIME_BUDGET_MS must leave room for worst-case scrypt", () => {
+  // The fixed budget must exceed ~100 ms of scrypt with margin, or the
+  // "byte-identical outcome after the same wall-clock budget" property leaks
+  // through overrun.
+  assert.equal(
+    startupConfiguration(withEnv(DEV_ENV, { LOGIN_TIME_BUDGET_MS: "250" })).loginTimeBudgetMs,
+    250
+  );
+  assertRefusal(withEnv(DEV_ENV, { LOGIN_TIME_BUDGET_MS: "249" }), "LOGIN_TIME_BUDGET_MS");
+  assertRefusal(withEnv(DEV_ENV, { LOGIN_TIME_BUDGET_MS: "0" }), "LOGIN_TIME_BUDGET_MS");
+});
+
+test("SCRYPT_SLOTS and DB_POOL_MAX are bounded above as well as below", () => {
+  // Above 8 slots the memory-hard parameters put the process inside OOM-killer
+  // range on a 512 MB container; DB_POOL_MAX is sized against max_connections=40.
+  assert.equal(startupConfiguration(withEnv(DEV_ENV, { SCRYPT_SLOTS: "8" })).scryptSlots, 8);
+  assertRefusal(withEnv(DEV_ENV, { SCRYPT_SLOTS: "9" }), "SCRYPT_SLOTS");
+
+  assert.equal(startupConfiguration(withEnv(DEV_ENV, { DB_POOL_MAX: "20" })).dbPoolMax, 20);
+  assertRefusal(withEnv(DEV_ENV, { DB_POOL_MAX: "21" }), "DB_POOL_MAX");
+});
+
+test("SESSION_ABSOLUTE_SECONDS must strictly exceed SESSION_IDLE_SECONDS", () => {
+  // Otherwise every session violates user_sessions_idle_within_absolute on its
+  // first renewal.
+  assertRefusal(
+    withEnv(DEV_ENV, { SESSION_IDLE_SECONDS: "600", SESSION_ABSOLUTE_SECONDS: "600" }),
+    "SESSION_ABSOLUTE_SECONDS"
+  );
+  assertRefusal(
+    withEnv(DEV_ENV, { SESSION_IDLE_SECONDS: "600", SESSION_ABSOLUTE_SECONDS: "599" }),
+    "SESSION_ABSOLUTE_SECONDS"
+  );
+  assert.equal(
+    startupConfiguration(withEnv(DEV_ENV, {
+      SESSION_IDLE_SECONDS: "600",
+      SESSION_ABSOLUTE_SECONDS: "601"
+    })).sessionAbsoluteSeconds,
+    601
+  );
+});
