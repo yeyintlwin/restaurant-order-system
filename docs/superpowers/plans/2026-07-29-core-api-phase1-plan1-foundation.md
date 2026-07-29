@@ -12,6 +12,69 @@
 
 ---
 
+## How to pick this up
+
+This plan is written to be executed in chunks, across sessions, and by whatever
+tool is at hand. Nothing about it depends on the conversation it came from.
+
+**The checkboxes are the state.** Every step is a `- [ ]`. Tick them as you go and
+commit the plan file with the code — the next session, or the next tool, reads the
+last ticked box and continues from there. There is no other progress tracker, and
+none is needed.
+
+**The superpowers reference above is optional.** If your tool has those skills, use
+them. If not, ignore the line: every task is self-contained — files to touch, the
+complete test, the exact command, the expected output, the complete implementation,
+the commit. Read the task, do the five steps, move on.
+
+**To find out where you are**, from the repository root:
+
+```bash
+git log --oneline -5
+npm test
+```
+
+If `apps/core-api` does not exist yet, start at Task 1.
+
+### Execution order — read this before Task 10
+
+**Do Task 18 and the `createEmptyDatabase` half of Task 19 BEFORE Task 10.**
+
+Tasks 11–17 require `apps/core-api/testing/database.js`, and the task that creates
+it sits in Part 3. Followed front to back, Task 11's test fails with
+`Cannot find module '../testing/database'` — a failure that looks like a mistake in
+the task rather than an ordering problem, and costs an hour to diagnose. The
+dependency is one-directional and shallow: Part 2 needs only `createEmptyDatabase`
+and the DSN plumbing, never `cloneTemplate` (which in turn needs `db/migrate.js`,
+which is what Part 2 builds).
+
+Suggested chunking. Each chunk ends with a green `npm test` and a commit, so any of
+them is a safe place to stop for the day or hand over to another tool:
+
+| Chunk | Tasks | Postgres? | Delivers |
+| --- | --- | --- | --- |
+| A | 1–9 | **no** | the package, the pure config validator, `npm test` wired |
+| B | 18, and Task 19 up to `createEmptyDatabase` | yes | DSN plumbing and per-file database creation |
+| C | 10–17 | yes | the migration runner and `0001_init.sql` |
+| D | rest of 19, 20–22 | yes | `cloneTemplate`, `pretest`, `db:reset`, the two-tenant fixture |
+| E | 23–28 | yes | the schema-invariant and source-structure suites |
+| F | 29–38 | yes | the tenant choke point |
+| G | 39–48 | mostly no | router, `/health`, `/health/ready`, bootstrap |
+
+Chunk A needs no database at all, so it can be done before Postgres is installed.
+
+### Two local hazards this machine has already hit
+
+- **OneDrive flattens the workspace junction.** If `npm test` dies with
+  `Unexpected token '.'`, the `@restaurant/epaper-hub-sdk` junction under
+  `node_modules` has been replaced by a copy. Recreate it; the failure is not in
+  your code.
+- **CRLF.** Task 2 adds `*.sql text eol=lf` for a reason: without it the same
+  migration file hashes differently on win32 and on the Ubuntu CI runner, and the
+  runner reports a fatal checksum mismatch on a file nobody edited.
+
+---
+
 ## Canonical interfaces
 
 The five parts of this plan were drafted independently and reconciled against the
@@ -2450,6 +2513,11 @@ git commit -m "test: run the core-api suite from the repository test script"
 ---
 
 ## Part 2 — Migration runner and `0001_init.sql`
+
+> **Stop — prerequisite.** Tasks 11–17 require `apps/core-api/testing/database.js`,
+> which Task 18 and the first half of Task 19 create in Part 3. Do those two first,
+> or Task 11's test fails with `Cannot find module '../testing/database'`. See
+> "Execution order" near the top of this plan.
 
 Eight tasks. `db/migrate.js` implements steps **3–10** of the twelve-step contract
 in spec §9.4, plus the `--check` CLI that `npm run migrate` invokes. Steps 1
