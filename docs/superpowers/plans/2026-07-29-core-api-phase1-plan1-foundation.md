@@ -16,7 +16,7 @@
 
 ## Execution log
 
-**Status: 4 of 48 tasks done.** The next thing to do is **Task 5**.
+**Status: 7 of 48 tasks done.** The next thing to do is **Task 8**.
 
 Append one row per working session. Record the last task actually finished — a
 task counts as finished only when all five of its steps are ticked and its
@@ -28,7 +28,8 @@ commit exists.
 | 2026-07-29 | Task 1. `apps/core-api` now exists with its manifest, lockfile and first test. The test failed with the predicted `ENOENT` before the manifest was written, and both dependencies were verified to resolve inside `apps/core-api/node_modules` rather than from the repo root's hoisted `express`. | **1/48** | `416acea` | Task 2 |
 | 2026-07-29 | Task 2. `.gitattributes` and the `apps/*/.env` line in `.dockerignore`. `git check-attr` confirms the rules stay narrow: `.sql` resolves to `eol: lf`, `apps/core-api/package.json` stays `unspecified`. | **2/48** | `75beae8` | Task 3 |
 | 2026-07-29 | Task 3. `.env.example` — the variables with no code default, every credential left empty. Confirmed `.env.example` is tracked while `apps/core-api/.env` is ignored. | **3/48** | `7b5bf6c` | Task 4 |
-| 2026-07-29 | Task 4. Operator README. **Corrected a defect in the task:** the quoted `28P01` message pointed at `apps/core-api/README.md 'Rotating database passwords'`, but the heading lives in `apps/core-api/README.md`. `db/health.js` (Task 37) copies that string, so the pointer was fixed here before it could propagate, and the test now asserts both the right path and the absence of the wrong one. | **4/48** | see the commit that carries this row | Task 5 |
+| 2026-07-29 | Task 4. Operator README. **Corrected a defect in the task:** the quoted `28P01` message pointed at `apps/core-api/README.md 'Rotating database passwords'`, but the heading lives in `apps/core-api/README.md`. `db/health.js` (Task 37) copies that string, so the pointer was fixed here before it could propagate, and the test now asserts both the right path and the absence of the wrong one. | **4/48** | `18f822b` | Task 5 |
+| 2026-07-29 | Tasks 5-7. `env-file.js` and the whole of `config.js`. Task 7 was applied as targeted additions rather than the full-file replacement it prescribes; the diff was five functions plus the returned keys. 28 tests across three suites, all green. **Note:** `npm --prefix apps/core-api test` cannot run until Task 20 creates `scripts/setup-template-db.js`, because `pretest` invokes it. Until then run `node --test apps/core-api/test/*.test.js` from the repository root. | **7/48** | `bfbae8c`, `818b6db`, `d6ae37e` | Task 8 |
 
 ## How to pick this up
 
