@@ -16,7 +16,9 @@
 
 ## Execution log
 
-**Status: 9 of 48 tasks done — Chunk A complete.** The next thing to do is **Task 18**, then Task 19 up to `createEmptyDatabase`, and only then Task 10. See "Execution order" below. A local Postgres is required from here on.
+**Status: 11 of 48 tasks done.** The next thing to do is **Task 11**, then Task 19, then Tasks 12-17. A local Postgres is required from here on.
+
+**Correction to the execution order below.** The note says to do Task 18 and "the `createEmptyDatabase` half of Task 19" before Task 10. The first half is right and the second is not: everything Task 19 appends sits below a `require("../db/migrate")`, so no part of it can load until `db/migrate.js` exists. `db/migrate.js` is created by **Task 11**. The order that actually works is **18, 10, 11, 19, 12-17** - Tasks 10 and 11 need nothing but `node:fs`, and Task 19 only needs the module to exist, not to be finished.
 
 Append one row per working session. Record the last task actually finished — a
 task counts as finished only when all five of its steps are ticked and its
@@ -30,7 +32,8 @@ commit exists.
 | 2026-07-29 | Task 3. `.env.example` — the variables with no code default, every credential left empty. Confirmed `.env.example` is tracked while `apps/core-api/.env` is ignored. | **3/48** | `7b5bf6c` | Task 4 |
 | 2026-07-29 | Task 4. Operator README. **Corrected a defect in the task:** the quoted `28P01` message pointed at `apps/core-api/README.md 'Rotating database passwords'`, but the heading lives in `apps/core-api/README.md`. `db/health.js` (Task 37) copies that string, so the pointer was fixed here before it could propagate, and the test now asserts both the right path and the absence of the wrong one. | **4/48** | `18f822b` | Task 5 |
 | 2026-07-29 | Tasks 5-7. `env-file.js` and the whole of `config.js`. Task 7 was applied as targeted additions rather than the full-file replacement it prescribes; the diff was five functions plus the returned keys. 28 tests across three suites, all green. **Note:** `npm --prefix apps/core-api test` cannot run until Task 20 creates `scripts/setup-template-db.js`, because `pretest` invokes it. Until then run `node --test apps/core-api/test/*.test.js` from the repository root. | **7/48** | `bfbae8c`, `818b6db`, `d6ae37e` | Task 8 |
-| 2026-07-29 | Tasks 8-9, finishing Chunk A. `config.js` DEFAULTS pinned to the Compose block, root `npm test` wired to the core-api suite. 33 tests across three suites, all green, still with no database. | **9/48** | see the commit that carries this row | Task 18 |
+| 2026-07-29 | Tasks 8-9, finishing Chunk A. `config.js` DEFAULTS pinned to the Compose block, root `npm test` wired to the core-api suite. 33 tests across three suites, all green, still with no database. | **9/48** | `d31b3b5` | Task 18 |
+| 2026-07-29 | Tasks 18 and 10. Local Postgres 16 started on 5433. `testing/database.js` pure half, and `0001_init.sql` copied from Appendix A - digest matches the plan exactly. Smoke-applied against the real cluster: 11 tables, clean. **Found the execution-order note to be half wrong**; the corrected order is recorded above. | **11/48** | `5a3c2df`, `d4a0f49` | Task 11 |
 
 ## How to pick this up
 
