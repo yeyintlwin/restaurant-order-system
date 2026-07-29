@@ -346,3 +346,86 @@ test("a failing file rolls back whole, leaving no row and no partial table", { s
     assert.equal(ledger.rows[0].n, 0);
   });
 });
+
+// --- verdicts ---------------------------------------------------------------
+
+test("a checksum mismatch is fatal and names both digests and both remedies", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_mismatch", async (database) => {
+    await withSession(database, async (session) => {
+      const directory = makeMigrationsDirectory({
+        "0001_seed.sql": "CREATE TABLE seed (id integer PRIMARY KEY);\n"
+      });
+      await runMigrations(session, { directory, log: collectLog() });
+      fs.writeFileSync(
+        path.join(directory, "0001_seed.sql"),
+        "CREATE TABLE seed (id integer PRIMARY KEY, extra text);\n"
+      );
+      await assert.rejects(
+        () => runMigrations(session, { directory, log: collectLog() }),
+        (error) => {
+          assert.match(error.message, /checksum mismatch for 0001_seed\.sql/);
+          assert.match(error.message, /applied: [0-9a-f]{64}/);
+          assert.match(error.message, /on disk: [0-9a-f]{64}/);
+          assert.match(error.message, /Never edit an applied migration/);
+          assert.match(error.message, /db:reset/);
+          return true;
+        }
+      );
+    });
+  });
+});
+
+test("a CRLF checkout of an applied file is not a mismatch", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_crlf", async (database) => {
+    await withSession(database, async (session) => {
+      const body = "CREATE TABLE crlf_probe (id integer PRIMARY KEY);\n";
+      await runMigrations(session, {
+        directory: makeMigrationsDirectory({ "0001_crlf_probe.sql": body }),
+        log: collectLog()
+      });
+      const result = await runMigrations(session, {
+        directory: makeMigrationsDirectory({ "0001_crlf_probe.sql": body.replace(/\n/g, "\r\n") }),
+        log: collectLog()
+      });
+      assert.deepEqual(result.applied, []);
+      assert.deepEqual(result.skipped, ["0001_crlf_probe.sql"]);
+    });
+  });
+});
+
+test("a ledger row with no file on disk is a WARNING, not a failure", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_rolled_back", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, {
+        directory: makeMigrationsDirectory({
+          "0001_present.sql": "CREATE TABLE present (id integer PRIMARY KEY);\n"
+        }),
+        log: collectLog()
+      });
+      const log = collectLog();
+      const result = await runMigrations(session, { directory: makeMigrationsDirectory({}), log });
+      assert.deepEqual(result.missingFiles, ["0001_present.sql"]);
+      assert.deepEqual(result.applied, []);
+      assert.equal(log.warnings.length, 1);
+      assert.match(log.warnings[0], /0001_present\.sql but the file is not on disk/);
+    });
+  });
+});
+
+test("check mode applies nothing and fails on a pending file", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_check", async (database) => {
+    const directory = makeMigrationsDirectory({
+      "0001_pending.sql": "CREATE TABLE pending_probe (id integer PRIMARY KEY);\n"
+    });
+    await withSession(database, async (session) => {
+      await assert.rejects(
+        () => runMigrations(session, { directory, check: true, log: collectLog() }),
+        /pending migration\(s\) never applied: 0001_pending\.sql/
+      );
+    });
+    const probe = await database.unscoped("SELECT to_regclass('public.pending_probe') AS present");
+    assert.equal(probe.rows[0].present, null);
+    const ledger = await database.unscoped("SELECT count(*)::int AS n FROM schema_migrations");
+    assert.equal(ledger.rows[0].n, 0);
+  });
+});

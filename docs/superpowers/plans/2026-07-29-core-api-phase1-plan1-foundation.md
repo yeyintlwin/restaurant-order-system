@@ -3557,7 +3557,7 @@ git commit -m "feat(core-api): apply each migration as one string in one transac
 - Modify: `apps/core-api/test/migrate.test.js` (append four cases)
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/migrate.test.js`:
 
@@ -3649,7 +3649,7 @@ test("check mode applies nothing and fails on a pending file", { skip: skipDatab
 The CRLF case is the cross-platform trap end to end: the digest recorded from an
 LF checkout must still match when the same file is read from a CRLF one.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL, 3 failures — `Missing expected rejection.` (mismatch),
@@ -3658,7 +3658,7 @@ Expected: FAIL, 3 failures — `Missing expected rejection.` (mismatch),
 (check mode). The CRLF case already passes, because `readMigrationFiles`
 normalises.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/migrate.js`, add `checksumMismatchMessage` immediately after
 `applyMigration` and before `readLedger`:
@@ -3755,11 +3755,11 @@ is deliberately no escape at all. `check: true` needs no separate code path — 
 suppresses the apply, and the post-loop reconciliation then finds the file pending
 and throws, which is exactly the exit-1 CI wants.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (16 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js

@@ -158,6 +158,16 @@ async function applyMigration(client, file, now) {
   return Math.max(0, Math.round(now() - startedAt));
 }
 
+function checksumMismatchMessage(file, appliedChecksum) {
+  return [
+    `checksum mismatch for ${file.filename}`,
+    `  applied: ${appliedChecksum.toString("hex")}`,
+    `  on disk: ${file.checksum.toString("hex")}`,
+    "An already-applied migration was edited. Never edit an applied migration -- add",
+    "the next numbered file instead. Locally, run: npm --prefix apps/core-api run db:reset"
+  ].join("\n");
+}
+
 async function readLedger(client) {
   const { rows } = await client.query("SELECT filename, checksum FROM schema_migrations");
   return new Map(rows.map((row) => [row.filename, Buffer.from(row.checksum)]));
@@ -172,6 +182,7 @@ async function runMigrations(client, options) {
     throw new Error("runMigrations requires options.directory");
   }
   const log = settings.log || console;
+  const check = settings.check === true;
   const now = settings.now || Date.now;
   const wait = settings.sleep || sleep;
   const waitMs = settings.lockWaitMs === undefined ? LOCK_WAIT_MS : settings.lockWaitMs;
@@ -187,18 +198,55 @@ async function runMigrations(client, options) {
     const ledger = await readLedger(client);
     const applied = [];
     const skipped = [];
+
     for (const file of files) {
       const digest = file.checksum.toString("hex").slice(0, 12);
-      if (ledger.has(file.filename)) {
+      const appliedChecksum = ledger.get(file.filename);
+      if (appliedChecksum) {
+        // Fatal, with no --force and no skip variable: db:reset is the only
+        // sanctioned answer locally, and against a database with real rows there
+        // is deliberately no escape at all.
+        if (!appliedChecksum.equals(file.checksum)) {
+          throw new Error(checksumMismatchMessage(file, appliedChecksum));
+        }
         log.info(`migration ${file.filename} sha256:${digest} already applied`);
         skipped.push(file.filename);
+        continue;
+      }
+      if (check) {
+        log.info(`migration ${file.filename} sha256:${digest} PENDING (check mode, not applied)`);
         continue;
       }
       const durationMs = await applyMigration(client, file, now);
       log.info(`migration ${file.filename} sha256:${digest} applied in ${durationMs} ms`);
       applied.push(file.filename);
     }
-    return { applied, skipped, missingFiles: [], checked: settings.check === true };
+
+    const finalLedger = await readLedger(client);
+    const onDisk = new Set(files.map((file) => file.filename));
+    const missingFiles = [...finalLedger.keys()].filter((name) => !onDisk.has(name)).sort();
+    const pending = files
+      .map((file) => file.filename)
+      .filter((name) => !finalLedger.has(name));
+
+    // WARNING, never fatal: a rolled-back image is the only recovery lever on a
+    // push-to-main pipeline with no staging tier, and it always looks like this.
+    for (const filename of missingFiles) {
+      log.warn(
+        `WARNING: schema_migrations has a row for ${filename} but the file is not on ` +
+        "disk. This is what a rolled-back image looks like; continuing."
+      );
+    }
+    // check: true needs no separate code path -- it suppresses the apply, and this
+    // reconciliation then finds the file pending and throws, which is the exit 1
+    // that CI wants.
+    if (pending.length > 0) {
+      throw new Error(
+        `pending migration(s) never applied: ${pending.join(", ")}; ` +
+        "the database schema is older than this code"
+      );
+    }
+    return { applied, skipped, missingFiles, checked: check };
   } finally {
     try {
       await client.query("SELECT pg_advisory_unlock($1::bigint)", [MIGRATION_ADVISORY_LOCK_KEY]);
