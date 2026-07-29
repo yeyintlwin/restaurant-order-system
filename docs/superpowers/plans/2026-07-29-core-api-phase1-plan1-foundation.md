@@ -4331,7 +4331,7 @@ git commit -m "test(core-api): deterministic per-file test database names"
 - Modify: `apps/core-api/testing/database.js` (append; replace the `module.exports` block)
 - Test: `apps/core-api/test/testing-database-clone.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -4460,12 +4460,12 @@ describe("cloned test database", { skip: skipDatabaseTests() }, () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/testing-database-clone.test.js`
 Expected: FAIL with `TypeError: isTemplateStale is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append the following to `apps/core-api/testing/database.js`, deleting the `module.exports = { … }` block the previous task left at the bottom (the block below replaces it). The new `require`s sit here rather than at the top on purpose: everything above this line is pure and loads with no `pg` installed.
 
