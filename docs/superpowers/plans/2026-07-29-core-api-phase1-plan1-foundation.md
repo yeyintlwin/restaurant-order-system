@@ -1003,7 +1003,7 @@ rotation lever is a no-op.
 - Create: `apps/core-api/config.js`
 - Test: `apps/core-api/test/config.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 // apps/core-api/test/config.test.js
@@ -1251,13 +1251,13 @@ test("startupConfiguration refuses anything that is not an environment object", 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/config.test.js`
 
 Expected: FAIL with `Error: Cannot find module '../config'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```js
 // apps/core-api/config.js
@@ -1487,11 +1487,11 @@ function startupConfiguration(env) {
 module.exports = { startupConfiguration, ConfigurationError };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/config.test.js`  Expected: PASS (13 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/config.js apps/core-api/test/config.test.js
