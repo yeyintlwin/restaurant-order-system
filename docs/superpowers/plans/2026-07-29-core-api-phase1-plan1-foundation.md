@@ -6056,7 +6056,7 @@ Every rule below is registered through `rule()`, which stores one fixture the re
 - Modify: `apps/core-api/test/source-structure.test.js` (append)
 - Test: `apps/core-api/test/source-structure.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/source-structure.test.js`. `assert`, `fs`, `path`, `test`, `appRoot`, `repoRoot` and `readText` are already in scope from scaffold-config's header — nothing here re-requires or redeclares them.
 
@@ -6104,12 +6104,12 @@ test("C1: db/pool.js is the only file that requires pg", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 Expected: FAIL with `ReferenceError: SOURCE_FILES is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Insert this block **immediately above the three tests appended in the previous step**, still inside `apps/core-api/test/source-structure.test.js`:
 
@@ -6190,11 +6190,11 @@ const PG_REQUIRE = rule(
 );
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS — scaffold-config's existing tests plus the three added here
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/source-structure.test.js
@@ -6209,7 +6209,7 @@ git commit -m "test(core-api): source walker with separator normalisation and ru
 - Modify: `apps/core-api/test/source-structure.test.js` (append)
 - Test: `apps/core-api/test/source-structure.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/source-structure.test.js`:
 
@@ -6243,12 +6243,12 @@ test("C5: the cross-tenant escape hatch appears only under repositories/platform
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 Expected: FAIL with `ReferenceError: RAW_QUERY is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Insert this block **immediately above the four tests appended in the previous step**:
 
@@ -6314,11 +6314,11 @@ const CROSS_TENANT_NEEDLE = rule(
 );
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS — the previous tests plus the four added here
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/source-structure.test.js
@@ -6333,7 +6333,7 @@ git commit -m "test(core-api): enforce query, express and unscoped-caller bounda
 - Modify: `apps/core-api/test/source-structure.test.js` (append)
 - Test: `apps/core-api/test/source-structure.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/source-structure.test.js`:
 
@@ -6391,12 +6391,12 @@ test("C9: nothing under lib/ touches the filesystem, the network or the database
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 Expected: FAIL with `ReferenceError: PLATFORM_EXPORTS is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Insert this block **immediately above the five tests appended in the previous step**:
 
@@ -6460,11 +6460,11 @@ const IMPURE_REQUIRE = rule(
 );
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS — the previous tests plus the five added here, one of which reports `# SKIP repositories/platform/ does not exist yet`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/source-structure.test.js
@@ -6481,7 +6481,7 @@ C11 (root `scripts.test` names `apps/core-api`) and C12 (`/.gitattributes` and `
 - Modify: `apps/core-api/test/source-structure.test.js` (append)
 - Test: `apps/core-api/test/source-structure.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/source-structure.test.js`:
 
@@ -6536,12 +6536,12 @@ test("C13: test/ holds only *.test.js, and no test writes into the app's migrati
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 Expected: FAIL with `ReferenceError: DESTRUCTIVE_DDL is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Insert this block **immediately above the two tests appended in the previous step**:
 
@@ -6580,13 +6580,13 @@ const WRITE_CALL = rule(
 );
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS — the previous tests plus the two added here
 
 Then confirm the whole wiring from the repository root: `npm test` — Expected: PASS, ending with the core-api suites (scaffold-config already added `npm --prefix apps/core-api test` to the root `scripts.test`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/source-structure.test.js
@@ -10671,7 +10671,7 @@ opens the pool, checks out the client, and releases it in a `finally`.
 - Create: `apps/core-api/server.js`
 - Test: `apps/core-api/test/server-bootstrap.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -10780,12 +10780,12 @@ test("a database that never comes up means the port never opens", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/server-bootstrap.test.js`
 Expected: FAIL with `Error: Cannot find module '../server'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```js
 "use strict";
@@ -10865,11 +10865,11 @@ async function start(options = {}) {
 module.exports = { createApp, start, listenServer };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/server-bootstrap.test.js`  Expected: PASS
 
-- [ ] **Step 5: Prove the real require graph resolves**
+- [x] **Step 5: Prove the real require graph resolves**
 
 Every collaborator above is injected, so a typo in a `require` path or a name `db/index.js` does not
 actually export would stay green in the unit test and only fail in production. Load the module for
@@ -10882,7 +10882,7 @@ node -e "const s = require('./apps/core-api/server.js'); const db = require('./a
 Expected: exit 0 with no output. A `MODULE_NOT_FOUND` here means a bad path; a non-zero exit with no
 message means `db/index.js` is missing an export `server.js` destructures.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/core-api/server.js apps/core-api/test/server-bootstrap.test.js
@@ -10904,7 +10904,7 @@ unit-tested rather than asserted about three lines under `require.main`.
 - Modify: `apps/core-api/server.js:1-END`
 - Test: `apps/core-api/test/server-bootstrap.test.js` (append to the end of the file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/server-bootstrap.test.js`:
 
@@ -10950,12 +10950,12 @@ test("fatal() logs a bare thrown string without touching .message", async () => 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/server-bootstrap.test.js`
 Expected: FAIL with `TypeError: fatal is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/server.js` entirely:
 
@@ -11064,11 +11064,11 @@ if (require.main === module) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/server-bootstrap.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/server.js apps/core-api/test/server-bootstrap.test.js
