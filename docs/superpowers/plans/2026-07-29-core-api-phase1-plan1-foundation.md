@@ -2585,7 +2585,7 @@ docker run -d --name core-db-dev -e POSTGRES_USER=core_api_owner -e POSTGRES_PAS
 - Create: `apps/core-api/migrations/0001_init.sql`
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/migrate.test.js`:
 
@@ -2631,12 +2631,12 @@ The digest is taken over the **CRLF-normalised** bytes, so the assertion is
 checkout-mode independent and is byte-for-byte the value the runner will later
 store in `schema_migrations.checksum`.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL with `Error: ENOENT: no such file or directory, scandir '…\apps\core-api\migrations'`
 
-- [ ] **Step 3: Copy Appendix A of the spec into the file unchanged**
+- [x] **Step 3: Copy Appendix A of the spec into the file unchanged**
 
 Do **not** retype or re-derive the DDL. Copy Appendix A of
 `docs/superpowers/specs/2026-07-29-core-api-phase1-design.md` — the fenced block
@@ -2661,7 +2661,7 @@ tr -d '\r' < apps/core-api/migrations/0001_init.sql | sha256sum
 If the sha256 differs, the copy is wrong — fix the copy, never the constant in
 the test.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (1 test)
 
@@ -2675,7 +2675,7 @@ Expected: two lines ending `text: set` and `eol: lf`. If either says `unspecifie
 stop — `.gitattributes` is missing or malformed, and the next Windows clone will
 produce a different digest for a file nobody edited.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/migrations/0001_init.sql apps/core-api/test/migrate.test.js
