@@ -2695,7 +2695,7 @@ git commit -m "feat(core-api): add 0001_init.sql, the Phase 1 schema, pinned by 
 - Modify: `apps/core-api/test/migrate.test.js:1-9` (the header, up to and including `MIGRATIONS_DIR`)
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace lines 1-9 of `apps/core-api/test/migrate.test.js` — everything from
 `"use strict";` down to and including the `MIGRATIONS_DIR` constant — with:
@@ -2790,12 +2790,12 @@ test("a CRLF checkout hashes identically to an LF one", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/migrate'` / `code: 'MODULE_NOT_FOUND'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/migrate.js`:
 
@@ -2867,11 +2867,11 @@ module.exports = {
 first: a stray `0002_fix.sql.bak` or a `README.md` in `migrations/` is a mistake,
 and a runner that silently ignores it is how a migration goes missing.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js
