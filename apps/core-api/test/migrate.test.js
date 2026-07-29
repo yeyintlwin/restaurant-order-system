@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { after, test } = require("node:test");
+const { spawnSync } = require("node:child_process");
 
 const {
   MIGRATION_ADVISORY_LOCK_KEY,
@@ -18,6 +19,28 @@ const {
 const { createEmptyDatabase, skipDatabaseTests } = require("../testing/database");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
+
+const MIGRATE_CLI = path.join(__dirname, "..", "db", "migrate.js");
+
+// config.js refuses to produce a configuration unless the three secrets and
+// API_PUBLIC_ORIGIN are present and mutually consistent (POSTGRES_PASSWORD must
+// equal the password in DATABASE_MIGRATION_URL; DATABASE_URL's user must be
+// core_api_app and must differ from the migration DSN). NODE_ENV is deliberately
+// not "production", which is what switches on the core_api_owner username rule.
+function cliEnvironment(database) {
+  const migrationUrl = new URL(database.connectionString);
+  const appUrl = new URL(database.connectionString);
+  appUrl.username = "core_api_app";
+  appUrl.password = "app-role-rotated-on-every-boot";
+  return {
+    ...process.env,
+    NODE_ENV: "test",
+    POSTGRES_PASSWORD: decodeURIComponent(migrationUrl.password),
+    DATABASE_MIGRATION_URL: database.connectionString,
+    DATABASE_URL: appUrl.toString(),
+    API_PUBLIC_ORIGIN: "http://127.0.0.1:3200"
+  };
+}
 
 // Every scenario builds its OWN migrations directory here. apps/core-api/migrations
 // is read concurrently by every other test file -- each cloneTemplate() hashes it to
@@ -480,5 +503,38 @@ test("migrationsStatus reports pending on a database that has never migrated", {
     await withSession(database, async (session) => {
       assert.equal(await migrationsStatus(session, MIGRATIONS_DIR), "pending");
     });
+  });
+});
+
+// --- the CLI ----------------------------------------------------------------
+
+test("node db/migrate.js --check exits 1 on a pending file and applies nothing", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_cli_check", async (database) => {
+    const result = spawnSync(process.execPath, [MIGRATE_CLI, "--check"], {
+      env: cliEnvironment(database),
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 1, `expected exit 1, got ${result.status}: ${result.stderr}`);
+    assert.match(result.stderr, /pending migration\(s\) never applied: 0001_init\.sql/);
+
+    const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
+    assert.equal(probe.rows[0].present, null);
+    const ledger = await database.unscoped("SELECT count(*)::int AS n FROM schema_migrations");
+    assert.equal(ledger.rows[0].n, 0);
+  });
+});
+
+test("node db/migrate.js applies the migration set and exits 0", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_cli_apply", async (database) => {
+    const result = spawnSync(process.execPath, [MIGRATE_CLI], {
+      env: cliEnvironment(database),
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
+
+    const ledger = await database.unscoped("SELECT filename FROM schema_migrations");
+    assert.deepEqual(ledger.rows.map((row) => row.filename), ["0001_init.sql"]);
+    const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
+    assert.equal(probe.rows[0].present, "companies");
   });
 });

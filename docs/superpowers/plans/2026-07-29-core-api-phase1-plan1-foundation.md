@@ -3939,7 +3939,7 @@ git commit -m "feat(core-api): migrationsStatus returns the readiness verdict in
 block that command loads the module, defines some functions and exits **0** having
 done nothing — a green no-op that CI would read as "schema is current".
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add the `child_process` require immediately after the `node:test` require in the
 header:
@@ -4014,7 +4014,7 @@ test("node db/migrate.js applies the migration set and exits 0", { skip: skipDat
 Both cases spawn a real process because the exit code *is* the contract — an
 in-process call cannot observe `process.exit(1)`.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL, 1 failure — `expected exit 1, got 0:` (the module loads, defines
@@ -4022,7 +4022,7 @@ its exports and exits cleanly). The second case passes vacuously on the exit cod
 and then fails on `Expected values to be strictly deep-equal: + [] - [
 '0001_init.sql' ]`, so expect 2 failures in total.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to the bottom of `apps/core-api/db/migrate.js`, after `module.exports`:
 
@@ -4069,7 +4069,7 @@ if (require.main === module) {
 may still hold the event loop open, and a migrate command that hangs instead of
 failing is indistinguishable from a slow one.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (22 tests)
 
@@ -4082,7 +4082,7 @@ CORE_API_SKIP_DB_TESTS=1 node --test apps/core-api/test/migrate.test.js
 Expected: PASS with `# pass 6`, `# skip 16`, every skipped line tagged
 `# SKIP CORE_API_SKIP_DB_TESTS=1`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js

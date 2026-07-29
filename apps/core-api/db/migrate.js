@@ -294,3 +294,40 @@ module.exports = {
   readMigrationFiles,
   runMigrations
 };
+
+if (require.main === module) {
+  // Required here rather than at the top of the file so the pure helpers above
+  // stay loadable (and unit-testable) without pg or a validated environment.
+  const { loadDotEnv } = require("../env-file");
+  const { startupConfiguration } = require("../config");
+  const { openMigrationPool, acquireMigrationClient, closeMigrationPool } = require("./index");
+
+  const main = async () => {
+    // Same two lines start() runs, so `npm run migrate` and `npm start` read one
+    // environment and cannot disagree about which database they are pointed at.
+    loadDotEnv();
+    const config = startupConfiguration(process.env);
+    openMigrationPool({ connectionString: config.databaseMigrationUrl });
+    const client = await acquireMigrationClient();
+    try {
+      const result = await runMigrations(client, {
+        directory: path.join(__dirname, "..", "migrations"),
+        appRolePassword: config.databaseAppPassword,
+        check: process.argv.includes("--check")
+      });
+      console.log(
+        `migrations: ${result.applied.length} applied, ${result.skipped.length} already applied` +
+        (result.checked ? " (check mode, nothing was applied)" : "")
+      );
+    } finally {
+      client.release();
+      // Swallowed so a close failure cannot mask the real error on its way out.
+      await closeMigrationPool().catch(() => {});
+    }
+  };
+
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
