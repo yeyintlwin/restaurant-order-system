@@ -4794,7 +4794,7 @@ git commit -m "test(core-api): pretest builds the template and no-ops without a 
 - Create: `apps/core-api/scripts/reset-database.js`
 - Modify: `apps/core-api/test/scripts.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/scripts.test.js`:
 
@@ -4847,12 +4847,12 @@ test("reset-database refuses when DATABASE_MIGRATION_URL is absent", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/scripts.test.js`
 Expected: FAIL — `guard 1` reaches `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /NODE_ENV/. Input: "…Cannot find module '…/apps/core-api/scripts/reset-database.js'…"` (the `status` assertion passes for the wrong reason, which is why the message assertions are there)
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/scripts/reset-database.js`:
 
@@ -4919,11 +4919,11 @@ main(process.argv.slice(2), process.env).catch((error) => {
 });
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/scripts.test.js`  Expected: PASS (7 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/scripts/reset-database.js apps/core-api/test/scripts.test.js
