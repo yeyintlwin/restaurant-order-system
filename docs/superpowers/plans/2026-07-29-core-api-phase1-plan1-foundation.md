@@ -6621,7 +6621,7 @@ creates the dependency. Nothing else in this area depends on another area.
 - Create: `apps/core-api/db/errors.js`
 - Test: `apps/core-api/test/errors.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/errors.test.js`:
 
@@ -6746,12 +6746,12 @@ test("errors[] entries are copied and frozen, so nothing can be smuggled through
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/errors.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/errors'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/errors.js`:
 
@@ -6874,11 +6874,11 @@ class ApiError extends Error {
 module.exports = { ApiError, TOP_LEVEL_ERROR_CODES, FIELD_ERROR_CODES };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/errors.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/errors.js apps/core-api/test/errors.test.js
@@ -6893,7 +6893,7 @@ git commit -m "feat(core-api): add ApiError and the fixed error code vocabulary"
 - Modify: `apps/core-api/db/errors.js` (insert one block above `module.exports`, then replace the export line)
 - Test: `apps/core-api/test/errors.test.js` (change the require line, append four tests)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Change the first `require` line of `apps/core-api/test/errors.test.js` to:
 
@@ -6933,12 +6933,12 @@ test("the mapping is frozen so no caller can widen it at runtime", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/errors.test.js`
 Expected: FAIL with `TypeError: pgErrorToHttp is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/errors.js`, insert this block immediately above `module.exports`:
 
@@ -6967,11 +6967,11 @@ and replace the export line with:
 module.exports = { ApiError, pgErrorToHttp, TOP_LEVEL_ERROR_CODES, FIELD_ERROR_CODES };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/errors.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/errors.js apps/core-api/test/errors.test.js
