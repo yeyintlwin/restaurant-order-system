@@ -16,7 +16,7 @@
 
 ## Execution log
 
-**Status: 2 of 48 tasks done.** The next thing to do is **Task 3**.
+**Status: 3 of 48 tasks done.** The next thing to do is **Task 4**.
 
 Append one row per working session. Record the last task actually finished — a
 task counts as finished only when all five of its steps are ticked and its
@@ -26,7 +26,8 @@ commit exists.
 | --- | --- | --- | --- | --- |
 | 2026-07-29 | Design and planning only. Wrote the Phase 1 spec, reviewed it adversarially (65 findings, 45 applied), wrote this plan from five parallel drafts and reconciled twelve conflicting signatures, then prepared the handoff. **Wrote no application code.** | none — 0/48 | `0f0651a`, `5a2a0e2`, `99ab46c`, `300bf0f` | Task 1 |
 | 2026-07-29 | Task 1. `apps/core-api` now exists with its manifest, lockfile and first test. The test failed with the predicted `ENOENT` before the manifest was written, and both dependencies were verified to resolve inside `apps/core-api/node_modules` rather than from the repo root's hoisted `express`. | **1/48** | `416acea` | Task 2 |
-| 2026-07-29 | Task 2. `.gitattributes` and the `apps/*/.env` line in `.dockerignore`. `git check-attr` confirms the rules stay narrow: `.sql` resolves to `eol: lf`, `apps/core-api/package.json` stays `unspecified`. | **2/48** | see the commit that carries this row | Task 3 |
+| 2026-07-29 | Task 2. `.gitattributes` and the `apps/*/.env` line in `.dockerignore`. `git check-attr` confirms the rules stay narrow: `.sql` resolves to `eol: lf`, `apps/core-api/package.json` stays `unspecified`. | **2/48** | `75beae8` | Task 3 |
+| 2026-07-29 | Task 3. `.env.example` — the variables with no code default, every credential left empty. Confirmed `.env.example` is tracked while `apps/core-api/.env` is ignored. | **3/48** | see the commit that carries this row | Task 4 |
 
 ## How to pick this up
 
@@ -498,7 +499,7 @@ git commit -m "build: pin sql/sh line endings to lf and exclude apps/*/.env from
 - Create: `apps/core-api/.env.example`
 - Test: `apps/core-api/test/source-structure.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/source-structure.test.js`:
 
@@ -532,13 +533,13 @@ test("the core-api environment example names every required variable and ships n
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 
 Expected: FAIL with `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\apps\core-api\.env.example'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/.env.example`:
 
@@ -608,11 +609,11 @@ DATABASE_URL=
 CORE_API_TEST_DATABASE_URL=
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/.env.example apps/core-api/test/source-structure.test.js

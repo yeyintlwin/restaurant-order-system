@@ -70,3 +70,31 @@ test("C12 - the repository pins SQL line endings and keeps per-app .env out of i
   assert.match(dockerignore, /^\.env$/m);
   assert.match(dockerignore, /^apps\/\*\/\.env$/m);
 });
+
+test("the core-api environment example names every required variable and ships no credentials", () => {
+  const example = readText(appRoot, ".env.example");
+
+  for (const variable of [
+    "NODE_ENV", "PORT", "HOST", "TZ", "API_PUBLIC_ORIGIN", "TERMINAL_ALLOWED_ORIGINS",
+    "TRUSTED_PROXY_HOPS", "POSTGRES_PASSWORD", "DATABASE_MIGRATION_URL", "DATABASE_URL",
+    "CORE_API_TEST_DATABASE_URL"
+  ]) {
+    assert.match(example, new RegExp(`^${variable}=`, "m"), `${variable} is missing from .env.example`);
+  }
+
+  // No credential carries a value. A convincing placeholder in an example file is
+  // the password somebody eventually ships to production.
+  for (const variable of [
+    "POSTGRES_PASSWORD", "DATABASE_MIGRATION_URL", "DATABASE_URL", "CORE_API_TEST_DATABASE_URL"
+  ]) {
+    assert.match(example, new RegExp(`^${variable}=$`, "m"), `${variable} must be left empty`);
+  }
+
+  // The tunables are documented in exactly one place: config.js DEFAULTS. Repeating
+  // them here would create a second place to edit and a silent way for the two to
+  // disagree -- which is the drift config.test.js exists to prevent.
+  assert.doesNotMatch(
+    example,
+    /^(?:SESSION_|PAIRING_|TERMINAL_TOKEN_|LOGIN_|SCRYPT_|PAIR_|ADMIN_MINT_|PASSWORD_ABUSE_|ROTATE_|AUDIT_|DB_POOL_)/m
+  );
+});
