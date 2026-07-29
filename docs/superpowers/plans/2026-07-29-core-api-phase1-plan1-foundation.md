@@ -4940,7 +4940,7 @@ Every row here is load-bearing. The settled design names *"suspension revokes no
 - Create: `apps/core-api/testing/fixtures/two-tenant.js`
 - Test: `apps/core-api/test/fixtures-two-tenant.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -5140,12 +5140,12 @@ describe("two-tenant fixture", { skip: skipDatabaseTests() }, () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/fixtures-two-tenant.test.js`
 Expected: FAIL with `Error: Cannot find module '../testing/fixtures/two-tenant'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/testing/fixtures/two-tenant.js`:
 
@@ -5458,11 +5458,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/fixtures-two-tenant.test.js`  Expected: PASS (13 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/testing/fixtures/two-tenant.js apps/core-api/test/fixtures-two-tenant.test.js
