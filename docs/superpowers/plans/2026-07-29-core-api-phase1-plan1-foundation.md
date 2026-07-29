@@ -1,6 +1,8 @@
 # Core API Phase 1 — Plan 1: Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** implement this plan one task at a time, in order, ticking each `- [ ]` as you go. Read **"How to pick this up"** below before Task 1 — it carries the execution order, the chunking, and two local hazards.
+>
+> If your tool has the superpowers skills, `superpowers:subagent-driven-development` or `superpowers:executing-plans` will drive this well. **They are not required.** Every task is self-contained: files, the complete test, the exact command, the expected output, the complete implementation, the commit.
 
 **Goal:** Stand up apps/core-api as an Express + node-postgres service on port 3200 that validates its configuration, runs its migrations before it listens, answers /health and /health/ready, and enforces the tenant choke point with tests that cannot pass vacuously.
 
