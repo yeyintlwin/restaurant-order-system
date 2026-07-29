@@ -16,10 +16,16 @@ written to be read cold — you do not need the conversation that produced them.
   at the top of that file before touching anything**, including the execution
   order warning: Task 18 and part of Task 19 must be done before Task 10.
 
-The `- [ ]` checkboxes in the plan are the only progress tracker. Tick them as
-you finish each step and commit the plan file alongside the code, so the next
-session — or the next tool — can see where the work stopped. To find out where
-you are: `git log --oneline -5` and `npm test`.
+**Where the work stopped is recorded in the plan's "Execution log" table, at the
+very top of the file.** Read it first; it says which task was last finished and
+which one is next. As of 2026-07-29 it reads *0 of 48 tasks done, no code
+written yet* — the spec and the plan exist, `apps/core-api` does not.
+
+Keep that log honest. At the end of a working session, append a row: the date,
+what you did, the last task actually finished, the commits, and the next task. A
+task counts as finished only when all five of its steps are ticked and its commit
+exists — a half-done task is worse than an untouched one for whoever picks it up.
+Tick the `- [ ]` boxes as you go and commit the plan file alongside the code.
 
 `apps/core-api` is new in Phase 1. Until it exists, everything below still
 describes the whole system.

@@ -14,6 +14,19 @@
 
 ---
 
+## Execution log
+
+**Status: 0 of 48 tasks done. No code has been written yet.** `apps/core-api`
+does not exist. The next thing to do is **Task 1**.
+
+Append one row per working session. Record the last task actually finished — a
+task counts as finished only when all five of its steps are ticked and its
+commit exists.
+
+| Date | Session did | Tasks finished | Commits | Next |
+| --- | --- | --- | --- | --- |
+| 2026-07-29 | Design and planning only. Wrote the Phase 1 spec, reviewed it adversarially (65 findings, 45 applied), wrote this plan from five parallel drafts and reconciled twelve conflicting signatures, then prepared the handoff. **Wrote no application code.** | none — 0/48 | `0f0651a`, `5a2a0e2`, `99ab46c`, `300bf0f` | Task 1 |
+
 ## How to pick this up
 
 This plan is written to be executed in chunks, across sessions, and by whatever
