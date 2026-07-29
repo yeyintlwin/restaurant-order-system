@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { after, before, describe, test } = require("node:test");
-const { cloneTemplate, skipDatabaseTests } = require("../testing/database");
+const { cloneTemplate, migrationChecksums, skipDatabaseTests } = require("../testing/database");
 
 // S1. Five entries, not the two the settled text names. Each one's own positive
 // assertion lives in its own test below, so this is a stated shape rather than a
@@ -241,6 +241,72 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
   test("S3: the four composite anchors exist by name with exact column lists", () => {
     assert.deepEqual(reshapedAnchors(catalog.uniques), []);
   });
+
+  test("S4: every %_hash column is bytea(32), except the one that carries a PHC string", async () => {
+    const { rows } = await db.unscoped(`
+      SELECT c.relname AS table_name,
+             a.attname AS column_name,
+             format_type(a.atttypid, a.atttypmod) AS data_type,
+             COALESCE(string_agg(pg_get_constraintdef(con.oid), ' '), '') AS checks
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+        LEFT JOIN pg_constraint con
+          ON con.conrelid = c.oid AND con.contype = 'c' AND a.attnum = ANY (con.conkey)
+       WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attname LIKE '%\\_hash'
+       GROUP BY c.relname, a.attname, a.atttypid, a.atttypmod`);
+
+    const columns = rows.map((row) => ({
+      table: row.table_name,
+      column: row.column_name,
+      type: row.data_type,
+      checks: row.checks
+    }));
+
+    assert.ok(columns.length >= 4, `expected at least four %_hash columns, found ${columns.length}`);
+    assert.deepEqual(hashColumnViolations(columns), []);
+
+    for (const key of TEXT_HASH_EXCEPTIONS) {
+      assert.ok(
+        columns.some((column) => `${column.table}.${column.column}` === key),
+        `the text-hash exception names a column that does not exist: ${key}`
+      );
+    }
+  });
+
+  test("S5: every table with updated_at has a BEFORE UPDATE set_updated_at() trigger", async () => {
+    const { rows } = await db.unscoped(`
+      SELECT c.relname AS table_name, pg_get_triggerdef(t.oid) AS definition
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND NOT t.tgisinternal`);
+
+    const triggers = {};
+    for (const row of rows) {
+      if (!triggers[row.table_name]) triggers[row.table_name] = [];
+      triggers[row.table_name].push(row.definition);
+    }
+
+    // Conditional on the column, so the rule self-maintains as tables come and go.
+    const withUpdatedAt = Object.keys(catalog.tables).filter((table) => catalog.tables[table].updated_at);
+    assert.ok(withUpdatedAt.length >= 5, `implausibly few tables carry updated_at: ${withUpdatedAt.length}`);
+
+    assert.deepEqual(tablesMissingUpdatedAtTrigger(catalog.tables, triggers), []);
+  });
+
+  test("S6: the migration ledger agrees, as a set, with the migrations directory", async () => {
+    const { rows } = await db.unscoped(
+      "SELECT filename, encode(checksum, 'hex') AS checksum FROM schema_migrations"
+    );
+
+    assert.deepEqual(ledgerDisagreements(migrationChecksums(), rows), []);
+  });
+
+  test("S7: no column is named like a plaintext credential", () => {
+    assert.deepEqual(plaintextShapedColumns(catalog.tables), []);
+  });
+
 });
 // --- the rules themselves, as pure predicates over an introspected catalogue.
 // Each returns the SORTED list of offenders, so a failure prints what is wrong
@@ -279,4 +345,62 @@ function reshapedAnchors(uniques) {
   return Object.keys(ANCHORS)
     .filter((name) => JSON.stringify(uniques[name]) !== JSON.stringify(ANCHORS[name]))
     .sort();
+}
+
+// S4. A one-entry literal, in the same style as S1: a Phase-2 %_hash column
+// added as text fails unless a developer consciously edits this.
+const TEXT_HASH_EXCEPTIONS = ["users.password_hash"];
+
+function hashColumnViolations(columns) {
+  return columns
+    .filter((column) => {
+      if (TEXT_HASH_EXCEPTIONS.includes(`${column.table}.${column.column}`)) {
+        // Postgres renders LIKE as ~~ in pg_get_constraintdef, so match the literal.
+        return column.type !== "text" || !/'scrypt\$%'/.test(column.checks);
+      }
+      return (
+        column.type !== "bytea" ||
+        !column.checks.includes(`octet_length(${column.column}) = 32`)
+      );
+    })
+    .map((column) => `${column.table}.${column.column}`)
+    .sort();
+}
+
+function tablesMissingUpdatedAtTrigger(tables, triggers) {
+  return Object.keys(tables)
+    .filter((table) => tables[table].updated_at)
+    .filter(
+      (table) =>
+        !(triggers[table] || []).some(
+          (definition) =>
+            /BEFORE UPDATE ON /.test(definition) &&
+            /EXECUTE FUNCTION set_updated_at\(\)/.test(definition)
+        )
+    )
+    .sort();
+}
+
+function ledgerDisagreements(diskRows, ledgerRows) {
+  const keys = (rows) => rows.map((row) => `${row.filename}:${row.checksum}`);
+  const disk = keys(diskRows);
+  const ledger = keys(ledgerRows);
+  return [
+    ...disk.filter((key) => !ledger.includes(key)).map((key) => `disk-only ${key}`),
+    ...ledger.filter((key) => !disk.includes(key)).map((key) => `ledger-only ${key}`)
+  ].sort();
+}
+
+// S7. Exact names only: password_hash and token_hash are the shapes this schema
+// wants, and a substring rule would forbid them.
+const PLAINTEXT_COLUMN_NAMES = ["password", "token", "code", "secret", "session_id"];
+
+function plaintextShapedColumns(tables) {
+  const found = [];
+  for (const table of Object.keys(tables)) {
+    for (const column of Object.keys(tables[table])) {
+      if (PLAINTEXT_COLUMN_NAMES.includes(column)) found.push(`${table}.${column}`);
+    }
+  }
+  return found.sort();
 }

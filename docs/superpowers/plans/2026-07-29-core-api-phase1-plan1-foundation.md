@@ -16,9 +16,9 @@
 
 ## Execution log
 
-**Status: 18 of 48 tasks done.** The next thing to do is **Task 20**. A local Postgres is required from here on.
+**Status: 25 of 48 tasks done.** The next thing to do is **Task 25** — and Tasks 25-28 must be the LAST tasks in the plan, because the source walker names files Parts 4 and 5 have not created yet. A local Postgres is required from here on.
 
-**Task 17 is BLOCKED and deliberately skipped.** Its CLI block does `require("./index")`, and `db/index.js` is created by **Task 34**, which in turn needs `db/pool.js` from **Task 33**. Written now, its `--check` case would exit 1 for the wrong reason - `MODULE_NOT_FOUND` rather than a pending migration - and its apply case could not pass at all. Do Task 17 after Task 34. Everything else in Part 2 is finished, and `runMigrations` itself has no dependency on the pool.
+**Task 17 is BLOCKED and deliberately skipped.** *(Chain corrected 2026-07-29: it needs Tasks 31, 32, 34 AND 35 — not just 33 and 34. `db/index.js` is created by Task 34, whose test requires `db/scope.js` from Tasks 31-32, and the pool re-exports the CLI imports only arrive in Task 35. Task 33 is now done.)* Its CLI block does `require("./index")`, and `db/index.js` is created by **Task 34**, which in turn needs `db/pool.js` from **Task 33**. Written now, its `--check` case would exit 1 for the wrong reason - `MODULE_NOT_FOUND` rather than a pending migration - and its apply case could not pass at all. Do Task 17 after Task 34. Everything else in Part 2 is finished, and `runMigrations` itself has no dependency on the pool.
 
 **Correction to the execution order below.** The note says to do Task 18 and "the `createEmptyDatabase` half of Task 19" before Task 10. The first half is right and the second is not: everything Task 19 appends sits below a `require("../db/migrate")`, so no part of it can load until `db/migrate.js` exists. `db/migrate.js` is created by **Task 11**. The order that actually works is **18, 10, 11, 19, 12-17** - Tasks 10 and 11 need nothing but `node:fs`, and Task 19 only needs the module to exist, not to be finished.
 
@@ -37,6 +37,7 @@ commit exists.
 | 2026-07-29 | Tasks 8-9, finishing Chunk A. `config.js` DEFAULTS pinned to the Compose block, root `npm test` wired to the core-api suite. 33 tests across three suites, all green, still with no database. | **9/48** | `d31b3b5` | Task 18 |
 | 2026-07-29 | Tasks 18 and 10. Local Postgres 16 started on 5433. `testing/database.js` pure half, and `0001_init.sql` copied from Appendix A - digest matches the plan exactly. Smoke-applied against the real cluster: 11 tables, clean. **Found the execution-order note to be half wrong**; the corrected order is recorded above. | **11/48** | `5a3c2df`, `d4a0f49` | Task 11 |
 | 2026-07-29 | Tasks 11-16 and 19. `db/migrate.js` complete except its CLI: preflight, bounded advisory lock, one-string-one-transaction apply, the four verdicts, and `migrationsStatus`. Task 19 closed green once Task 14 landed - 8 passed, 0 cancelled, from 3 and 5. 67 tests across six suites, all green against a real PostgreSQL 16. **Task 17 skipped, blocked on Tasks 33-34** (see the note above). | **18/48** | `5b465ab`, `b1301c5`, `82a293f`, `5050558`, `2ead9e0`, `f7fc4ad` | Task 20 |
+| 2026-07-29 | Tasks 33, 20, 21, 22, 23, 24. `db/pool.js`; `pretest`, which finally makes `npm --prefix apps/core-api test` run end to end; `db:reset`; the two-tenant fixture; and schema invariants S1-S7 green against the live catalogue. 105 tests, all passing. **Two more plan defects found and fixed** — see the corrections on Tasks 23 and 24. **Task 17 is still blocked, and its chain is longer than first recorded.** | **25/48** | `06022a9`, `1e7ffc6`, `8580796`, `0f7c98a`, `81589ab` | Task 25, last |
 
 ## How to pick this up
 
@@ -5473,6 +5474,8 @@ git commit -m "test(core-api): two-tenant fixture with the suspended and unassig
 
 ### Task 23: Schema invariants S1–S3 — tenant column, ownership FKs, anchors
 
+> **Correction.** The introspection query uses `array_agg(att.attname ORDER BY u.ord)`. `attname` is the `name` type, so the result is `name[]` (OID 1003), and node-postgres has no parser for it — it hands back the raw string `"{id,company_id}"`, every `.join()` on it throws, and the run reports five *cancelled* tests rather than a readable failure. Cast it: `array_agg(att.attname::text ORDER BY u.ord)`.
+
 `0001_init.sql` already exists when this task runs, so the rules cannot be driven red by the DDL. They are therefore written as four **pure predicate functions** with a permanent synthetic negative fixture each: a hand-built catalogue containing the violations the rule exists to catch, asserted to be returned. The predicates are what this task builds and what the first failing run is missing; applying them to the real catalogue is one extra line per rule.
 
 **Files:**
@@ -5789,11 +5792,13 @@ git commit -m "test(core-api): assert tenant columns, composite FKs and anchors 
 
 ### Task 24: Schema invariants S4–S7 — digests, triggers, ledger, no plaintext columns
 
+> **Correction.** Step 1 says to append the four tests to the end of the file. They read `db` and `catalog`, which are scoped inside the `describe("schema invariants")` block, so appended there they fail with `db is not defined`. Insert them **before that block's closing brace**. The four predicates in Step 3 are function declarations and do belong at the end of the file.
+
 **Files:**
 - Modify: `apps/core-api/test/schema-invariants.test.js` (append; extend the `require`)
 - Test: `apps/core-api/test/schema-invariants.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 First, insert these four tests **inside the existing `describe("schema invariants", …)` block, immediately before its closing `});`**:
 
@@ -5936,12 +5941,12 @@ test("S7's rule rejects columns named like the plaintext they must never hold", 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/schema-invariants.test.js`
 Expected: FAIL with `ReferenceError: hashColumnViolations is not defined`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Change the top-level `require` of `../testing/database` — S6 compares the ledger against the same disk-side reader the template staleness check uses, so a divergence between the two shows up here as well as in a permanent rebuild:
 
@@ -6011,11 +6016,11 @@ function plaintextShapedColumns(tables) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/schema-invariants.test.js`  Expected: PASS (17 tests; 8 pure, 9 database-backed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/schema-invariants.test.js
