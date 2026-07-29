@@ -8657,7 +8657,7 @@ git commit -m "feat(core-api): translate pg errors by SQLSTATE at the choke poin
 - Create: `apps/core-api/db/health.js`
 - Test: `apps/core-api/test/db-health.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/db-health.test.js`:
 
@@ -8819,12 +8819,12 @@ test("waitForDatabase really goes through the pool, and does not retry a closed 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/db-health.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/health'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/health.js`. The `28P01` message points at `apps/core-api/README.md`, not
 `infra/README.md`: the README this plan creates is where the "Rotating database passwords" section
@@ -8938,11 +8938,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-health.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/health.js apps/core-api/test/db-health.test.js
@@ -8963,7 +8963,7 @@ left to a later plan.
 - Modify: `apps/core-api/db/health.js` (one require at the top, one function above `module.exports`, replace the export line)
 - Test: `apps/core-api/test/db-health.test.js` (change the require block, append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Change the destructured `require("../db/health")` block at the top of
 `apps/core-api/test/db-health.test.js` to include `checkReadiness`:
@@ -9043,12 +9043,12 @@ describe("readiness against a real database", { skip: skipDatabaseTests() }, () 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/db-health.test.js`
 Expected: FAIL with `TypeError: checkReadiness is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Two edits to `apps/core-api/db/health.js`.
 
@@ -9082,14 +9082,14 @@ async function checkReadiness({ migrationsDir }) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-health.test.js`  Expected: PASS.
 With `CORE_API_TEST_DATABASE_URL` set, confirm the three subtests under `readiness against a real
 database` report as run; with `CORE_API_SKIP_DB_TESTS=1` they report as visible skips and the pure
 tests still pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/health.js apps/core-api/test/db-health.test.js
