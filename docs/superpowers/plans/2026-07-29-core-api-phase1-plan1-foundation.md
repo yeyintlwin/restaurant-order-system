@@ -16,7 +16,9 @@
 
 ## Execution log
 
-**Status: 11 of 48 tasks done.** The next thing to do is **Task 11**, then Task 19, then Tasks 12-17. A local Postgres is required from here on.
+**Status: 18 of 48 tasks done.** The next thing to do is **Task 20**. A local Postgres is required from here on.
+
+**Task 17 is BLOCKED and deliberately skipped.** Its CLI block does `require("./index")`, and `db/index.js` is created by **Task 34**, which in turn needs `db/pool.js` from **Task 33**. Written now, its `--check` case would exit 1 for the wrong reason - `MODULE_NOT_FOUND` rather than a pending migration - and its apply case could not pass at all. Do Task 17 after Task 34. Everything else in Part 2 is finished, and `runMigrations` itself has no dependency on the pool.
 
 **Correction to the execution order below.** The note says to do Task 18 and "the `createEmptyDatabase` half of Task 19" before Task 10. The first half is right and the second is not: everything Task 19 appends sits below a `require("../db/migrate")`, so no part of it can load until `db/migrate.js` exists. `db/migrate.js` is created by **Task 11**. The order that actually works is **18, 10, 11, 19, 12-17** - Tasks 10 and 11 need nothing but `node:fs`, and Task 19 only needs the module to exist, not to be finished.
 
@@ -34,6 +36,7 @@ commit exists.
 | 2026-07-29 | Tasks 5-7. `env-file.js` and the whole of `config.js`. Task 7 was applied as targeted additions rather than the full-file replacement it prescribes; the diff was five functions plus the returned keys. 28 tests across three suites, all green. **Note:** `npm --prefix apps/core-api test` cannot run until Task 20 creates `scripts/setup-template-db.js`, because `pretest` invokes it. Until then run `node --test apps/core-api/test/*.test.js` from the repository root. | **7/48** | `bfbae8c`, `818b6db`, `d6ae37e` | Task 8 |
 | 2026-07-29 | Tasks 8-9, finishing Chunk A. `config.js` DEFAULTS pinned to the Compose block, root `npm test` wired to the core-api suite. 33 tests across three suites, all green, still with no database. | **9/48** | `d31b3b5` | Task 18 |
 | 2026-07-29 | Tasks 18 and 10. Local Postgres 16 started on 5433. `testing/database.js` pure half, and `0001_init.sql` copied from Appendix A - digest matches the plan exactly. Smoke-applied against the real cluster: 11 tables, clean. **Found the execution-order note to be half wrong**; the corrected order is recorded above. | **11/48** | `5a3c2df`, `d4a0f49` | Task 11 |
+| 2026-07-29 | Tasks 11-16 and 19. `db/migrate.js` complete except its CLI: preflight, bounded advisory lock, one-string-one-transaction apply, the four verdicts, and `migrationsStatus`. Task 19 closed green once Task 14 landed - 8 passed, 0 cancelled, from 3 and 5. 67 tests across six suites, all green against a real PostgreSQL 16. **Task 17 skipped, blocked on Tasks 33-34** (see the note above). | **18/48** | `5b465ab`, `b1301c5`, `82a293f`, `5050558`, `2ead9e0`, `f7fc4ad` | Task 20 |
 
 ## How to pick this up
 
