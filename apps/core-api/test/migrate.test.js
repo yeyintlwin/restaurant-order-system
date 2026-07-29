@@ -260,3 +260,89 @@ test("waits for the lock, refuses inside the bound, and releases it", { skip: sk
     }
   });
 });
+
+// --- applying ---------------------------------------------------------------
+
+test("applies 0001_init.sql once and re-runs as a no-op", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_apply", async (database) => {
+    await withSession(database, async (session) => {
+      const log = collectLog();
+      const first = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
+      assert.deepEqual(first.applied, ["0001_init.sql"]);
+      assert.deepEqual(first.skipped, []);
+
+      const ledger = await database.unscoped(
+        "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations"
+      );
+      assert.equal(ledger.rowCount, 1);
+      assert.equal(ledger.rows[0].filename, "0001_init.sql");
+      assert.equal(ledger.rows[0].checksum.length, 32);
+      assert.ok(ledger.rows[0].duration_ms >= 0);
+      const appliedAt = ledger.rows[0].applied_at.getTime();
+
+      const second = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
+      assert.deepEqual(second.applied, []);
+      assert.deepEqual(second.skipped, ["0001_init.sql"]);
+      const reread = await database.unscoped(
+        "SELECT applied_at FROM schema_migrations WHERE filename = '0001_init.sql'"
+      );
+      assert.equal(reread.rows[0].applied_at.getTime(), appliedAt);
+    });
+
+    // 0001's closing grant block is guarded on pg_roles, so this is only true if
+    // the preflight created core_api_app BEFORE the file was applied.
+    const granted = await database.unscoped(
+      "SELECT has_table_privilege('core_api_app', 'companies', 'INSERT') AS granted"
+    );
+    assert.equal(granted.rows[0].granted, true);
+  });
+});
+
+test("sends each file as ONE string, so dollar-quoted bodies survive", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_nosplit", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory: MIGRATIONS_DIR, log: collectLog() });
+    });
+
+    const routine = await database.unscoped(
+      "SELECT prokind FROM pg_proc WHERE proname = 'set_updated_at'"
+    );
+    assert.equal(routine.rowCount, 1, "set_updated_at is missing: the file was split on ';'");
+
+    const id = "aaaaaaaa-0000-4000-8000-000000000001";
+    await database.unscoped("INSERT INTO companies (id, name) VALUES ($1, 'Split Regression')", [id]);
+    const before = await database.unscoped("SELECT updated_at FROM companies WHERE id = $1", [id]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await database.unscoped("UPDATE companies SET name = 'Split Regression 2' WHERE id = $1", [id]);
+    const later = await database.unscoped("SELECT updated_at FROM companies WHERE id = $1", [id]);
+    assert.ok(
+      later.rows[0].updated_at > before.rows[0].updated_at,
+      "updated_at did not move: set_updated_at's body was truncated at the first ';'"
+    );
+  });
+});
+
+test("a failing file rolls back whole, leaving no row and no partial table", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_rollback", async (database) => {
+    const directory = makeMigrationsDirectory({
+      "0001_broken.sql": [
+        "CREATE TABLE early_bird (id integer PRIMARY KEY);",
+        "CREATE TABLE oops (id integer PRIMARY KEY, bad no_such_type);",
+        ""
+      ].join("\n")
+    });
+    await withSession(database, async (session) => {
+      await assert.rejects(
+        () => runMigrations(session, { directory, log: collectLog() }),
+        /migration 0001_broken\.sql failed and was rolled back/
+      );
+    });
+    const probe = await database.unscoped(
+      "SELECT to_regclass('public.early_bird') AS early, to_regclass('public.oops') AS oops"
+    );
+    assert.equal(probe.rows[0].early, null);
+    assert.equal(probe.rows[0].oops, null);
+    const ledger = await database.unscoped("SELECT count(*)::int AS n FROM schema_migrations");
+    assert.equal(ledger.rows[0].n, 0);
+  });
+});

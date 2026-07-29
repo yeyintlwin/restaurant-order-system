@@ -3347,7 +3347,7 @@ git commit -m "feat(core-api): serialise migrations on a bounded advisory lock" 
 - Modify: `apps/core-api/test/migrate.test.js` (append three cases)
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/migrate.test.js`:
 
@@ -3445,14 +3445,14 @@ The second case is the semicolon-splitting regression and needs **both** halves:
 that `SET LOCAL lock_timeout` at `0001:24` is genuinely inside a transaction block
 rather than a silently ignored no-op.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL, 3 failures — `Expected values to be strictly deep-equal:` with
 `+ []` against `- [ '0001_init.sql' ]`; `set_updated_at is missing: the file was
 split on ';'` (`0 !== 1`); and `Missing expected rejection.`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/migrate.js`, add both functions immediately after
 `acquireMigrationLock`:
@@ -3536,11 +3536,11 @@ async function runMigrations(client, options) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (12 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js
@@ -4652,11 +4652,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/testing-database-clone.test.js`  Expected: PASS (8 tests, with `CORE_API_TEST_DATABASE_URL` exported; without it the three pure tests pass and the `describe` block fails loudly, which is the designed behaviour)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/testing/database.js apps/core-api/test/testing-database-clone.test.js

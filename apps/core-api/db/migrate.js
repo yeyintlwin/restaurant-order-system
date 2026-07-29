@@ -129,6 +129,40 @@ async function acquireMigrationLock(client, waitMs, now, wait) {
   }
 }
 
+async function applyMigration(client, file, now) {
+  const startedAt = now();
+  // The explicit BEGIN is what makes the file's own SET LOCAL lock_timeout and
+  // SET LOCAL statement_timeout mean anything -- SET LOCAL outside a transaction
+  // block is ignored.
+  await client.query("BEGIN");
+  try {
+    // ONE string, NO bound parameters. node-postgres uses the simple query
+    // protocol only when nothing is bound, and that is the only protocol that
+    // accepts several statements -- so the file is never split on semicolons,
+    // which would cut the dollar-quoted bodies in 0001_init.sql in half. Bind
+    // even one parameter alongside the file text and it switches to the extended
+    // protocol, which raises "cannot insert multiple commands into a prepared
+    // statement"; that is why the ledger INSERT is a second, separate call.
+    await client.query(file.sql);
+    await client.query(
+      "INSERT INTO schema_migrations (filename, checksum, duration_ms) VALUES ($1, $2, $3)",
+      [file.filename, file.checksum, Math.max(0, Math.round(now() - startedAt))]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    throw new Error(`migration ${file.filename} failed and was rolled back: ${error.message}`);
+  }
+  return Math.max(0, Math.round(now() - startedAt));
+}
+
+async function readLedger(client) {
+  const { rows } = await client.query("SELECT filename, checksum FROM schema_migrations");
+  return new Map(rows.map((row) => [row.filename, Buffer.from(row.checksum)]));
+}
+
 // `client` is an already-connected, duck-typed object with .query(text, values?).
 // This function never opens, releases or closes a connection: server.js and
 // testing/database.js each open one and hand it in.
@@ -150,8 +184,21 @@ async function runMigrations(client, options) {
   await acquireMigrationLock(client, waitMs, now, wait);
   try {
     const files = readMigrationFiles(settings.directory);
-    log.info(`migrations: ${files.length} file(s) on disk`);
-    return { applied: [], skipped: [], missingFiles: [], checked: settings.check === true };
+    const ledger = await readLedger(client);
+    const applied = [];
+    const skipped = [];
+    for (const file of files) {
+      const digest = file.checksum.toString("hex").slice(0, 12);
+      if (ledger.has(file.filename)) {
+        log.info(`migration ${file.filename} sha256:${digest} already applied`);
+        skipped.push(file.filename);
+        continue;
+      }
+      const durationMs = await applyMigration(client, file, now);
+      log.info(`migration ${file.filename} sha256:${digest} applied in ${durationMs} ms`);
+      applied.push(file.filename);
+    }
+    return { applied, skipped, missingFiles: [], checked: settings.check === true };
   } finally {
     try {
       await client.query("SELECT pg_advisory_unlock($1::bigint)", [MIGRATION_ADVISORY_LOCK_KEY]);
