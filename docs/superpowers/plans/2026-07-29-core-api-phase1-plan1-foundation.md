@@ -7691,7 +7691,7 @@ git commit -m "feat(core-api): build the runtime and migration pools behind pool
 - Create: `apps/core-api/db/index.js`
 - Test: `apps/core-api/test/db-index.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/db-index.test.js`:
 
@@ -7962,12 +7962,12 @@ test("buildTenantStatement refuses a bad scope, a bad descriptor and bad params"
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/db-index.test.js`
 Expected: FAIL with `Error: Cannot find module '../db/index'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/db/index.js`:
 
@@ -8106,11 +8106,11 @@ function buildTenantStatement(scope, descriptor, params = []) {
 module.exports = { buildTenantStatement };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-index.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/index.js apps/core-api/test/db-index.test.js
@@ -8130,7 +8130,7 @@ spec 3.2 rule 1 says everything outside `db/` reaches Postgres through `db/index
 must be able to get the pool functions from here rather than reaching past the seam into `db/pool.js`.
 The transaction behaviour itself is proved by the next task, against a real database.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/db-index.test.js`:
 
@@ -8178,12 +8178,12 @@ test("db/index.js is the seam: it re-exports every db/pool.js function by identi
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/db-index.test.js`
 Expected: FAIL with `TypeError: tenantQuery is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Three edits to `apps/core-api/db/index.js`.
 
@@ -8291,11 +8291,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-index.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/index.js apps/core-api/test/db-index.test.js
