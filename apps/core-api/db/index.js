@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 
 const pool = require("./pool");
+const { ApiError, pgErrorToHttp } = require("./errors");
 const { assertTenantScope } = require("./scope");
 
 const SHOP_SCOPE_VALUES = [false, "active", "administered"];
@@ -157,6 +158,24 @@ function buildTenantStatement(scope, descriptor, params = []) {
 // choose one with nobody's company_id set.
 const transactionStorage = new AsyncLocalStorage();
 
+// err.constraint is read to pick a declared code and is NEVER serialised, which
+// keeps _key/_fkey/_check strings out of every response and decouples the API
+// vocabulary from the DDL. An undeclared constraint stays a raw error so the
+// top-level handler answers 500 rather than inventing a code.
+function translatePgError(error, conflicts) {
+  const mapped = pgErrorToHttp(error && error.code);
+  if (mapped === null) return error;
+  if (mapped.code !== null) return new ApiError(mapped.status, mapped.code);
+  const declared =
+    conflicts &&
+    error &&
+    typeof error.constraint === "string" &&
+    Object.prototype.hasOwnProperty.call(conflicts, error.constraint)
+      ? conflicts[error.constraint]
+      : null;
+  return declared === null ? error : new ApiError(mapped.status, declared);
+}
+
 // One client, one transaction, one company_id, for the whole of fn.
 async function withTenantScope(scope, fn) {
   assertTenantScope(scope);
@@ -207,7 +226,11 @@ async function tenantQuery(scope, descriptor, params = []) {
   }
 
   const { text, values } = buildTenantStatement(scope, descriptor, params);
-  return store.client.query(text, values);
+  try {
+    return await store.client.query(text, values);
+  } catch (error) {
+    throw translatePgError(error, descriptor.conflicts);
+  }
 }
 
 // Deliberately narrow: pre-tenant lookups (login, session resolution, bearer

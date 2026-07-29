@@ -14,6 +14,11 @@ const {
 const { checkReadiness, waitForDatabase } = require("./db/health");
 const { createApp } = require("./http/router");
 
+// Route modules register themselves with route() at require time. server.js is the one place
+// that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
+// module that exists but is never required cannot ship as a silently unserved route.
+require("./http/routes/health");
+
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
     const server = app.listen(port, host);

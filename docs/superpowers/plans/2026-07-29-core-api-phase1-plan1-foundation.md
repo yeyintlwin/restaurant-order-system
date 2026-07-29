@@ -8314,7 +8314,7 @@ first. Everything before this point in this area runs with no database at all.
 - Modify: `apps/core-api/db/index.js` (insert one function above `withTenantScope`, replace `tenantQuery`)
 - Test: `apps/core-api/test/db-index.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/db-index.test.js`. `skipDatabaseTests()` is **called** — passing
 the function reference itself would make every truthiness check skip the whole suite while reporting green.
@@ -8569,7 +8569,7 @@ describe("the choke point against a real database", { skip: skipDatabaseTests() 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Export a maintenance DSN first — these subtests must actually run, or the step proves nothing:
 bash `export CORE_API_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres`,
@@ -8580,7 +8580,7 @@ Expected: FAIL in `a declared constraint becomes the declared code and never lea
 `AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value: assert.ok(error instanceof ApiError)` —
 `tenantQuery` currently rethrows the raw pg error.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Two edits to `apps/core-api/db/index.js`.
 
@@ -8634,7 +8634,7 @@ async function tenantQuery(scope, descriptor, params = []) {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/db-index.test.js`  Expected: PASS.
 Confirm in the TAP output that the nine subtests under `the choke point against a real database` report
@@ -8642,7 +8642,7 @@ as **run**, not skipped — the total pass count must be above the pure-test cou
 `CORE_API_SKIP_DB_TESTS=1` instead of a database URL the same command passes with those nine as visible
 `# SKIP` lines; with neither variable set `cloneTemplate()` throws by design and the suite fails.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/index.js apps/core-api/test/db-index.test.js
@@ -11097,7 +11097,7 @@ loads but `server.js` never requires is a route the census covers and production
 - Modify: `apps/core-api/http/routes/health.js:1-END` (add `sample` to both route declarations)
 - Modify: `apps/core-api/server.js:1-END` (add the route-module require)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -11208,12 +11208,12 @@ test("server.js requires every route module, so this census covers what producti
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/route-auth.test.js`
 Expected: FAIL with two failures — `AssertionError [ERR_ASSERTION]: GET /health must declare a sample — the tenant-isolation route probe is driven off it` and `AssertionError [ERR_ASSERTION]: server.js must require("./http/routes/health")`
 
-- [ ] **Step 3: Add `sample` to both health routes**
+- [x] **Step 3: Add `sample` to both health routes**
 
 Replace `apps/core-api/http/routes/health.js` entirely:
 
@@ -11259,7 +11259,7 @@ route("GET", "/health/ready", { auth: "public", sample: {} }, async (req, res) =
 });
 ```
 
-- [ ] **Step 4: Require the route module from `server.js`**
+- [x] **Step 4: Require the route module from `server.js`**
 
 Replace `apps/core-api/server.js` entirely:
 
@@ -11373,17 +11373,17 @@ if (require.main === module) {
 }
 ```
 
-- [ ] **Step 5: Run the test and watch it pass**
+- [x] **Step 5: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/route-auth.test.js`  Expected: PASS
 
-- [ ] **Step 6: Run all five files in this area together**
+- [x] **Step 6: Run all five files in this area together**
 
 Run: `node --test apps/core-api/test/respond.test.js apps/core-api/test/router-registration.test.js apps/core-api/test/health.test.js apps/core-api/test/server-bootstrap.test.js apps/core-api/test/route-auth.test.js`
 Expected: PASS — `# fail 0` and `# skip 0`. None of these five suites touches a database, so this is
 green with Postgres stopped.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/core-api/test/route-auth.test.js apps/core-api/http/routes/health.js apps/core-api/server.js

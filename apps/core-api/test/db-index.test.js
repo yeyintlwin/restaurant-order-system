@@ -358,3 +358,251 @@ test("db/index.js is the seam: it re-exports every db/pool.js function by identi
     assert.equal(dbSeam[name], pool[name], `${name} must be the same function object as db/pool.js's`);
   }
 });
+
+const { before, after, describe } = require("node:test");
+const { ApiError } = require("../db/errors");
+const { cloneTemplate, skipDatabaseTests } = require("../testing/database");
+
+const TABLE_A1 = "aaaaaaaa-0000-4000-8000-000000000101";
+const TABLE_B1 = "bbbbbbbb-0000-4000-8000-000000000101";
+const SHOP_B1 = "bbbbbbbb-0000-4000-8000-000000000011";
+
+let db;
+
+describe("the choke point against a real database", { skip: skipDatabaseTests() }, () => {
+  before(async () => {
+    db = await cloneTemplate(__filename);
+    pool.openRuntimePool({ connectionString: db.connectionString, max: 4 });
+
+    // Seeded here rather than from testing/fixtures/two-tenant.js: this suite
+    // needs only two companies and cares about nothing else the fixture builds.
+    await db.unscoped("INSERT INTO companies (id, name) VALUES ($1, 'Company A'), ($2, 'Company B')", [
+      COMPANY_A,
+      COMPANY_B
+    ]);
+    await db.unscoped(
+      `INSERT INTO shops (id, company_id, name, time_zone, business_day_rollover_hour)
+       VALUES ($1, $3, 'A1', 'Asia/Tokyo', 6), ($2, $4, 'B1', 'Asia/Tokyo', 6)`,
+      [SHOP_A1, SHOP_B1, COMPANY_A, COMPANY_B]
+    );
+    await db.unscoped(
+      `INSERT INTO shop_tables (id, company_id, shop_id, label)
+       VALUES ($1, $3, $5, '1'), ($2, $4, $6, '1')`,
+      [TABLE_A1, TABLE_B1, COMPANY_A, COMPANY_B, SHOP_A1, SHOP_B1]
+    );
+  });
+
+  after(async () => {
+    await pool.closeAllPools();
+    await db.end();
+  });
+
+  test("the transaction sets app.company_id and reverts it when it ends", async () => {
+    const scope = adminScope();
+    const inside = await withTenantScope(scope, async () => {
+      const result = await tenantQuery(scope, {
+        sql: "SELECT current_setting('app.company_id', true) AS guc FROM shops WHERE company_id = $1 LIMIT 1",
+        shopScoped: false
+      });
+      return result.rows[0].guc;
+    });
+    assert.equal(inside, COMPANY_A);
+
+    // pool.query() would have checked out a different connection per statement,
+    // so a later RLS policy would evaluate against whatever the previous tenant
+    // left behind. SET LOCAL inside one transaction is what makes that safe.
+    const settingAfterCommit = await withUnscopedConnection(async (connection) => {
+      const result = await connection.query("SELECT current_setting('app.company_id', true) AS guc");
+      return result.rows[0].guc;
+    });
+    assert.notEqual(settingAfterCommit, COMPANY_A);
+  });
+
+  test("a scoped read sees only its own tenant, in both directions", async () => {
+    const sql = "SELECT id FROM shops WHERE company_id = $1 ORDER BY name";
+
+    const scopeA = adminScope();
+    const rowsA = await withTenantScope(scopeA, async () => (await tenantQuery(scopeA, { sql, shopScoped: false })).rows);
+    assert.deepEqual(
+      rowsA.map((row) => row.id),
+      [SHOP_A1]
+    );
+
+    const scopeB = createScope({
+      kind: "tenant",
+      userId: A_ADMIN,
+      sessionId: SESSION,
+      companyId: COMPANY_B,
+      role: "company_admin",
+      shopIds: [SHOP_B1],
+      administeredShopIds: [SHOP_B1]
+    });
+    const rowsB = await withTenantScope(scopeB, async () => (await tenantQuery(scopeB, { sql, shopScoped: false })).rows);
+    assert.deepEqual(
+      rowsB.map((row) => row.id),
+      [SHOP_B1]
+    );
+  });
+
+  test("shopScoped binds the scope's own array", async () => {
+    const scope = managerScope();
+    const rows = await withTenantScope(scope, async () =>
+      (
+        await tenantQuery(scope, {
+          sql: "SELECT id FROM shop_tables WHERE company_id = $1 AND shop_id = ANY($2)",
+          shopScoped: "active"
+        })
+      ).rows
+    );
+    assert.deepEqual(
+      rows.map((row) => row.id),
+      [TABLE_A1]
+    );
+  });
+
+  test("an INSERT is written with the scope's company_id, not the caller's", async () => {
+    const scope = adminScope();
+    const created = await withTenantScope(scope, async () => {
+      const result = await tenantQuery(
+        scope,
+        { sql: "INSERT INTO shop_tables (shop_id, label) VALUES ($2, $3) RETURNING id", shopScoped: false },
+        [SHOP_A1, "T9"]
+      );
+      return result.rows[0].id;
+    });
+
+    const owner = await db.unscoped("SELECT company_id FROM shop_tables WHERE id = $1", [created]);
+    assert.equal(owner.rows[0].company_id, COMPANY_A);
+  });
+
+  test("a throw rolls the transaction back and still releases the client", async () => {
+    const scope = adminScope();
+    await assert.rejects(
+      () =>
+        withTenantScope(scope, async () => {
+          await tenantQuery(
+            scope,
+            { sql: "INSERT INTO shop_tables (shop_id, label) VALUES ($2, $3)", shopScoped: false },
+            [SHOP_A1, "T8"]
+          );
+          throw new Error("handler exploded");
+        }),
+      /handler exploded/
+    );
+
+    const count = await db.unscoped("SELECT count(*)::int AS n FROM shop_tables WHERE label = 'T8'");
+    assert.equal(count.rows[0].n, 0);
+
+    const stats = pool.runtimePoolStats();
+    assert.equal(stats.idleCount, stats.totalCount);
+    assert.equal(stats.waitingCount, 0);
+  });
+
+  test("a declared constraint becomes the declared code and never leaks its name", async () => {
+    const scope = adminScope();
+    await assert.rejects(
+      () =>
+        withTenantScope(scope, async () =>
+          tenantQuery(
+            scope,
+            {
+              sql: "INSERT INTO shop_tables (shop_id, label) VALUES ($2, $3)",
+              shopScoped: false,
+              conflicts: { shop_tables_shop_label_active_key: "table_label_taken" }
+            },
+            [SHOP_A1, "1"]
+          )
+        ),
+      (error) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.status, 409);
+        assert.equal(error.code, "table_label_taken");
+        assert.equal(error.constraint, undefined);
+        return true;
+      }
+    );
+  });
+
+  test("an undeclared constraint and an unmapped sqlstate both stay 500-shaped", async () => {
+    const scope = adminScope();
+    await assert.rejects(
+      () =>
+        withTenantScope(scope, async () =>
+          tenantQuery(
+            scope,
+            { sql: "INSERT INTO shop_tables (shop_id, label) VALUES ($2, $3)", shopScoped: false },
+            [SHOP_A1, "1"]
+          )
+        ),
+      (error) => {
+        assert.equal(error instanceof ApiError, false);
+        assert.equal(error.code, "23505");
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () =>
+        withTenantScope(scope, async () =>
+          tenantQuery(
+            scope,
+            { sql: "SELECT id FROM shops WHERE company_id = $1 AND id = $2", shopScoped: false },
+            ["not-a-uuid"]
+          )
+        ),
+      (error) => {
+        assert.equal(error instanceof ApiError, false);
+        assert.equal(error.code, "22P02");
+        return true;
+      }
+    );
+  });
+
+  test("a nested withTenantScope joins the open transaction and refuses a different scope", async () => {
+    const scope = adminScope();
+    const joined = await withTenantScope(scope, async () =>
+      withTenantScope(
+        scope,
+        async () =>
+          (
+            await tenantQuery(scope, {
+              sql: "SELECT count(*)::int AS n FROM shops WHERE company_id = $1",
+              shopScoped: false
+            })
+          ).rows[0].n
+      )
+    );
+    assert.equal(joined, 1);
+
+    await assert.rejects(
+      () => withTenantScope(scope, async () => withTenantScope(adminScope(), async () => null)),
+      /cannot open a second scope inside an open transaction/
+    );
+    await assert.rejects(
+      () =>
+        withTenantScope(scope, async () =>
+          tenantQuery(adminScope(), { sql: "SELECT id FROM shops WHERE company_id = $1", shopScoped: false })
+        ),
+      /a different scope than the open transaction/
+    );
+  });
+
+  test("withUnscopedConnection releases its client and opens no transaction", async () => {
+    const value = await withUnscopedConnection(async (connection) => {
+      const result = await connection.query("SELECT 1 AS one");
+      return result.rows[0].one;
+    });
+    assert.equal(value, 1);
+
+    await assert.rejects(
+      () =>
+        withUnscopedConnection(async () => {
+          throw new Error("boom");
+        }),
+      /boom/
+    );
+    const stats = pool.runtimePoolStats();
+    assert.equal(stats.idleCount, stats.totalCount);
+    assert.equal(stats.waitingCount, 0);
+  });
+});
