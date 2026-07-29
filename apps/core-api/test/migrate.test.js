@@ -10,8 +10,10 @@ const { after, test } = require("node:test");
 const {
   checksumOf,
   normaliseSql,
-  readMigrationFiles
+  readMigrationFiles,
+  runMigrations
 } = require("../db/migrate");
+const { createEmptyDatabase, skipDatabaseTests } = require("../testing/database");
 
 const MIGRATIONS_DIR = path.join(__dirname, "..", "migrations");
 
@@ -32,6 +34,43 @@ function makeMigrationsDirectory(files) {
     fs.writeFileSync(path.join(directory, filename), contents);
   }
   return directory;
+}
+
+function collectLog() {
+  const infos = [];
+  const warnings = [];
+  return {
+    info: (message) => infos.push(message),
+    warn: (message) => warnings.push(message),
+    infos,
+    warnings
+  };
+}
+
+// createEmptyDatabase() returns the frozen Handle: { name, connectionString,
+// unscoped(text, params), connect(), resetFixtures(), end(), drop() }. drop()
+// closes the handle's own pool, but it CANNOT drop a database that still has a
+// dedicated connect() session open -- so every session is ended by withSession.
+async function withDatabase(label, run) {
+  const database = await createEmptyDatabase(label);
+  try {
+    return await run(database);
+  } finally {
+    await database.drop();
+  }
+}
+
+// A DEDICATED connection, not a pool checkout: the advisory lock is session-level
+// and each file's BEGIN/COMMIT must land on one backend. The variable is called
+// `session`, never `client`, so source-structure C2 (which bans /\b(?:pool|client)
+// \.query\s*\(/ outside db/) cannot flag this file whatever the walker's scope.
+async function withSession(database, run) {
+  const session = await database.connect();
+  try {
+    return await run(session);
+  } finally {
+    await session.end();
+  }
 }
 
 // --- the migration set on disk ---------------------------------------------
@@ -106,4 +145,72 @@ test("a CRLF checkout hashes identically to an LF one", () => {
     normaliseSql(Buffer.from("a\r\nb", "utf8")),
     Buffer.from("a\nb", "utf8")
   );
+});
+
+// --- preflight --------------------------------------------------------------
+
+test("refuses a PostgreSQL older than 14 before it touches anything else", async () => {
+  const asked = [];
+  const stub = {
+    query: async (text) => {
+      asked.push(text);
+      if (text === "SHOW server_version_num") {
+        return { rows: [{ server_version_num: "130010" }] };
+      }
+      throw new Error(`unexpected query: ${text}`);
+    }
+  };
+  await assert.rejects(
+    () => runMigrations(stub, { directory: MIGRATIONS_DIR, log: collectLog() }),
+    /server_version_num 130010 is below the required 140000/
+  );
+  assert.deepEqual(asked, ["SHOW server_version_num"]);
+});
+
+test("creates the ledger before it reads any file", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_ledger", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory: makeMigrationsDirectory({}), log: collectLog() });
+    });
+    const columns = await database.unscoped(
+      "SELECT column_name FROM information_schema.columns " +
+      "WHERE table_name = 'schema_migrations' ORDER BY column_name"
+    );
+    assert.deepEqual(
+      columns.rows.map((row) => row.column_name),
+      ["applied_at", "checksum", "duration_ms", "filename"]
+    );
+  });
+});
+
+test("ensures core_api_app with the database name derived in SQL", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_role", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, {
+        directory: makeMigrationsDirectory({}),
+        appRolePassword: "rotate-me-please-0001",
+        log: collectLog()
+      });
+    });
+
+    const role = await database.unscoped(
+      "SELECT rolcanlogin FROM pg_roles WHERE rolname = 'core_api_app'"
+    );
+    assert.equal(role.rowCount, 1);
+    assert.equal(role.rows[0].rolcanlogin, true);
+
+    // A hardcoded REVOKE ALL ON DATABASE core would have raised 3D000 here: this
+    // database is named after the test file, not "core".
+    assert.notEqual(database.name, "core");
+    const acl = await database.unscoped(
+      "SELECT COALESCE(datacl::text, '') AS acl FROM pg_database WHERE datname = current_database()"
+    );
+    const entries = acl.rows[0].acl.replace(/^\{|\}$/g, "").split(",").filter(Boolean);
+    assert.equal(
+      entries.some((entry) => entry.startsWith("=")),
+      false,
+      "PUBLIC still holds database privileges"
+    );
+    assert.equal(entries.some((entry) => entry.startsWith("core_api_app=")), true);
+  });
 });

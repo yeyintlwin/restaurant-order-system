@@ -2888,7 +2888,7 @@ git commit -m "feat(core-api): validate migration filenames and hash CRLF-normal
 - Modify: `apps/core-api/test/migrate.test.js:1-35` (the header) and append three cases
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace lines 1-35 of `apps/core-api/test/migrate.test.js` — everything from
 `"use strict";` down to and including the closing `}` of `makeMigrationsDirectory`
@@ -3047,12 +3047,12 @@ The version case uses a stub with a `query` method — no database at all — an
 `assert.deepEqual(asked, [...])` is the real assertion: it proves the version gate
 runs **before** the role, the ledger and the lock.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL, 3 failures, each `TypeError: runMigrations is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/migrate.js`, add one constant immediately after
 `const MINIMUM_SERVER_VERSION_NUM = 140000;`:
@@ -3155,11 +3155,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (8 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js
