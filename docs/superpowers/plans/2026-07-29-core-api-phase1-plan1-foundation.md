@@ -9141,7 +9141,7 @@ response. This module is Tier-1 pure (spec §8.8): it touches no database, files
 - Create: `apps/core-api/http/respond.js`
 - Test: `apps/core-api/test/respond.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 // "use strict" is load-bearing here, not decoration: assigning to a frozen object is a silent
@@ -9209,12 +9209,12 @@ test("caller headers merge on top without dropping the base set", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/respond.test.js`
 Expected: FAIL with `Error: Cannot find module '../http/respond'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```js
 "use strict";
@@ -9247,11 +9247,11 @@ function sendJson(res, status, body, extraHeaders = {}) {
 module.exports = { SECURITY_HEADERS, sendJson };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/respond.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/respond.js apps/core-api/test/respond.test.js
@@ -9277,7 +9277,7 @@ cross-check costs no database.
 - Modify: `apps/core-api/http/respond.js:1-END`
 - Test: `apps/core-api/test/respond.test.js` (append to the end of the file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/respond.test.js`:
 
@@ -9375,12 +9375,12 @@ test("ERROR_MESSAGES covers exactly the ApiError vocabulary and no code degrades
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/respond.test.js`
 Expected: FAIL with `TypeError: sendError is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/http/respond.js` entirely:
 
@@ -9481,11 +9481,11 @@ function sendError(res, error, requestId, extraHeaders = {}) {
 module.exports = { SECURITY_HEADERS, ERROR_MESSAGES, sendJson, sendError };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/respond.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/respond.js apps/core-api/test/respond.test.js
@@ -9514,7 +9514,7 @@ this separate file, which `node --test` runs in its own process with its own mod
 - Create: `apps/core-api/http/router.js`
 - Test: `apps/core-api/test/router-registration.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -9591,12 +9591,12 @@ test("listRoutes() hands back a copy, so a caller cannot mutate the table", () =
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`
 Expected: FAIL with `Error: Cannot find module '../http/router'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```js
 "use strict";
@@ -9666,11 +9666,11 @@ function listRoutes() {
 module.exports = { AUTH_MODES, METHODS, route, listRoutes };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/router.js apps/core-api/test/router-registration.test.js
@@ -9703,7 +9703,7 @@ that activates them, so nobody has to re-derive why they are absent.
 - Modify: `apps/core-api/http/router.js:1-END`
 - Test: `apps/core-api/test/router-registration.test.js` (append to the end of the file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/router-registration.test.js`:
 
@@ -9797,12 +9797,12 @@ test("rule 8: a principal-keyed rate limit on a public route is fatal", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`
 Expected: FAIL with `TypeError: validateRouteTable is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/http/router.js` entirely:
 
@@ -9946,11 +9946,11 @@ function validateRouteTable(entries = routes) {
 module.exports = { AUTH_MODES, METHODS, ROLE_ALIASES, route, listRoutes, validateRouteTable };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/router.js apps/core-api/test/router-registration.test.js
@@ -9983,7 +9983,7 @@ the raw path, never the query string, never a body, never headers. This is the e
 - Modify: `apps/core-api/http/router.js:1-END`
 - Test: `apps/core-api/test/router-registration.test.js` (append to the end of the file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/router-registration.test.js`:
 
@@ -10110,12 +10110,12 @@ test("the logged requestId is the one the client was given", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`
 Expected: FAIL with `TypeError: createApp is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/http/router.js` entirely:
 
@@ -10370,11 +10370,11 @@ function createApp(deps = {}) {
 module.exports = { AUTH_MODES, METHODS, ROLE_ALIASES, route, listRoutes, validateRouteTable, createApp };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/router-registration.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/router.js apps/core-api/test/router-registration.test.js
@@ -10393,7 +10393,7 @@ true once Plan 2 starts adding dependencies to this file.
 - Create: `apps/core-api/http/routes/health.js`
 - Test: `apps/core-api/test/health.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 const assert = require("node:assert/strict");
@@ -10458,12 +10458,12 @@ test("HEAD /health is 200 with no body — this is what the container healthchec
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/health.test.js`
 Expected: FAIL with `Error: Cannot find module '../http/routes/health'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```js
 "use strict";
@@ -10478,11 +10478,11 @@ route("GET", "/health", { auth: "public" }, (req, res) => {
 });
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/health.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/routes/health.js apps/core-api/test/health.test.js
@@ -10508,7 +10508,7 @@ be made to produce on demand.
 - Modify: `apps/core-api/http/routes/health.js:1-END`
 - Test: `apps/core-api/test/health.test.js` (append to the end of the file)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/health.test.js`:
 
@@ -10589,12 +10589,12 @@ test("a probe that throws is 503 with database unreachable, not a 500", async ()
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/health.test.js`
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 404 !== 200` (the route is not registered, so the 404 tail answers)
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/http/routes/health.js` entirely:
 
@@ -10636,11 +10636,11 @@ route("GET", "/health/ready", { auth: "public" }, async (req, res) => {
 });
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/health.test.js`  Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/routes/health.js apps/core-api/test/health.test.js
