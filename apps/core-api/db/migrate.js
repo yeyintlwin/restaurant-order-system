@@ -106,6 +106,35 @@ async function ensureAppRole(client, password) {
   await client.query(`ALTER ROLE ${APP_ROLE} LOGIN PASSWORD ${rows[0].literal}`);
 }
 
+async function readLedgerIfPresent(client) {
+  const present = await client.query(
+    "SELECT to_regclass('public.schema_migrations') IS NOT NULL AS present"
+  );
+  if (present.rows[0].present !== true) return new Map();
+  return readLedger(client);
+}
+
+// The readiness half of GET /health/ready. Unlike runMigrations this RETURNS its
+// verdict: a probe that throws on 'pending' cannot report 'pending'. A ledger row
+// with no file on disk is deliberately NOT a verdict here either -- it is the
+// rolled-back-image case, which the runner only warns about.
+async function migrationsStatus(client, directory) {
+  const ledger = await readLedgerIfPresent(client);
+  const files = readMigrationFiles(directory);
+  let pending = false;
+  for (const file of files) {
+    const appliedChecksum = ledger.get(file.filename);
+    if (!appliedChecksum) {
+      pending = true;
+      continue;
+    }
+    // Mismatch outranks pending: it means history was edited, which is the more
+    // serious signal and the one an operator must see first.
+    if (!appliedChecksum.equals(file.checksum)) return "checksum_mismatch";
+  }
+  return pending ? "pending" : "current";
+}
+
 // pg_try_advisory_lock in a bounded loop rather than the blocking
 // pg_advisory_lock: a blocking call against an orphaned lock (a cancelled ssh
 // heredoc leaves one) hangs the container forever with one log line, and
@@ -260,6 +289,7 @@ module.exports = {
   MINIMUM_SERVER_VERSION_NUM,
   SCHEMA_MIGRATIONS_DDL,
   checksumOf,
+  migrationsStatus,
   normaliseSql,
   readMigrationFiles,
   runMigrations

@@ -10,6 +10,7 @@ const { after, test } = require("node:test");
 const {
   MIGRATION_ADVISORY_LOCK_KEY,
   checksumOf,
+  migrationsStatus,
   normaliseSql,
   readMigrationFiles,
   runMigrations
@@ -427,5 +428,57 @@ test("check mode applies nothing and fails on a pending file", { skip: skipDatab
     assert.equal(probe.rows[0].present, null);
     const ledger = await database.unscoped("SELECT count(*)::int AS n FROM schema_migrations");
     assert.equal(ledger.rows[0].n, 0);
+  });
+});
+
+// --- the readiness verdict --------------------------------------------------
+
+test("migrationsStatus reports current when every file is applied", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_status_current", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory: MIGRATIONS_DIR, log: collectLog() });
+      assert.equal(await migrationsStatus(session, MIGRATIONS_DIR), "current");
+    });
+  });
+});
+
+test("migrationsStatus reports pending for a file with no ledger row", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_status_pending", async (database) => {
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory: makeMigrationsDirectory({}), log: collectLog() });
+      const directory = makeMigrationsDirectory({
+        "0001_later.sql": "CREATE TABLE later (id integer PRIMARY KEY);\n"
+      });
+      assert.equal(await migrationsStatus(session, directory), "pending");
+    });
+  });
+});
+
+test("migrationsStatus reports checksum_mismatch when the ledger disagrees", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_status_mismatch", async (database) => {
+    const directory = makeMigrationsDirectory({
+      "0001_drifting.sql": "CREATE TABLE drifting (id integer PRIMARY KEY);\n"
+    });
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory, log: collectLog() });
+      assert.equal(await migrationsStatus(session, directory), "current");
+      await database.unscoped(
+        "UPDATE schema_migrations SET checksum = decode(repeat('00', 32), 'hex') WHERE filename = $1",
+        ["0001_drifting.sql"]
+      );
+      // It RETURNS the verdict. A throw here would make /health/ready 500 on the
+      // one condition it exists to describe.
+      assert.equal(await migrationsStatus(session, directory), "checksum_mismatch");
+    });
+  });
+});
+
+test("migrationsStatus reports pending on a database that has never migrated", { skip: skipDatabaseTests() }, async () => {
+  // The to_regclass guard: schema_migrations does not exist yet, and a bare
+  // SELECT would raise 42P01 and be misread by checkReadiness as 'unreachable'.
+  await withDatabase("migrate_status_fresh", async (database) => {
+    await withSession(database, async (session) => {
+      assert.equal(await migrationsStatus(session, MIGRATIONS_DIR), "pending");
+    });
   });
 });

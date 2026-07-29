@@ -3782,7 +3782,7 @@ returns the same judgement as one of three words. `db/health.js`'s
 `checkReadiness()` is its only consumer, and the closed vocabulary of spec §6.3.6
 (`current|pending|checksum_mismatch`) is unreachable without it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace the `require("../db/migrate")` destructuring block with:
 
@@ -3853,12 +3853,12 @@ test("migrationsStatus reports pending on a database that has never migrated", {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL, 4 failures, each `TypeError: migrationsStatus is not a function`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/migrate.js`, add both functions immediately after
 `readLedger`:
@@ -3910,11 +3910,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (20 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js
