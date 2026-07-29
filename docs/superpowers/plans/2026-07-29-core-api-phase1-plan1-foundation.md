@@ -3176,7 +3176,7 @@ git commit -m "feat(core-api): migration preflight - version gate, app role, led
 - Modify: `apps/core-api/test/migrate.test.js:10-15` (the `require("../db/migrate")` block) and append one case
 - Test: `apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace the `require("../db/migrate")` destructuring block with:
 
@@ -3242,13 +3242,13 @@ test("waits for the lock, refuses inside the bound, and releases it", { skip: sk
 Acquisition and release are one test on purpose: a standalone "it releases the
 lock" case passes vacuously against a runner that never takes one.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 Expected: FAIL with `Missing expected rejection.` — the runner takes no lock, so
 it completes instead of refusing.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `apps/core-api/db/migrate.js`, add two constants immediately after
 `const MINIMUM_SERVER_VERSION_NUM = 140000;` and before `const APP_ROLE`:
@@ -3326,11 +3326,11 @@ async function runMigrations(client, options) {
 `acquireMigrationLock` is called **outside** the `try`, so a failed acquisition
 never unlocks a lock this session does not hold.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js`  Expected: PASS (9 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/db/migrate.js apps/core-api/test/migrate.test.js

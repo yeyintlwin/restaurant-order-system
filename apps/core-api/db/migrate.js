@@ -11,6 +11,8 @@ const MIGRATION_ADVISORY_LOCK_KEY = 4264071001;
 // bad name is fatal BEFORE any DDL runs, instead of failing the INSERT after it.
 const MIGRATION_FILENAME_PATTERN = /^[0-9]{4}_[a-z0-9_]+\.sql$/;
 const MINIMUM_SERVER_VERSION_NUM = 140000;
+const LOCK_WAIT_MS = 60000;
+const LOCK_RETRY_MS = 1000;
 const APP_ROLE = "core_api_app";
 
 const SCHEMA_MIGRATIONS_DDL = `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -38,6 +40,10 @@ BEGIN
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}', current_database());
 END
 $$`;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Windows checks out *.sql as CRLF under the Git default autocrlf=true while
 // the image builds on Linux, so the same file would otherwise yield two digests
@@ -100,6 +106,29 @@ async function ensureAppRole(client, password) {
   await client.query(`ALTER ROLE ${APP_ROLE} LOGIN PASSWORD ${rows[0].literal}`);
 }
 
+// pg_try_advisory_lock in a bounded loop rather than the blocking
+// pg_advisory_lock: a blocking call against an orphaned lock (a cancelled ssh
+// heredoc leaves one) hangs the container forever with one log line, and
+// `restart: unless-stopped` never fires. $1::bigint is explicit because the
+// function is overloaded and an untyped parameter is a resolution risk.
+async function acquireMigrationLock(client, waitMs, now, wait) {
+  const deadline = now() + waitMs;
+  for (;;) {
+    const { rows } = await client.query(
+      "SELECT pg_try_advisory_lock($1::bigint) AS locked",
+      [MIGRATION_ADVISORY_LOCK_KEY]
+    );
+    if (rows[0].locked === true) return;
+    if (now() >= deadline) {
+      throw new Error(
+        `another instance is migrating: advisory lock ${MIGRATION_ADVISORY_LOCK_KEY} ` +
+        `was still held after ${waitMs} ms`
+      );
+    }
+    await wait(LOCK_RETRY_MS);
+  }
+}
+
 // `client` is an already-connected, duck-typed object with .query(text, values?).
 // This function never opens, releases or closes a connection: server.js and
 // testing/database.js each open one and hand it in.
@@ -109,14 +138,25 @@ async function runMigrations(client, options) {
     throw new Error("runMigrations requires options.directory");
   }
   const log = settings.log || console;
+  const now = settings.now || Date.now;
+  const wait = settings.sleep || sleep;
+  const waitMs = settings.lockWaitMs === undefined ? LOCK_WAIT_MS : settings.lockWaitMs;
 
   await assertServerVersion(client);
   await ensureAppRole(client, settings.appRolePassword);
   await client.query(SCHEMA_MIGRATIONS_DDL);
-
-  const files = readMigrationFiles(settings.directory);
-  log.info(`migrations: ${files.length} file(s) on disk in ${settings.directory}`);
-  return { applied: [], skipped: [], missingFiles: [], checked: settings.check === true };
+  // Called OUTSIDE the try, so a failed acquisition never unlocks a lock this
+  // session does not hold.
+  await acquireMigrationLock(client, waitMs, now, wait);
+  try {
+    const files = readMigrationFiles(settings.directory);
+    log.info(`migrations: ${files.length} file(s) on disk`);
+    return { applied: [], skipped: [], missingFiles: [], checked: settings.check === true };
+  } finally {
+    try {
+      await client.query("SELECT pg_advisory_unlock($1::bigint)", [MIGRATION_ADVISORY_LOCK_KEY]);
+    } catch {}
+  }
 }
 
 module.exports = {

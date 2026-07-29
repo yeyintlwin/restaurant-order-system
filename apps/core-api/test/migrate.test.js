@@ -8,6 +8,7 @@ const path = require("node:path");
 const { after, test } = require("node:test");
 
 const {
+  MIGRATION_ADVISORY_LOCK_KEY,
   checksumOf,
   normaliseSql,
   readMigrationFiles,
@@ -212,5 +213,50 @@ test("ensures core_api_app with the database name derived in SQL", { skip: skipD
       "PUBLIC still holds database privileges"
     );
     assert.equal(entries.some((entry) => entry.startsWith("core_api_app=")), true);
+  });
+});
+
+// --- the advisory lock ------------------------------------------------------
+
+test("waits for the lock, refuses inside the bound, and releases it", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_lock", async (database) => {
+    // Two INDEPENDENT sessions: the lock is session-level, so a pool checkout
+    // could hand both roles the same backend and the contention would vanish.
+    const holder = await database.connect();
+    const runner = await database.connect();
+    try {
+      await holder.query("SELECT pg_advisory_lock($1::bigint)", [MIGRATION_ADVISORY_LOCK_KEY]);
+
+      // A fake clock: the bound is exercised in full without a real 60 s wait.
+      let clock = 0;
+      const naps = [];
+      await assert.rejects(
+        () => runMigrations(runner, {
+          directory: MIGRATIONS_DIR,
+          log: collectLog(),
+          lockWaitMs: 3000,
+          now: () => clock,
+          sleep: async (ms) => {
+            naps.push(ms);
+            clock += ms;
+          }
+        }),
+        /another instance is migrating/
+      );
+      assert.deepEqual(naps, [1000, 1000, 1000], "the runner must retry once a second, not fail on the first try");
+      const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
+      assert.equal(probe.rows[0].present, null);
+
+      await holder.query("SELECT pg_advisory_unlock($1::bigint)", [MIGRATION_ADVISORY_LOCK_KEY]);
+      await runMigrations(runner, { directory: makeMigrationsDirectory({}), log: collectLog() });
+      const retaken = await holder.query(
+        "SELECT pg_try_advisory_lock($1::bigint) AS locked",
+        [MIGRATION_ADVISORY_LOCK_KEY]
+      );
+      assert.equal(retaken.rows[0].locked, true, "the runner did not release the advisory lock");
+    } finally {
+      await runner.end();
+      await holder.end();
+    }
   });
 });
