@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { startupConfiguration, ConfigurationError } = require("../config");
+const { startupConfiguration, ConfigurationError, DEFAULTS } = require("../config");
 
 // The literal recipe from spec 9.9 "Local development". Every case below starts
 // from one of these two environments and breaks exactly one thing, so a failure
@@ -363,4 +363,89 @@ test("SESSION_ABSOLUTE_SECONDS must strictly exceed SESSION_IDLE_SECONDS", () =>
     })).sessionAbsoluteSeconds,
     601
   );
+});
+
+// --- the Compose contract ---------------------------------------------------
+// docker-compose.yml is Plan 5. Until it lands, these two literals ARE the
+// contract: they are copied character for character from the core-api service's
+// `environment:` block in spec 9.1. When the compose file arrives, replace them
+// with a parse of the real file; the assertions below do not change.
+
+const COMPOSE_CORE_API_ENVIRONMENT_KEYS = [
+  "PORT", "HOST", "TZ", "API_PUBLIC_ORIGIN", "TERMINAL_ALLOWED_ORIGINS", "TRUSTED_PROXY_HOPS",
+  "SESSION_IDLE_SECONDS", "SESSION_ABSOLUTE_SECONDS", "PAIRING_CODE_TTL_SECONDS",
+  "TERMINAL_TOKEN_TTL_SECONDS", "LOGIN_RATE_PER_MINUTE", "LOGIN_TIME_BUDGET_MS", "SCRYPT_SLOTS",
+  "PAIR_RATE_PER_MINUTE", "ADMIN_MINT_RATE_PER_10MIN", "PAIRING_MINT_RATE_PER_10MIN",
+  "PASSWORD_ABUSE_THRESHOLD", "ROTATE_RATE_PER_HOUR", "AUDIT_RETENTION_DAYS", "DB_POOL_MAX"
+];
+
+const COMPOSE_DEFAULTS = {
+  PORT: "3200",
+  HOST: "0.0.0.0",
+  TERMINAL_ALLOWED_ORIGINS: "",
+  SESSION_IDLE_SECONDS: "28800",
+  SESSION_ABSOLUTE_SECONDS: "604800",
+  PAIRING_CODE_TTL_SECONDS: "900",
+  TERMINAL_TOKEN_TTL_SECONDS: "7776000",
+  LOGIN_RATE_PER_MINUTE: "30",
+  LOGIN_TIME_BUDGET_MS: "400",
+  SCRYPT_SLOTS: "2",
+  PAIR_RATE_PER_MINUTE: "20",
+  ADMIN_MINT_RATE_PER_10MIN: "20",
+  PAIRING_MINT_RATE_PER_10MIN: "30",
+  PASSWORD_ABUSE_THRESHOLD: "5",
+  ROTATE_RATE_PER_HOUR: "5",
+  AUDIT_RETENTION_DAYS: "365",
+  DB_POOL_MAX: "8"
+};
+
+// The three keys Compose sets that config.js deliberately does NOT default, each
+// with the reason stated so the exclusion is a decision rather than a hole.
+const NOT_DEFAULTED_IN_CODE = {
+  TZ: "a process concern (log timestamps, now(), psql output); config.js exposes no field",
+  API_PUBLIC_ORIGIN: "required with no default: a default would let a misconfigured box accept logins for the wrong origin",
+  TRUSTED_PROXY_HOPS: "required under NODE_ENV=production; the development default is 0, deliberately not Compose's 1"
+};
+
+function camelCaseOf(name) {
+  return name
+    .toLowerCase()
+    .split("_")
+    .map((part, index) => (index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join("");
+}
+
+test("config.js defaults every knob to the value the Compose file sets", () => {
+  assert.deepEqual(DEFAULTS, COMPOSE_DEFAULTS);
+  assert.ok(Object.isFrozen(DEFAULTS));
+});
+
+test("the Compose keys config.js does not default are a stated, closed list", () => {
+  assert.deepEqual(
+    [...Object.keys(COMPOSE_DEFAULTS), ...Object.keys(NOT_DEFAULTED_IN_CODE)].sort(),
+    [...COMPOSE_CORE_API_ENVIRONMENT_KEYS].sort()
+  );
+  for (const [variable, reason] of Object.entries(NOT_DEFAULTED_IN_CODE)) {
+    assert.ok(reason.length > 0, `${variable} needs a stated reason`);
+  }
+});
+
+test("the defaults table is what config.js actually applies", () => {
+  // Spelling every default out explicitly must produce a config identical to
+  // leaving them all unset. A correct DEFAULTS table the parser ignores fails
+  // here and nowhere else.
+  assert.deepEqual(
+    startupConfiguration(DEV_ENV),
+    startupConfiguration({ ...DEV_ENV, ...COMPOSE_DEFAULTS })
+  );
+});
+
+test("every defaulted variable has a config field named by the mechanical camelCase rule", () => {
+  const config = startupConfiguration(DEV_ENV);
+  for (const name of Object.keys(DEFAULTS)) {
+    assert.ok(
+      Object.hasOwn(config, camelCaseOf(name)),
+      `config has no "${camelCaseOf(name)}" field for ${name}`
+    );
+  }
 });

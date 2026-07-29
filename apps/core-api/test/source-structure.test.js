@@ -129,3 +129,24 @@ test("the core-api README carries the runbook entries the definition of done gre
   assert.match(readme, /docker run -d --name core-db-dev/);
   assert.match(readme, /127\.0\.0\.1:5433:5432/);
 });
+
+test("C11 - the repository test script runs the core-api suite", () => {
+  const rootPackage = readJson(repoRoot, "package.json");
+
+  // deploy.yml is both the test gate and the deployer; a core-api suite the root
+  // script does not invoke is a suite nothing runs before a push reaches the box.
+  assert.match(rootPackage.scripts.test, /apps\/core-api/);
+  assert.match(rootPackage.scripts.test, /npm --prefix apps\/core-api test/);
+
+  // The three existing suites must survive the edit.
+  for (const existing of [
+    "npm --prefix packages/epaper-hub-sdk test",
+    "npm --prefix apps/epaper-hub test",
+    "npm --prefix apps/customer-order test"
+  ]) {
+    assert.ok(
+      rootPackage.scripts.test.includes(existing),
+      `root scripts.test no longer runs "${existing}"`
+    );
+  }
+});

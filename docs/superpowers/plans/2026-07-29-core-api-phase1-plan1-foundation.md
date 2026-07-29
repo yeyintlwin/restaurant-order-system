@@ -16,7 +16,7 @@
 
 ## Execution log
 
-**Status: 7 of 48 tasks done.** The next thing to do is **Task 8**.
+**Status: 9 of 48 tasks done — Chunk A complete.** The next thing to do is **Task 18**, then Task 19 up to `createEmptyDatabase`, and only then Task 10. See "Execution order" below. A local Postgres is required from here on.
 
 Append one row per working session. Record the last task actually finished — a
 task counts as finished only when all five of its steps are ticked and its
@@ -30,6 +30,7 @@ commit exists.
 | 2026-07-29 | Task 3. `.env.example` — the variables with no code default, every credential left empty. Confirmed `.env.example` is tracked while `apps/core-api/.env` is ignored. | **3/48** | `7b5bf6c` | Task 4 |
 | 2026-07-29 | Task 4. Operator README. **Corrected a defect in the task:** the quoted `28P01` message pointed at `apps/core-api/README.md 'Rotating database passwords'`, but the heading lives in `apps/core-api/README.md`. `db/health.js` (Task 37) copies that string, so the pointer was fixed here before it could propagate, and the test now asserts both the right path and the absence of the wrong one. | **4/48** | `18f822b` | Task 5 |
 | 2026-07-29 | Tasks 5-7. `env-file.js` and the whole of `config.js`. Task 7 was applied as targeted additions rather than the full-file replacement it prescribes; the diff was five functions plus the returned keys. 28 tests across three suites, all green. **Note:** `npm --prefix apps/core-api test` cannot run until Task 20 creates `scripts/setup-template-db.js`, because `pretest` invokes it. Until then run `node --test apps/core-api/test/*.test.js` from the repository root. | **7/48** | `bfbae8c`, `818b6db`, `d6ae37e` | Task 8 |
+| 2026-07-29 | Tasks 8-9, finishing Chunk A. `config.js` DEFAULTS pinned to the Compose block, root `npm test` wired to the core-api suite. 33 tests across three suites, all green, still with no database. | **9/48** | see the commit that carries this row | Task 18 |
 
 ## How to pick this up
 
@@ -1982,7 +1983,7 @@ fails when the two disagree. This task extracts the inline defaults into an expo
 - Modify: `apps/core-api/test/config.test.js:4` (import `DEFAULTS`) and append
 - Modify: `apps/core-api/config.js` (complete replacement below)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 First replace line 4 of `apps/core-api/test/config.test.js` with:
 
@@ -2079,13 +2080,13 @@ test("every defaulted variable has a config field named by the mechanical camelC
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/config.test.js`
 
 Expected: FAIL in `config.js defaults every knob to the value the Compose file sets` with `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` showing `+ undefined` against the expected table — `DEFAULTS` is not exported yet. (`every defaulted variable has a config field…` fails alongside it with `TypeError: Cannot convert undefined or null to object` from `Object.keys(DEFAULTS)`.)
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `apps/core-api/config.js` in full:
 
@@ -2430,11 +2431,11 @@ function startupConfiguration(env) {
 module.exports = { startupConfiguration, ConfigurationError, DEFAULTS };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/config.test.js`  Expected: PASS (25 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/config.js apps/core-api/test/config.test.js
@@ -2461,7 +2462,7 @@ test-harness area asserts it as part of C11's neighbourhood and never edits it.
 - Modify: `package.json:8`
 - Test: `apps/core-api/test/source-structure.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/source-structure.test.js`:
 
@@ -2488,13 +2489,13 @@ test("C11 - the repository test script runs the core-api suite", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /apps\/core-api/. Input:` followed by the current script `'npm --prefix packages/epaper-hub-sdk test && npm --prefix apps/epaper-hub test && npm --prefix apps/customer-order test'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Replace `package.json` at the repository root:
 
@@ -2513,7 +2514,7 @@ Replace `package.json` at the repository root:
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`  Expected: PASS (5 tests)
 
@@ -2522,7 +2523,7 @@ Follow-up, once the test-harness area has committed
 and confirm it is green and its output includes `apps/core-api`. That is spec §12's
 "npm test at the repo root is green and its output includes apps/core-api" item.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json apps/core-api/test/source-structure.test.js

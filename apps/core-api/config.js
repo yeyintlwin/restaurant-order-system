@@ -24,6 +24,41 @@ const BIND_ADDRESSES = ["127.0.0.1", "::1", "0.0.0.0"];
 
 const UNBOUNDED = Number.MAX_SAFE_INTEGER;
 
+/**
+ * The default for every variable docker-compose.yml also sets, stored as the RAW
+ * STRING Compose sets so test/config.test.js can compare this table to the Compose
+ * block character for character. These values are the load-bearing ones: the
+ * Compose entries are documentation, which is what lets `node server.js` with only
+ * a .env file behave identically to the container.
+ *
+ * Three Compose keys are deliberately absent, and the test asserts that exact
+ * exclusion list:
+ *   TZ                 - a process concern; config.js exposes no field for it
+ *   API_PUBLIC_ORIGIN  - required; a default would let a misconfigured box accept
+ *                        logins for the wrong origin
+ *   TRUSTED_PROXY_HOPS - required in production; the development default is 0,
+ *                        deliberately not Compose's 1
+ */
+const DEFAULTS = Object.freeze({
+  PORT: "3200",
+  HOST: "0.0.0.0",
+  TERMINAL_ALLOWED_ORIGINS: "",
+  SESSION_IDLE_SECONDS: "28800",
+  SESSION_ABSOLUTE_SECONDS: "604800",
+  PAIRING_CODE_TTL_SECONDS: "900",
+  TERMINAL_TOKEN_TTL_SECONDS: "7776000",
+  LOGIN_RATE_PER_MINUTE: "30",
+  LOGIN_TIME_BUDGET_MS: "400",
+  SCRYPT_SLOTS: "2",
+  PAIR_RATE_PER_MINUTE: "20",
+  ADMIN_MINT_RATE_PER_10MIN: "20",
+  PAIRING_MINT_RATE_PER_10MIN: "30",
+  PASSWORD_ABUSE_THRESHOLD: "5",
+  ROTATE_RATE_PER_HOUR: "5",
+  AUDIT_RETENTION_DAYS: "365",
+  DB_POOL_MAX: "8"
+});
+
 class ConfigurationError extends Error {
   constructor(variable, problem) {
     super(`${variable} ${problem}`);
@@ -67,8 +102,10 @@ function parseInteger(name, raw, min, max) {
   return value;
 }
 
-function readInteger(env, name, fallback, min, max) {
-  return parseInteger(name, readValue(env, name) ?? fallback, min, max);
+// The default comes from DEFAULTS, never from the call site: one table is what the
+// Compose contract test can actually compare against.
+function readInteger(env, name, min, max) {
+  return parseInteger(name, readValue(env, name) ?? DEFAULTS[name], min, max);
 }
 
 function decodeComponent(name, part, value) {
@@ -235,8 +272,8 @@ function startupConfiguration(env) {
   }
   const trustedProxyHops = parseInteger("TRUSTED_PROXY_HOPS", trustedProxyHopsRaw ?? "0", 0, UNBOUNDED);
 
-  const sessionIdleSeconds = readInteger(env, "SESSION_IDLE_SECONDS", "28800", 1, UNBOUNDED);
-  const sessionAbsoluteSeconds = readInteger(env, "SESSION_ABSOLUTE_SECONDS", "604800", 1, UNBOUNDED);
+  const sessionIdleSeconds = readInteger(env, "SESSION_IDLE_SECONDS", 1, UNBOUNDED);
+  const sessionAbsoluteSeconds = readInteger(env, "SESSION_ABSOLUTE_SECONDS", 1, UNBOUNDED);
   if (sessionAbsoluteSeconds <= sessionIdleSeconds) {
     // Otherwise every session violates user_sessions_idle_within_absolute on its
     // first renewal.
@@ -250,8 +287,8 @@ function startupConfiguration(env) {
     nodeEnv,
     isProduction,
 
-    port: readInteger(env, "PORT", "3200", 1, 65535),
-    host: parseBindAddress("HOST", readValue(env, "HOST") ?? "0.0.0.0"),
+    port: readInteger(env, "PORT", 1, 65535),
+    host: parseBindAddress("HOST", readValue(env, "HOST") ?? DEFAULTS.HOST),
 
     postgresPassword,
     // The decoded password component of DATABASE_URL. db/migrate.js feeds it to
@@ -270,31 +307,31 @@ function startupConfiguration(env) {
     apiPublicOrigin,
     terminalAllowedOrigins: parseOriginList(
       "TERMINAL_ALLOWED_ORIGINS",
-      readValue(env, "TERMINAL_ALLOWED_ORIGINS") ?? ""
+      readValue(env, "TERMINAL_ALLOWED_ORIGINS") ?? DEFAULTS.TERMINAL_ALLOWED_ORIGINS
     ),
     trustedProxyHops,
 
     sessionIdleSeconds,
     sessionAbsoluteSeconds,
-    pairingCodeTtlSeconds: readInteger(env, "PAIRING_CODE_TTL_SECONDS", "900", 1, UNBOUNDED),
-    terminalTokenTtlSeconds: readInteger(env, "TERMINAL_TOKEN_TTL_SECONDS", "7776000", 1, UNBOUNDED),
-    loginRatePerMinute: readInteger(env, "LOGIN_RATE_PER_MINUTE", "30", 1, UNBOUNDED),
+    pairingCodeTtlSeconds: readInteger(env, "PAIRING_CODE_TTL_SECONDS", 1, UNBOUNDED),
+    terminalTokenTtlSeconds: readInteger(env, "TERMINAL_TOKEN_TTL_SECONDS", 1, UNBOUNDED),
+    loginRatePerMinute: readInteger(env, "LOGIN_RATE_PER_MINUTE", 1, UNBOUNDED),
     // 250 ms floor: the budget must exceed worst-case scrypt (~100 ms) with margin
     // or the fixed-time login property leaks through overrun.
-    loginTimeBudgetMs: readInteger(env, "LOGIN_TIME_BUDGET_MS", "400", 250, UNBOUNDED),
+    loginTimeBudgetMs: readInteger(env, "LOGIN_TIME_BUDGET_MS", 250, UNBOUNDED),
     // Above 8 the memory-hard parameters put the process inside OOM-killer range
     // on a 512 MB container that shares the box with Postgres.
-    scryptSlots: readInteger(env, "SCRYPT_SLOTS", "2", 1, 8),
-    pairRatePerMinute: readInteger(env, "PAIR_RATE_PER_MINUTE", "20", 1, UNBOUNDED),
-    adminMintRatePer10min: readInteger(env, "ADMIN_MINT_RATE_PER_10MIN", "20", 1, UNBOUNDED),
-    pairingMintRatePer10min: readInteger(env, "PAIRING_MINT_RATE_PER_10MIN", "30", 1, UNBOUNDED),
-    passwordAbuseThreshold: readInteger(env, "PASSWORD_ABUSE_THRESHOLD", "5", 1, UNBOUNDED),
-    rotateRatePerHour: readInteger(env, "ROTATE_RATE_PER_HOUR", "5", 1, UNBOUNDED),
-    auditRetentionDays: readInteger(env, "AUDIT_RETENTION_DAYS", "365", 1, UNBOUNDED),
+    scryptSlots: readInteger(env, "SCRYPT_SLOTS", 1, 8),
+    pairRatePerMinute: readInteger(env, "PAIR_RATE_PER_MINUTE", 1, UNBOUNDED),
+    adminMintRatePer10min: readInteger(env, "ADMIN_MINT_RATE_PER_10MIN", 1, UNBOUNDED),
+    pairingMintRatePer10min: readInteger(env, "PAIRING_MINT_RATE_PER_10MIN", 1, UNBOUNDED),
+    passwordAbuseThreshold: readInteger(env, "PASSWORD_ABUSE_THRESHOLD", 1, UNBOUNDED),
+    rotateRatePerHour: readInteger(env, "ROTATE_RATE_PER_HOUR", 1, UNBOUNDED),
+    auditRetentionDays: readInteger(env, "AUDIT_RETENTION_DAYS", 1, UNBOUNDED),
     // Sized against max_connections=40, leaving room for psql, pg_dump and the
     // migration connection.
-    dbPoolMax: readInteger(env, "DB_POOL_MAX", "8", 1, 20)
+    dbPoolMax: readInteger(env, "DB_POOL_MAX", 1, 20)
   });
 }
 
-module.exports = { startupConfiguration, ConfigurationError };
+module.exports = { startupConfiguration, ConfigurationError, DEFAULTS };
