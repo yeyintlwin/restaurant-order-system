@@ -11,16 +11,27 @@ written to be read cold — you do not need the conversation that produced them.
   rejected, the full schema, and what was deliberately deferred. Read §2 before
   proposing anything; most obvious suggestions were already considered and
   rejected there for a stated reason.
-- **Plan:** [docs/superpowers/plans/2026-07-29-core-api-phase1-plan1-foundation.md](docs/superpowers/plans/2026-07-29-core-api-phase1-plan1-foundation.md)
+- **Plan 1 — Foundation:** [docs/superpowers/plans/2026-07-29-core-api-phase1-plan1-foundation.md](docs/superpowers/plans/2026-07-29-core-api-phase1-plan1-foundation.md)
   — 48 task-by-task steps building `apps/core-api`. **Read "How to pick this up"
   at the top of that file before touching anything**, including the execution
   order warning: Task 18 and part of Task 19 must be done before Task 10.
+  **Complete — 48 of 48.**
+- **Plan 5 — Deployment:** [docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md](docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md)
+  — 30 tasks. **This is the next thing to execute.** Start at Task 1.
 
-**Where the work stopped is recorded in the plan's "Execution log" table, at the
+**Where the work stopped is recorded in each plan's "Execution log" table, at the
 very top of the file.** Read it first; it says which task was last finished and
-which one is next. As of 2026-07-29 **Plan 1 is complete — 48 of 48 tasks.**
+which one is next. As of 2026-07-31 **Plan 1 is complete — 48 of 48 tasks.**
 `apps/core-api` boots, validates its configuration, migrates before it listens,
 serves `/health` and `/health/ready`, and carries the tenant choke point.
+
+**Plan 5 runs before Plans 2–4, on purpose.** The service has two routes, and that
+is the point: every deployment defect it shakes out surfaces against `/health`
+rather than against login, tenant CRUD and terminal pairing. Its execution log is
+at 0 of 30 — nothing in it has been run yet. It has already been through the same
+adversarial review Plan 1 got; the ten must-fix defects that review found are
+fixed in the text, and listed under its execution log so you can see the shapes
+they took.
 
 Running its tests needs a local PostgreSQL and one variable:
 
