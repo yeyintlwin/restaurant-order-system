@@ -219,7 +219,13 @@ test("GitHub Actions deploys from GitHub-hosted runner over SSH", () => {
   assert.match(workflow, /docker load -i \/tmp\/epaper-hub-image\.tgz/);
   assert.match(workflow, /docker load -i \/tmp\/customer-order-image\.tgz/);
   assert.match(workflow, /scp -i/);
-  assert.match(workflow, /scp -i [^\n]*docker-compose\.yml/);
+  // `\S+` for the key, then the SOURCE argument, then the opening quote of the
+  // destination. NOT `[^\n]*docker-compose\.yml`: that is greedy and the source and
+  // destination end in the same basename, so it matches on the DESTINATION alone and
+  // stays green when the source is repointed at another file or dropped entirely.
+  // Verified by mutation -- source -> infra/docker-compose.yml, -> README.md, and
+  // source deleted all pass the loose form and fail this one.
+  assert.match(workflow, /scp -i \S+ docker-compose\.yml "/);
   assert.doesNotMatch(workflow, /apps\/epaper-hub\/docker-compose\.yml/);
   assert.match(workflow, /ssh -i/);
   assert.match(workflow, /~\/restaurant-order-system/);

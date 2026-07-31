@@ -291,9 +291,24 @@ Replace line `:32` (inside `"Docker Compose starts customer ordering after a hea
 Replace line `:204` (inside `"GitHub Actions deploys from GitHub-hosted runner over SSH"`):
 
 ```js
-  assert.match(workflow, /scp -i [^\n]*docker-compose\.yml/);
+  // `\S+` for the key, then the SOURCE argument, then the opening quote of the
+  // destination. NOT `[^\n]*docker-compose\.yml`: that is greedy and the source and
+  // destination end in the same basename, so it matches on the DESTINATION alone and
+  // stays green when the source is repointed at another file or dropped entirely.
+  // Verified by mutation -- source -> infra/docker-compose.yml, -> README.md, and
+  // source deleted all pass the loose form and fail this one.
+  assert.match(workflow, /scp -i \S+ docker-compose\.yml "/);
   assert.doesNotMatch(workflow, /apps\/epaper-hub\/docker-compose\.yml/);
 ```
+
+> **CORRECTED 2026-07-31, after Task 1 shipped.** The assertion above originally read
+> `assert.match(workflow, /scp -i [^\n]*docker-compose\.yml/)`. An adversarial review of the
+> commit proved it never pinned the scp *source*: `[^\n]*` is greedy and both ends of the line
+> finish in `docker-compose.yml`, so the match landed on the destination. Repointing the source
+> at `infra/docker-compose.yml`, at `README.md`, or deleting it outright all left the pair green.
+> This is the **third** assertion in this plan that could not fail for the reason it was written
+> for — after must-fix #2 (`--no-owner`) and Task 2 (`pg-native`). Two of the three were caught
+> only by executing or mutating them, not by reading them.
 
 Append this new test to the end of the file:
 
