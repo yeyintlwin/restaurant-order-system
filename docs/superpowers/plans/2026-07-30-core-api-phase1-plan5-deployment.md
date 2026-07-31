@@ -1768,7 +1768,7 @@ after anybody would connect the two events.
 - Create: `infra/nginx/api.conf`
 - Test: `apps/core-api/test/nginx-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/nginx-config.test.js`:
 
@@ -1846,7 +1846,7 @@ test("api.conf redirects port 80 and keeps the ACME challenge path reachable", (
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`
 
@@ -1854,7 +1854,7 @@ Expected: FAIL — **two** failing tests (`# fail 2`), both with
 `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\infra\nginx\api.conf'`.
 The snippet test from the previous task stays green.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `infra/nginx/api.conf` (the TLS server block is added by the next task):
 
@@ -1918,11 +1918,11 @@ server {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`  Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/nginx/api.conf apps/core-api/test/nginx-config.test.js

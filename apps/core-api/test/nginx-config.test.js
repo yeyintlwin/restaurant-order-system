@@ -68,3 +68,75 @@ test("the proxy snippet sets the X-Forwarded-For header TRUSTED_PROXY_HOPS=1 dep
   // off globally makes every JSON response stream byte-by-byte through a worker.
   assert.doesNotMatch(snippet, /proxy_buffering\s+off/);
 });
+
+// Returns the text between the braces of `location <selector> {`, brace-matched
+// so a nested block cannot truncate it. The selector is matched as a whole
+// token: a naive indexOf("= /health") finds "= /health/ready" too, and the two
+// blocks assert opposite things.
+function locationBody(text, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  const opener = new RegExp(`location\\s+${escaped}\\s*\\{`);
+  const match = opener.exec(text);
+  assert.ok(match, `no location block for '${selector}' in api.conf`);
+
+  const start = match.index + match[0].length;
+  let depth = 1;
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "{") depth += 1;
+    else if (text[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index);
+    }
+  }
+  assert.fail(`unbalanced braces in location '${selector}'`);
+}
+
+test("api.conf declares the three rate-limit zones at http{} scope and a single-server upstream", () => {
+  const conf = apiConf();
+
+  assert.match(conf, /^limit_req_zone \$binary_remote_addr zone=core_login:1m rate=10r\/m;$/m);
+  assert.match(conf, /^limit_req_zone \$binary_remote_addr zone=core_pair:1m\s+rate=20r\/m;$/m);
+  assert.match(conf, /^limit_req_zone \$binary_remote_addr zone=core_api:5m\s+rate=20r\/s;$/m);
+
+  // Pinned by COLUMN, not just by presence. limit_req_zone is an http{}-scope
+  // directive and Ubuntu includes conf.d/*.conf inside http{} -- indent one of
+  // these into a server{} block and nginx -t fails outright with
+  // '"limit_req_zone" directive is not allowed here', which the deploy treats
+  // as fatal. That is the whole reason this file installs to conf.d/.
+  const zoneLines = conf.split("\n").filter((line) => line.includes("limit_req_zone"));
+  assert.equal(zoneLines.length, 3);
+  for (const line of zoneLines) {
+    assert.equal(line, line.trimStart(), "limit_req_zone must sit at http{} scope, unindented");
+  }
+
+  assert.match(conf, /^upstream core_api \{$/m);
+  assert.match(conf, /^[ \t]+server 127\.0\.0\.1:3200 max_fails=0;$/m);
+  assert.equal((conf.match(/^[ \t]+server \d/gm) || []).length, 1);
+
+  // With one server proxy_next_upstream can never retry, while the default
+  // max_fails=3 makes nginx STOP attempting connections for fail_timeout after
+  // a recreate -- returning 502 AFTER core-api is listening and healthy.
+  assert.doesNotMatch(conf, /max_fails=[1-9]/);
+
+  assert.match(conf, /^[ \t]+keepalive 16;$/m);
+});
+
+test("api.conf redirects port 80 and keeps the ACME challenge path reachable", () => {
+  const conf = apiConf();
+
+  assert.match(conf, /^[ \t]*listen 80;$/m);
+  assert.match(conf, /^[ \t]*listen \[::\]:80;$/m);
+  assert.match(conf, /^[ \t]*server_name api\.yeyintlwin\.com;$/m);
+
+  // certbot renews over HTTP-01. A blanket 301 with no exception here breaks
+  // renewal in sixty days, and the certificate expiring takes the API down.
+  assert.match(conf, /location \/\.well-known\/acme-challenge\/ \{ root \/var\/www\/html; \}/);
+  assert.match(conf, /location \/ \{ return 301 https:\/\/\$host\$request_uri; \}/);
+
+  // BOTH server blocks own a `location /` once the TLS block lands, and this
+  // one is written first, so a whole-file select must resolve to the redirect.
+  // Pinning it here is what stops the catch-all's rate-limit assertions -- the
+  // ones the next task exists to make -- from silently grading this block
+  // instead. That is why they select from tlsServer(conf), never from the file.
+  assert.match(locationBody(conf, "/"), /^\s*return 301 https:\/\/\$host\$request_uri;\s*$/);
+});
