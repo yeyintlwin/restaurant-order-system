@@ -1,7 +1,14 @@
 services:
   epaper-hub:
     image: ${EPAPER_IMAGE:-epaper-hub}
-    build: .
+    # NOT `build: .`. A relative build context resolves against the directory of THIS
+    # file, which is now the repository root; apps/epaper-hub/Dockerfile copies
+    # package*.json and server.js relative to its own directory, so a rooted context
+    # would copy the workspace package.json and then fail on `COPY server.js`.
+    # Production is unaffected (--no-build) and `docker compose config` still prints
+    # ok, so only the test above sees this.
+    build:
+      context: apps/epaper-hub
     container_name: epaper-hub
     restart: unless-stopped
     ports:

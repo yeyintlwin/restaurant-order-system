@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" 'mkdir -p ~/restaurant-order-system'
-          scp -i ~/.ssh/lightsail.pem apps/epaper-hub/docker-compose.yml "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/docker-compose.yml"
+          scp -i ~/.ssh/lightsail.pem docker-compose.yml "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/docker-compose.yml"
           scp -i ~/.ssh/lightsail.pem /tmp/epaper-hub-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/epaper-hub-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/customer-order-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/customer-order-image.tgz"
 

@@ -21,15 +21,15 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 0 of 30 tasks done.** Nothing here has been executed. The next thing to do is
-**Task 1**.
+**Status: 1 of 30 tasks done.** The next thing to do is **Task 2** (`apps/core-api/Dockerfile`).
 
 Append one row per working session. A task counts as finished only when all of its steps are
 ticked and its commit exists — a half-applied task recorded as done is worse than an untouched one.
 
 | Date | Session did | Tasks finished | Commits | Next |
 | --- | --- | --- | --- | --- |
-| 2026-07-31 | Wrote this plan, then put it through the same adversarial review Plan 1 got. 35 raw findings → **10 must-fix**, all applied before any task ran; 14 should-fix recorded below. No task executed. | none — 0/30 | (this commit) | Task 1 |
+| 2026-07-31 | Wrote this plan, then put it through the same adversarial review Plan 1 got. 35 raw findings → **10 must-fix**, all applied before any task ran; 14 should-fix recorded below. No task executed. | none — 0/30 | `be5ed90`, `29010d4` | Task 1 |
+| 2026-07-31 | **Task 1.** `git mv` of the compose file to the repo root (rename detected, history follows), the `build:` context pinned to `apps/epaper-hub`, `deploy.yml:49` scp source, and the hub README's `## Docker` block. Step 2 failed 4 of 14 exactly as written, including the ENOENT path. `docker compose config` resolves the context to `…\apps\epaper-hub`, not the root — the check that `docker compose config` alone would not have caught. Repository-wide `npm test` green: 352 tests, 351 pass, 1 visible skip, 0 fail. | **1/30** | (this commit) | Task 2 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -245,7 +245,7 @@ After this task one does.
 - Modify: `apps/epaper-hub/README.md:20-27` (the `## Docker` block)
 - Test: `apps/epaper-hub/test/deploy-config.test.js` (rewrite `:18`, `:32`, `:204`; append one test)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `apps/epaper-hub/test/deploy-config.test.js`, insert this helper immediately after the
 `const repoRoot = …` line at `:7`:
@@ -312,7 +312,7 @@ test("the e-paper hub runbook builds from the repository root, where the compose
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/epaper-hub/test/deploy-config.test.js`
 
@@ -324,7 +324,7 @@ Expected: FAIL, 4 of 14. `Docker Compose exposes app only on localhost for Nginx
 `the e-paper hub runbook builds from the repository root, where the compose file now lives`
 fails with `The input did not match the regular expression /^ {2}docker compose up -d --build/m`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Move the file with Git so the history follows it. **Bash tool** (`git mv` is fine in either shell,
 but keep the whole area in one shell):
@@ -409,7 +409,7 @@ In `apps/epaper-hub/README.md`, replace the `## Docker` block at lines `20-27`:
  ```
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/epaper-hub/test/deploy-config.test.js`  Expected: PASS (14 tests)
 
@@ -431,7 +431,7 @@ docker compose config | grep -A1 "^    build:"
 
 Expected: a `context:` line ending in `apps\epaper-hub` (absolute path), **not** the repository root.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker-compose.yml .github/workflows/deploy.yml apps/epaper-hub/README.md apps/epaper-hub/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

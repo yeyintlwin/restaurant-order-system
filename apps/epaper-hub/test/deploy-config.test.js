@@ -6,6 +6,16 @@ const test = require("node:test");
 const appRoot = path.join(__dirname, "..");
 const repoRoot = path.join(appRoot, "..", "..");
 
+// Spec 9.0: docker-compose.yml moved to the repository root. Reads normalise CRLF --
+// this machine is win32, CI is ubuntu, and .gitattributes deliberately pins only
+// *.sql and *.sh, so a `$`-anchored regex over raw bytes passes on one and fails on
+// the other for reasons that have nothing to do with the rule being asserted.
+function readCompose() {
+  return fs
+    .readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    .replace(/\r\n/g, "\n");
+}
+
 test("Docker image includes server helper modules", () => {
   const dockerfile = fs.readFileSync(path.join(appRoot, "Dockerfile"), "utf8");
 
@@ -15,7 +25,7 @@ test("Docker image includes server helper modules", () => {
 });
 
 test("Docker Compose exposes app only on localhost for Nginx proxy", () => {
-  const compose = fs.readFileSync(path.join(appRoot, "docker-compose.yml"), "utf8");
+  const compose = readCompose();
 
   assert.match(compose, /127\.0\.0\.1:3000:3000/);
   assert.match(compose, /epaper-hub:/);
@@ -26,10 +36,18 @@ test("Docker Compose exposes app only on localhost for Nginx proxy", () => {
   assert.match(compose, /epaper-data:\/data/);
   assert.match(compose, /^volumes:\n  epaper-data:/m);
   assert.doesNotMatch(compose, /caddy:/);
+
+  // NOT `build: .`. A relative context resolves against the COMPOSE FILE's directory,
+  // so this file's move to the repo root would silently repoint `.` at the root --
+  // which copies the workspace package.json and then dies on `COPY server.js`.
+  // `docker compose config` still prints ok, so nothing but this line catches it.
+  assert.match(compose, /^    build:\n      context: apps\/epaper-hub$/m);
+  assert.doesNotMatch(compose, /^\s+build: \.$/m);
+  assert.doesNotMatch(compose, /^\s+context: \.$/m);
 });
 
 test("Docker Compose starts customer ordering after a healthy e-paper hub", () => {
-  const compose = fs.readFileSync(path.join(appRoot, "docker-compose.yml"), "utf8");
+  const compose = readCompose();
 
   assert.match(compose, /customer-order:/);
   assert.match(compose, /image: \$\{CUSTOMER_ORDER_IMAGE:-customer-order\}/);
@@ -201,7 +219,8 @@ test("GitHub Actions deploys from GitHub-hosted runner over SSH", () => {
   assert.match(workflow, /docker load -i \/tmp\/epaper-hub-image\.tgz/);
   assert.match(workflow, /docker load -i \/tmp\/customer-order-image\.tgz/);
   assert.match(workflow, /scp -i/);
-  assert.match(workflow, /apps\/epaper-hub\/docker-compose\.yml/);
+  assert.match(workflow, /scp -i [^\n]*docker-compose\.yml/);
+  assert.doesNotMatch(workflow, /apps\/epaper-hub\/docker-compose\.yml/);
   assert.match(workflow, /ssh -i/);
   assert.match(workflow, /~\/restaurant-order-system/);
   assert.match(workflow, /restaurant-order-system\.env/);
@@ -213,4 +232,18 @@ test("GitHub Actions deploys from GitHub-hosted runner over SSH", () => {
   assert.match(workflow, /find ~\/restaurant-order-system -mindepth 1 -maxdepth 1/);
   assert.doesNotMatch(workflow, /docker build -t epaper-hub:\$\{\{ github\.sha \}\} \./);
   assert.doesNotMatch(workflow, /app\.tgz|tar -xzf|APP_API_KEY|cat > \.env|self-hosted/);
+});
+
+test("the e-paper hub runbook builds from the repository root, where the compose file now lives", () => {
+  // Spec 9.0 lists apps/epaper-hub/README.md:26 explicitly BECAUSE no test covered
+  // it. This is that test.
+  const hubReadme = fs
+    .readFileSync(path.join(repoRoot, "apps", "epaper-hub", "README.md"), "utf8")
+    .replace(/\r\n/g, "\n");
+
+  // Deliberately not `$`-anchored: a later task in this plan appends the two service
+  // names to this line, and that refinement must not turn this assertion red.
+  assert.match(hubReadme, /^ {2}docker compose up -d --build/m);
+  assert.doesNotMatch(hubReadme, /docker compose -f apps\/epaper-hub\/docker-compose\.yml/);
+  assert.match(hubReadme, /docker-compose\.yml` lives at the repository root/);
 });
