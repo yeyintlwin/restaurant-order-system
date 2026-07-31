@@ -21,7 +21,8 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 1 of 30 tasks done.** The next thing to do is **Task 2** (`apps/core-api/Dockerfile`).
+**Status: 2 of 30 tasks done.** The next thing to do is **Task 3** (declare `core-db` and
+`core-api` in Compose and wire the core-api image pipeline).
 
 Append one row per working session. A task counts as finished only when all of its steps are
 ticked and its commit exists — a half-applied task recorded as done is worse than an untouched one.
@@ -474,11 +475,24 @@ appends top-level `test()` blocks at its end, one per `deploy.yml` task, re-read
 each test body and redeclaring none of these helpers. It is database-free, so it runs directly
 under `node --test` with no `pretest`.
 
+> **DEFECT FOUND ON EXECUTION 2026-07-31, fixed in the text below.** As first written, Step 1
+> asserted `assert.doesNotMatch(dockerfile, /pg-native/)` while Step 3's Dockerfile carried the
+> comment *"pg-native is never installed: it needs libpq and a C toolchain"* — so the task's own
+> implementation failed its own assertion, and Step 4 could never reach PASS. This is the **same
+> shape** as must-fix #2 from this plan's review (Task 12 forbidding `--no-owner` anywhere while
+> its own comments said it): a rule about what the file *does* written as a rule about what the
+> file *says*. The assertion is now scoped to instruction lines. Verified by mutation — with the
+> comment present it passes, and appending a real `RUN npm --prefix apps/core-api install
+> pg-native` still turns it red, so the narrowing did not weaken it.
+>
+> **When you write a `doesNotMatch` over a file that also documents itself, scope it to the lines
+> that execute.** That is now twice in one plan.
+
 **Files:**
 - Create: `apps/core-api/Dockerfile`
 - Create: `apps/core-api/test/deploy-config.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/deploy-config.test.js`:
 
@@ -560,8 +574,15 @@ test("the core-api image installs from its own lockfile and ships its scripts", 
   assert.match(dockerfile, /^CMD \["node", "apps\/core-api\/server\.js"\]$/m);
 
   // pg-native needs libpq plus a C toolchain and fails instantly on the win32 dev
-  // machine; the pure-JS driver is the only supported one.
-  assert.doesNotMatch(dockerfile, /pg-native/);
+  // machine; the pure-JS driver is the only supported one. Scoped to INSTRUCTION
+  // lines: the comment above the RUN names pg-native deliberately, to say why it is
+  // absent, and a bare /pg-native/ would forbid the Dockerfile from explaining
+  // itself -- the same defect the Plan 5 review found in Task 12's --no-owner rule.
+  const instructions = dockerfile
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+  assert.doesNotMatch(instructions, /pg-native/);
 
   // The build context is the repository ROOT, which is what makes this line
   // load-bearing: without it a developer's apps/core-api/.env -- now holding
@@ -573,14 +594,14 @@ test("the core-api image installs from its own lockfile and ships its scripts", 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL (1 test) with
 `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\apps\core-api\Dockerfile'`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/Dockerfile`:
 
@@ -619,7 +640,7 @@ EXPOSE 3200
 CMD ["node", "apps/core-api/server.js"]
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -644,7 +665,7 @@ If `npm ci` fails under `--prefix`, change that one line to
 `npm --prefix apps/core-api install --omit=dev --workspaces=false`, change the assertion to match,
 and record the fallback in the plan's execution log.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/Dockerfile apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
