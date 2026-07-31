@@ -31,8 +31,13 @@ jobs:
           set -euo pipefail
           docker build -t epaper-hub:${{ github.sha }} apps/epaper-hub
           docker build -f apps/customer-order/Dockerfile -t customer-order:${{ github.sha }} .
+          docker build -f apps/core-api/Dockerfile -t core-api:${{ github.sha }} .
           docker save epaper-hub:${{ github.sha }} | gzip > /tmp/epaper-hub-image.tgz
           docker save customer-order:${{ github.sha }} | gzip > /tmp/customer-order-image.tgz
+          # Sha in the tarball NAME, not just the tag: two concurrent deploys share one
+          # /tmp on the runner and one on the box, and a fixed path lets push B's image
+          # overwrite the one push A has not loaded yet.
+          docker save core-api:${{ github.sha }} | gzip > /tmp/core-api-image-${{ github.sha }}.tgz
 
       - name: Install SSH key
         run: |
@@ -49,6 +54,7 @@ jobs:
           scp -i ~/.ssh/lightsail.pem docker-compose.yml "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/docker-compose.yml"
           scp -i ~/.ssh/lightsail.pem /tmp/epaper-hub-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/epaper-hub-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/customer-order-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/customer-order-image.tgz"
+          scp -i ~/.ssh/lightsail.pem /tmp/core-api-image-${{ github.sha }}.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/core-api-image-${{ github.sha }}.tgz"
 
       - name: Deploy on Lightsail
         run: |
@@ -69,12 +75,17 @@ jobs:
             fi
           fi
           test -f ~/restaurant-order-system.env
+          # Without this the compose file that lands on the box cannot be LOADED by any
+          # subcommand -- up, config and exec all fail at project load -- so the
+          # operator's ssh-and-restart reflex is dead too. Fail here, with a message.
+          test -f ~/core-api.env || { echo 'MISSING ~/core-api.env for user '"$(whoami)"' -- see infra/README.md'; exit 1; }
           if [ -d ~/epaper-emulator/config ] && [ ! -d ~/restaurant-order-system/config ]; then
             mv ~/epaper-emulator/config ~/restaurant-order-system/config
           fi
           rm -rf ~/epaper-emulator
           docker load -i /tmp/epaper-hub-image.tgz
           docker load -i /tmp/customer-order-image.tgz
+          docker load -i /tmp/core-api-image-${{ github.sha }}.tgz
           docker volume create restaurant-order-system_epaper-data
           if docker volume inspect epaper-emulator_epaper-data >/dev/null 2>&1; then
             if ! docker run --rm -v restaurant-order-system_epaper-data:/to epaper-hub:${{ github.sha }} test -f /to/screens.json; then
@@ -83,7 +94,7 @@ jobs:
           fi
           find ~/restaurant-order-system -mindepth 1 -maxdepth 1 ! -name docker-compose.yml ! -name config -exec rm -rf {} +
           cd ~/restaurant-order-system
-          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env docker compose up -d --no-build
+          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env docker compose up -d --no-build
           docker image prune -f
-          rm -f /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz
+          rm -f /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz /tmp/core-api-image-${{ github.sha }}.tgz
           EOF

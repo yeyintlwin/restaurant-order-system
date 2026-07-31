@@ -1,4 +1,125 @@
+# The repository-root Compose file (spec 9.0). .github/workflows/deploy.yml copies it
+# to ~/restaurant-order-system/docker-compose.yml on every push.
+networks:
+  core-net:
+
 services:
+  core-db:
+    # Pinned to a MAJOR: an unpinned tag eventually pulls 17, which refuses to start
+    # against a PGDATA written by 16 and presents as a total outage at 22:00.
+    image: postgres:16-alpine
+    container_name: core-db
+    restart: unless-stopped
+    # NOT on the default network (spec 9.2). epaper-hub is internet-facing and
+    # authenticates on req.query.api_key; core_api_owner reachable from it is
+    # `COPY ... TO PROGRAM`, i.e. a shell inside this container.
+    networks: [core-net]
+    # NO `ports:` KEY AT ALL -- not even a loopback-only publish, which differs from a
+    # public one by a single deletion. Docker installs published ports as DNAT rules
+    # in the nat table, evaluated BEFORE ufw's filter chains, so a published port
+    # bypasses ufw. Nothing needs one: core-api reaches this over core-net, and
+    # psql/pg_dump go through `docker compose exec`.
+    env_file:
+      - ${CORE_ENV_FILE:-.env}
+    environment:
+      POSTGRES_USER: core_api_owner
+      POSTGRES_DB: core
+      POSTGRES_INITDB_ARGS: "--data-checksums --encoding=UTF8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - max_connections=40
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      # Phase 1's largest table holds a few dozen rows; each parallel worker is a
+      # memory spike, and the OOM killer is the named top risk on this box.
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - timezone=UTC
+      # ADVISORY-LOCK ORPHAN FIX: the default keepalive idle is 2 hours, so a
+      # SIGKILLed core-api holding the migration lock blocks every deploy for that
+      # long. 20 + 5*3 = ~35 s, comfortably inside the runner's 60 s bounded retry.
+      - -c
+      - tcp_keepalives_idle=20
+      - -c
+      - tcp_keepalives_interval=5
+      - -c
+      - tcp_keepalives_count=3
+    volumes:
+      - core-db-data:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 IS LOAD-BEARING: during initdb the entrypoint runs a temporary
+      # server on the unix socket only, so a socket pg_isready reports healthy while
+      # TCP is still refused and Compose starts core-api against nothing.
+      test: ["CMD-SHELL", "pg_isready -U core_api_owner -d core -h 127.0.0.1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # Let Postgres checkpoint instead of being SIGKILLed after the default 10 s.
+    stop_grace_period: 60s
+    shm_size: 128mb
+    # Bias the kernel AWAY from the process holding the data.
+    oom_score_adj: -500
+
+  core-api:
+    image: ${CORE_API_IMAGE:-core-api}
+    container_name: core-api
+    restart: unless-stopped
+    networks: [core-net, default]
+    ports:
+      # The "not exposed past Nginx" property is delivered HERE, not by HOST: a
+      # process bound to 127.0.0.1 INSIDE a container is unreachable from
+      # docker-proxy and from the Compose network, so HOST is 0.0.0.0 by design.
+      - "127.0.0.1:3200:3200"
+    env_file:
+      - ${CORE_ENV_FILE:-.env}
+    environment:
+      PORT: 3200
+      HOST: 0.0.0.0
+      TZ: UTC
+      API_PUBLIC_ORIGIN: https://api.yeyintlwin.com
+      # Empty means no CORS headers are emitted at all -- the Phase-1 default; the
+      # OPTIONS responder ships inert.
+      TERMINAL_ALLOWED_ORIGINS: ""
+      TRUSTED_PROXY_HOPS: 1
+      SESSION_IDLE_SECONDS: 28800
+      SESSION_ABSOLUTE_SECONDS: 604800
+      PAIRING_CODE_TTL_SECONDS: 900
+      TERMINAL_TOKEN_TTL_SECONDS: 7776000
+      LOGIN_RATE_PER_MINUTE: 30
+      LOGIN_TIME_BUDGET_MS: 400
+      SCRYPT_SLOTS: 2
+      PAIR_RATE_PER_MINUTE: 20
+      ADMIN_MINT_RATE_PER_10MIN: 20
+      PAIRING_MINT_RATE_PER_10MIN: 30
+      PASSWORD_ABUSE_THRESHOLD: 5
+      ROTATE_RATE_PER_HOUR: 5
+      AUDIT_RETENTION_DAYS: 365
+      DB_POOL_MAX: 8
+    depends_on:
+      core-db:
+        condition: service_healthy
+    healthcheck:
+      # /health, NOT /health/ready. Nothing depends_on core-api, so an unhealthy mark
+      # would restart nothing, and a transient database blip should not produce a
+      # misleading container status. The DEPLOY GATE is what calls /health/ready.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    mem_limit: 512m
+
   epaper-hub:
     image: ${EPAPER_IMAGE:-epaper-hub}
     # NOT `build: .`. A relative build context resolves against the directory of THIS
@@ -6,7 +127,7 @@ services:
     # package*.json and server.js relative to its own directory, so a rooted context
     # would copy the workspace package.json and then fail on `COPY server.js`.
     # Production is unaffected (--no-build) and `docker compose config` still prints
-    # ok, so only the test above sees this.
+    # ok, so only the test sees this.
     build:
       context: apps/epaper-hub
     container_name: epaper-hub
@@ -45,3 +166,4 @@ services:
 
 volumes:
   epaper-data:
+  core-db-data:

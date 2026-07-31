@@ -21,8 +21,15 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 2 of 30 tasks done.** The next thing to do is **Task 3** (declare `core-db` and
-`core-api` in Compose and wire the core-api image pipeline).
+**Status: 3 of 30 tasks done.** The next thing to do is **Task 4** (isolate the two secrets files
+and `core-net`, and write the operator runbook).
+
+> ⛔ **DO NOT PUSH past Task 3 until `~/core-api.env` exists on the Lightsail box.** Task 3's
+> MANUAL VERIFICATION block is spec §9.11 step 4 and it is a **precondition, not a follow-up**.
+> From Task 3's commit onward the deploy runs `test -f ~/core-api.env || exit 1`, and the compose
+> file that lands on the box declares `env_file: ${CORE_ENV_FILE:-.env}` for `core-db` — so
+> without that file **no** compose subcommand can load the project: not `up`, not `config`, not
+> `exec`. The ssh-and-restart reflex is dead too. Create the file first, then push.
 
 Append one row per working session. A task counts as finished only when all of its steps are
 ticked and its commit exists — a half-applied task recorded as done is worse than an untouched one.
@@ -31,6 +38,9 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | --- | --- | --- | --- | --- |
 | 2026-07-31 | Wrote this plan, then put it through the same adversarial review Plan 1 got. 35 raw findings → **10 must-fix**, all applied before any task ran; 14 should-fix recorded below. No task executed. | none — 0/30 | `be5ed90`, `29010d4` | Task 1 |
 | 2026-07-31 | **Task 1.** `git mv` of the compose file to the repo root (rename detected, history follows), the `build:` context pinned to `apps/epaper-hub`, `deploy.yml:49` scp source, and the hub README's `## Docker` block. Step 2 failed 4 of 14 exactly as written, including the ENOENT path. `docker compose config` resolves the context to `…\apps\epaper-hub`, not the root — the check that `docker compose config` alone would not have caught. Repository-wide `npm test` green: 352 tests, 351 pass, 1 visible skip, 0 fail. | **1/30** | (this commit) | Task 2 |
+| 2026-07-31 | **Task 2.** `apps/core-api/Dockerfile` (root context, `npm ci`) and the new `apps/core-api/test/deploy-config.test.js` with its four shared helpers. **Plan defect found on execution:** Step 1 forbade `/pg-native/` anywhere while Step 3's Dockerfile explained in a comment why pg-native is absent — the task failed its own assertion. Scoped to instruction lines and mutation-tested. Docker-verified: image builds, `scripts/` and `pg` present, and a planted `apps/core-api/.env` does NOT reach the image. | **2/30** | `5c0dee7` | Task 3 |
+| 2026-07-31 | Tightened Task 1's scp assertion after an adversarial review of `b713280` proved it matched the DESTINATION path and stayed green with the scp source deleted. Mutation-tested all four ways. Third assertion in this plan that could not fail for its stated reason. | — | `9ad9303` | Task 3 |
+| 2026-07-31 | **Task 3.** `core-db` and `core-api` in Compose (`core-net`, no `ports:` on the database, pinned major, keepalive trio, `-h 127.0.0.1` healthcheck) plus the whole core-api image pipeline in `deploy.yml` — build, sha-named save, scp, load, both variables, and the `~/core-api.env` precondition. **Defect found and fixed first:** the must-fix pass had left `EPAPER_ENV_FILE=` twice on the `:86` line in two places; the earlier verifier checked only that it was PRESENT, never that it appeared once. `docker compose config --services` resolves all four services; `--quiet` clean; `deploy.yml` still valid YAML. 356 tests, 355 pass, 1 skip. | **3/30** | (this commit) | Task 4 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -733,7 +743,7 @@ invocation, the pre-deploy dump, the nginx install/rollback, the health gate, th
 - Modify: `.github/workflows/deploy.yml` (`:33`, `:35`, `:51`, `:71`, `:77`, `:86`, `:88` — the second and last sanctioned edit from this area)
 - Test: `apps/core-api/test/deploy-config.test.js` (append three tests)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -885,7 +895,7 @@ test("every service the compose file declares is one the deploy can actually sta
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`
 
@@ -898,7 +908,7 @@ with `AssertionError [ERR_ASSERTION]: The input did not match the regular expres
 `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` and the actual value
 `[ 'customer-order', 'epaper-hub' ]`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Rewrite `docker-compose.yml` (repo root) in full:
 
@@ -1117,7 +1127,7 @@ Replace `:86`:
 
 ```diff
 -          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env docker compose up -d --no-build
-+          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose up -d --no-build
++          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env docker compose up -d --no-build
 ```
 
 Replace `:88`:
@@ -1132,7 +1142,7 @@ Replace `:88`:
 > and `CORE_ENV_FILE=../core-api.env` wherever they appear, and the `rm -f` assertion is written
 > loosely enough to keep matching when it becomes `/tmp/*-image*.tgz`.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: PASS (4 tests)
 
@@ -1221,7 +1231,7 @@ mode-600 file in the operator's home directory from a unit test. Run it, then pu
 
    Expected: no output, exit status 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker-compose.yml .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
@@ -5109,7 +5119,7 @@ with:
           docker volume create restaurant-order-system_core-db-data
 ```
 
-**(c)** Replace the whole one-line `docker compose up` prefix at the end of the heredoc — after the compose area's task it reads something like `EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose up -d --no-build`, on one line — with:
+**(c)** Replace the whole one-line `docker compose up` prefix at the end of the heredoc — after the compose area's task it reads something like `EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env docker compose up -d --no-build`, on one line — with:
 
 ```yaml
           export EPAPER_ENV_FILE=../restaurant-order-system.env
