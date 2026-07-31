@@ -104,7 +104,7 @@ establishes in this repository. The checks that genuinely need the Lightsail hos
 - Prove the concurrency key and the failure-proof crontab by deliberately creating their failure conditions: two overlapping pushes, and a run against a box with no crontab at all.
 - Prove the backup guard bites by truncating a known-good dump with `head -c` and watching the verification reject it - stopping core-db only produces a zero-byte file, which `test -s` catches instead.
 - After the first successful deploy, run `./config/backup-core-db.sh` by hand, then `./config/restore-drill.sh` with no argument, and confirm it exits 0, prints row counts, and drops core_restore_check. Do not skip it because it is the day everything worked.
-- Check for `protocol options redefined` in `sudo nginx -t` output - this file's `listen 443 ssl http2;` in conf.d/ changes the protocol for order.yeyintlwin.com and epaper-hub.yeyintlwin.com, which are parsed later from sites-enabled/.
+- RESOLVED 2026-07-31: api.conf ships NO http2 token, so nothing is redefined. Originally: check for `protocol options redefined` in `sudo nginx -t` output - a `listen 443 ssl http2;` in conf.d/ changes the protocol for order.yeyintlwin.com and epaper-hub.yeyintlwin.com, which are parsed later from sites-enabled/.
 - Confirm `~/restaurant-order-system.env` is untouched, and confirm `sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -E 'real_ip_header|set_real_ip_from|real_ip_recursive'` prints NONE.
 - Deploy outside service hours: every push recreates epaper-hub and customer-order, resetting all twelve table displays to Welcome and dropping every in-memory order session, and Phase 1 lengthens that window by putting a migration in front of it.
 
@@ -1931,21 +1931,20 @@ git commit -m "feat(infra): nginx rate-limit zones, single-server upstream and t
 
 ---
 
-### Task 7: the TLS server block — old-style `ssl http2`, the /health split, and the four proxying locations
+### Task 7: the TLS server block — no HTTP/2, the /health split, and the four proxying locations
 
 Three spec §9.6 reasons land in this one block.
 
-**Old-style `listen 443 ssl http2` on purpose.** The modern `http2 on;`
-directive needs nginx >= 1.25.1. Ubuntu 22.04 ships 1.18 and 24.04 ships 1.24,
-where `http2 on;` is an unknown directive and **`nginx -t` fails outright** — and
-the deploy treats a failed `nginx -t` as fatal, so it would abort the cutover.
-The deprecated listen-line form only emits a warning on newer builds, which
-makes it the one form that loads on every version this box might be running.
-It has a side effect that reaches past this vhost, recorded in the file and in
-the runbook: `listen 443 ssl http2` is a **per-socket** option and Ubuntu parses
-`conf.d/` before `sites-enabled/`, so this file's listen line is the first to
-touch `0.0.0.0:443` and its options apply to `order.yeyintlwin.com` and
-`epaper-hub.yeyintlwin.com` as well.
+**No HTTP/2, in either form.** `http2 on;` needs nginx >= 1.25.1 and the box
+runs **1.24.0**, where it is an unknown directive and **`nginx -t` fails
+outright** — and the deploy treats a failed `nginx -t` as fatal, so it would
+abort the cutover. The deprecated `listen 443 ssl http2` form would load, but it
+is a **per-socket** option and Ubuntu parses `conf.d/` before `sites-enabled/`,
+so this file's listen line is the first to touch `0.0.0.0:443` and its options
+would apply to every other vhost there. On this box that is **seven** others,
+**three of which proxy WebSocket upgrades** (`airpaste-api`, `n8n`,
+`myanmyanlearn`) — and nginx does not implement RFC 8441. Nothing in Phase 1
+needs HTTP/2, so the token is omitted and a test forbids it.
 
 **`GET /health` is proxied but loopback-only; `/health/ready` returns 404
 publicly.** The deploy gate curls `/health` through the real TLS chain with
@@ -1968,22 +1967,22 @@ honour a **forged** header and turn the loopback-only `/health` into a public on
 Append to the end of `apps/core-api/test/nginx-config.test.js`:
 
 ```js
-// Slices the TLS server block out of api.conf: find `listen 443 ssl http2;`,
+// Slices the TLS server block out of api.conf: find `listen 443 ssl;`,
 // walk BACK to the `server {` that opens the block it sits in, then brace-match
 // forward. Every assertion below selects from this slice rather than from the
 // file, because both server blocks own a `location /` and a whole-file select
 // finds the port-80 redirect first -- which would grade the redirect against
 // the catch-all's rate-limit rules and pass while asserting nothing.
 function tlsServer(text) {
-  const listenIndex = text.indexOf("listen 443 ssl http2;");
-  assert.ok(listenIndex !== -1, "api.conf has no `listen 443 ssl http2;` line");
+  const listenIndex = text.indexOf("listen 443 ssl;");
+  assert.ok(listenIndex !== -1, "api.conf has no `listen 443 ssl;` line");
 
   const opener = /server\s*\{/g;
   let start = -1;
   for (let match = opener.exec(text); match && match.index < listenIndex; match = opener.exec(text)) {
     start = match.index + match[0].length;
   }
-  assert.ok(start !== -1, "no `server {` opens the block holding `listen 443 ssl http2;`");
+  assert.ok(start !== -1, "no `server {` opens the block holding `listen 443 ssl;`");
 
   let depth = 1;
   for (let index = start; index < text.length; index += 1) {
@@ -1996,11 +1995,11 @@ function tlsServer(text) {
   assert.fail("unbalanced braces in the TLS server block");
 }
 
-test("the TLS server block uses the listen-line http2 form, not the 1.25.1 directive", () => {
+test("the TLS server block enables no HTTP/2 in either form", () => {
   const conf = apiConf();
 
-  assert.match(conf, /^[ \t]*listen 443 ssl http2;$/m);
-  assert.match(conf, /^[ \t]*listen \[::\]:443 ssl http2;$/m);
+  assert.match(conf, /^[ \t]*listen 443 ssl;$/m);
+  assert.match(conf, /^[ \t]*listen \[::\]:443 ssl;$/m);
 
   // `http2 on;` needs nginx >= 1.25.1. Ubuntu 22.04 ships 1.18 and 24.04 ships
   // 1.24, where it is an unknown directive and nginx -t FAILS -- which the
@@ -2082,9 +2081,9 @@ Run: `node --test apps/core-api/test/nginx-config.test.js`
 Expected: FAIL — **three** failing tests (`# fail 3`), the first three tests still
 green. The messages, in order:
 
-1. `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^[ \t]*listen 443 ssl http2;$/m`
-2. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl http2;` line``
-3. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl http2;` line``
+1. `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^[ \t]*listen 443 ssl;$/m`
+2. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl;` line``
+3. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl;` line``
 
 - [x] **Step 3: Write the minimal implementation**
 
@@ -2093,26 +2092,30 @@ Append verbatim to the end of `infra/nginx/api.conf`:
 ```nginx
 
 server {
-    # Old-style `ssl http2` on the listen line ON PURPOSE. The modern
-    # `http2 on;` directive needs nginx >= 1.25.1; Ubuntu 22.04 ships 1.18 and
-    # 24.04 ships 1.24, where `http2 on;` is an unknown directive and nginx -t
-    # FAILS. The deploy treats a failed nginx -t as fatal, rolls both files back
-    # and exits 1, so that one line would abort the cutover. The deprecated
-    # form only warns on newer builds, which makes it the single form that
-    # loads on every nginx this box might be running.
+    # NO `http2` TOKEN, AND NO `http2 on;` DIRECTIVE. Decided 2026-07-31 against
+    # the real box, not in the abstract.
     #
-    # AND IT REACHES PAST THIS VHOST. `ssl http2` on a listen line is a
-    # PER-SOCKET option, and Ubuntu's nginx.conf parses conf.d/ BEFORE
-    # sites-enabled/, so this is the first listen line to touch 0.0.0.0:443 and
-    # its options win for order.yeyintlwin.com and epaper-hub.yeyintlwin.com
-    # too. nginx -t says so, once, as
-    #   nginx: [warn] protocol options redefined for 0.0.0.0:443
-    # If those two sites must stay on HTTP/1.1, the correct resolution is to
-    # DROP the `http2` token from both listen lines below and from the two
-    # matching assertions in apps/core-api/test/nginx-config.test.js. Nothing in
-    # Phase 1 needs HTTP/2.
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    # `http2 on;` is not an option here at all: it needs nginx >= 1.25.1 and this
+    # box runs 1.24.0, where it is an unknown directive and nginx -t FAILS. The
+    # deploy treats that as fatal, rolls both files back and exits 1, so that one
+    # line would abort the cutover.
+    #
+    # The old-style `listen 443 ssl http2` form would load, but it REACHES PAST
+    # THIS VHOST: it is a PER-SOCKET option, and Ubuntu's nginx.conf parses
+    # conf.d/ BEFORE sites-enabled/, so this would be the first listen line to
+    # touch 0.0.0.0:443 and its options would win for every other vhost on it.
+    # That is SEVEN other sites on this box -- airpaste-api, n8n, myanmyanlearn,
+    # epaper-hub, order, inkwire, lopaka and the apex -- none of which enable
+    # http2 today, and three of which (airpaste-api, n8n, myanmyanlearn) proxy
+    # WebSocket upgrades. nginx does not implement RFC 8441, so WebSockets over
+    # HTTP/2 are not available; browsers normally fall back to an HTTP/1.1 ALPN
+    # connection for the handshake, but that is an untested protocol change to
+    # unrelated production services bought for no Phase-1 benefit.
+    #
+    # Nothing in Phase 1 needs HTTP/2. If a later phase does, enable it on the
+    # socket deliberately and re-test those three WebSocket sites first.
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api.yeyintlwin.com;
 
     # Read at PARSE time. The certificate must already exist: DNS A record,
@@ -2365,8 +2368,9 @@ test("infra/README.md documents the install targets, the hop count and its four 
   // holding a config it cannot load.
   assert.match(readme, /core-api-proxy\.conf\.bak/);
 
-  // `listen 443 ssl http2` is a per-socket option, so this file changes HTTP/2
-  // for the other two vhosts on :443 as well.
+  // The http2 token is a per-socket option, so adding it here would change
+  // HTTP/2 for all seven other vhosts sharing :443. The runbook records why it
+  // is deliberately absent.
   assert.match(readme, /per-socket/i);
   assert.match(readme, /protocol options redefined/);
 
@@ -2451,30 +2455,37 @@ that installs them, so there is nothing half-installed to repair by hand.
 `certbot` renews over HTTP-01, which is why the port-80 block keeps
 `/.well-known/acme-challenge/` reachable instead of redirecting everything.
 
-### `listen 443 ssl http2` is a per-socket option, so it changes the other vhosts too
+### `api.conf` enables no HTTP/2, on purpose — it is a per-socket option
 
-Ubuntu 22.04 ships nginx 1.18 and 24.04 ships 1.24, so `api.conf` uses the
-deprecated `listen 443 ssl http2;` form: `http2 on;` needs nginx >= 1.25.1 and
-fails `nginx -t` on both, which would abort the deploy.
+`api.conf` uses a plain `listen 443 ssl;`. Neither HTTP/2 form is used, and both
+exclusions are deliberate.
 
-The consequence reaches past this vhost. `ssl http2` on a listen line is a
-**per-socket** option, and Ubuntu's `nginx.conf` parses `conf.d/` *before*
-`sites-enabled/`, so this file's listen line is the first to touch
-`0.0.0.0:443` and its options apply to `order.yeyintlwin.com` and
-`epaper-hub.yeyintlwin.com` as well. `nginx -t` says so exactly once:
+`http2 on;` is not available: it needs nginx >= 1.25.1 and this box runs
+**1.24.0**, where it is an unknown directive and `nginx -t` fails outright —
+which the deploy treats as fatal, so that one line would abort the cutover.
+
+The deprecated `listen 443 ssl http2;` form *would* load, but it reaches past
+this vhost. `ssl http2` on a listen line is a **per-socket** option, and
+Ubuntu's `nginx.conf` parses `conf.d/` *before* `sites-enabled/`, so this file's
+listen line is the first to touch `0.0.0.0:443` and its options would apply to
+**every** vhost sharing that socket. On this box that is seven others —
+`airpaste-api`, `n8n`, `myanmyanlearn`, `epaper-hub`, `order`, `inkwire`,
+`lopaka` and the apex — none of which enable HTTP/2 today, and **three of which
+proxy WebSocket upgrades** (`airpaste-api`, `n8n`, `myanmyanlearn`). nginx does
+not implement RFC 8441, so WebSockets over HTTP/2 are unavailable; browsers
+normally fall back to an HTTP/1.1 ALPN connection for the handshake, but that is
+an untested protocol change to unrelated production services bought for no
+Phase-1 benefit.
+
+If you ever add the token back you will see `nginx -t` say so exactly once:
 
 ```
 nginx: [warn] protocol options redefined for 0.0.0.0:443
 ```
 
-That warning is a decision, not noise. If the other two sites must stay on
-HTTP/1.1, drop the `http2` token from both listen lines in `infra/nginx/api.conf`
-and from the two matching assertions in
-`apps/core-api/test/nginx-config.test.js`. Nothing in Phase 1 needs HTTP/2.
-The other warning you may see, `the "listen ... http2" directive is deprecated`,
-is harmless: `nginx -t` still exits 0 and the deprecated form is the only one
-that also loads on 1.18 and 1.24.
-
+That warning is a decision, not noise. Nothing in Phase 1 needs HTTP/2. If a
+later phase does, enable it on the socket deliberately and re-test those three
+WebSocket sites first.
 ### `/health` is loopback-only, `/health/ready` is 404
 
 `GET /health` is proxied but wrapped in `allow 127.0.0.1; allow ::1; deny all;`,
@@ -7241,7 +7252,7 @@ tenant-isolation sweep. Use one of the two forms below.
 - HANDOFF TO `workflow` - the verbatim required-assertion list is written out inside the MANUAL VERIFICATION task under "Preconditions this area does not own": the two scp lines to /tmp, BOTH `cp -a … .bak` snapshots, the two `install -m0644` lines, the two-branch rollback that restores or removes BOTH files, the rollback's own `nginx -t`, and `systemctl reload nginx`. The `cp -a /etc/nginx/snippets/core-api-proxy.conf /tmp/core-api-proxy.conf.bak` snapshot and its restore/rm branch are an ADDITION to spec 9.5, which snapshots only the vhost; without it a bad snippet survives the rollback, the rollback's own nginx -t fails, and the box is left unloadable. These assertions belong in apps/core-api/test/deploy-config.test.js, appended by `workflow` as top-level test() blocks.
 - SECOND HANDOFF TO `workflow`, smaller: spec 9.5's two post-reload proofs (`sudo nginx -T | grep -q 'limit_req_zone .*zone=core_login'` and `… grep -q 'proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for'`) should gain `| grep -vE '^[[:space:]]*#'` ahead of the grep, for the same reason every on-box check in this area does: nginx -T prints comments verbatim. The two files as written here are safe today - neither spells those full directive forms in a comment, and both carry a comment saying never to - but the filter costs nothing and removes the dependency on that discipline.
 - infra/README.md heading collisions to watch at assembly: this area's section carries `### TRUSTED_PROXY_HOPS=1, and the four ways it breaks silently` and `### One-time prerequisite order`, both `###` inside its own reserved `##`. `cutover` owns the top-level `## The client-IP chain` and `## Cutover checklist`; those should record the OBSERVED topology and the full 9-step cutover list and link here rather than restating the four breakers or the certbot ordering. This area deliberately does NOT carry the "every push recreates epaper-hub and customer-order / deploy outside service hours" paragraph - that is `cutover`'s `## Deploy window`.
-- TEST COUNTS, in order: 1, 3, 6, 8, 9. The Step 2 expectations are stated per task and two of them are not ENOENT - the TLS task fails three tests with one regex message and two copies of "api.conf has no `listen 443 ssl http2;` line", and the structural-guard task PASSES on first run (8 tests) by design, with non-vacuity proved by two throwaway mutations reverted with `git checkout --`.
+- TEST COUNTS, in order: 1, 3, 6, 8, 9. The Step 2 expectations are stated per task and two of them are not ENOENT - the TLS task fails three tests with one regex message and two copies of "api.conf has no `listen 443 ssl;` line", and the structural-guard task PASSES on first run (8 tests) by design, with non-vacuity proved by two throwaway mutations reverted with `git checkout --`.
 - Fix applied: the `server_name api.yeyintlwin.com;` count-of-2 assertion moved verbatim out of the port-80 task (where only one server block exists) into the TLS task's first test. The port-80 task keeps a presence-only `/^[ \t]*server_name api\.yeyintlwin\.com;$/m`, and both tasks' Step 2 counts are restated: 2 failing tests for the port-80 task, 3 for the TLS task.
 - Fix applied: a `tlsServer(text)` helper slices the TLS block by brace-matching back from `listen 443 ssl http2;` to its `server {`, and all four TLS locations are selected from that slice - not just the catch-all. The port-80 test now pins `locationBody(conf, "/")` to `return 301 https://$host$request_uri;`, so if the blocks are ever reordered the port-80 test goes red instead of the catch-all's rate-limit assertion silently grading the redirect.
 - Fix applied: the structural guard is now `assert.equal(includeCount, 4)` plus `assert.doesNotMatch(conf, /proxy_pass/)`. The proxy_pass-vs-include arithmetic and its `5 !== 4` expected output are gone - that failure was unreachable, because `^[ \t]*proxy_pass` does not match the single-line `location /x/ { proxy_pass … }` form spec 9.6 itself uses. The mutation step now expects the message that actually fires: `AssertionError [ERR_ASSERTION]: api.conf must never proxy_pass directly`.

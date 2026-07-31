@@ -141,22 +141,22 @@ test("api.conf redirects port 80 and keeps the ACME challenge path reachable", (
   assert.match(locationBody(conf, "/"), /^\s*return 301 https:\/\/\$host\$request_uri;\s*$/);
 });
 
-// Slices the TLS server block out of api.conf: find `listen 443 ssl http2;`,
+// Slices the TLS server block out of api.conf: find `listen 443 ssl;`,
 // walk BACK to the `server {` that opens the block it sits in, then brace-match
 // forward. Every assertion below selects from this slice rather than from the
 // file, because both server blocks own a `location /` and a whole-file select
 // finds the port-80 redirect first -- which would grade the redirect against
 // the catch-all's rate-limit rules and pass while asserting nothing.
 function tlsServer(text) {
-  const listenIndex = text.indexOf("listen 443 ssl http2;");
-  assert.ok(listenIndex !== -1, "api.conf has no `listen 443 ssl http2;` line");
+  const listenIndex = text.indexOf("listen 443 ssl;");
+  assert.ok(listenIndex !== -1, "api.conf has no `listen 443 ssl;` line");
 
   const opener = /server\s*\{/g;
   let start = -1;
   for (let match = opener.exec(text); match && match.index < listenIndex; match = opener.exec(text)) {
     start = match.index + match[0].length;
   }
-  assert.ok(start !== -1, "no `server {` opens the block holding `listen 443 ssl http2;`");
+  assert.ok(start !== -1, "no `server {` opens the block holding `listen 443 ssl;`");
 
   let depth = 1;
   for (let index = start; index < text.length; index += 1) {
@@ -169,16 +169,23 @@ function tlsServer(text) {
   assert.fail("unbalanced braces in the TLS server block");
 }
 
-test("the TLS server block uses the listen-line http2 form, not the 1.25.1 directive", () => {
+test("the TLS server block enables no HTTP/2 in either form", () => {
   const conf = apiConf();
 
-  assert.match(conf, /^[ \t]*listen 443 ssl http2;$/m);
-  assert.match(conf, /^[ \t]*listen \[::\]:443 ssl http2;$/m);
+  assert.match(conf, /^[ \t]*listen 443 ssl;$/m);
+  assert.match(conf, /^[ \t]*listen \[::\]:443 ssl;$/m);
 
-  // `http2 on;` needs nginx >= 1.25.1. Ubuntu 22.04 ships 1.18 and 24.04 ships
-  // 1.24, where it is an unknown directive and nginx -t FAILS -- which the
-  // deploy treats as fatal, so this single line would abort the cutover.
+  // `http2 on;` needs nginx >= 1.25.1 and the box runs 1.24.0, where it is an
+  // unknown directive and nginx -t FAILS -- which the deploy treats as fatal,
+  // so this single line would abort the cutover.
   assert.doesNotMatch(conf, /^[ \t]*http2\s+(?:on|off);/m);
+
+  // And no `http2` token on the listen lines either. It is a PER-SOCKET option
+  // and conf.d/ parses before sites-enabled/, so it would be the first listen
+  // line to touch 0.0.0.0:443 and would enable HTTP/2 for the seven unrelated
+  // vhosts sharing that socket -- three of which proxy WebSocket upgrades, and
+  // nginx does not implement RFC 8441. Nothing in Phase 1 needs HTTP/2.
+  assert.doesNotMatch(conf, /^[ \t]*listen[^\n]*\bhttp2\b/m);
 
   // Both server blocks name the vhost: the port-80 redirect from the previous
   // task and this one. A count of 1 means this block was appended to the wrong
@@ -298,8 +305,9 @@ test("infra/README.md documents the install targets, the hop count and its four 
   // holding a config it cannot load.
   assert.match(readme, /core-api-proxy\.conf\.bak/);
 
-  // `listen 443 ssl http2` is a per-socket option, so this file changes HTTP/2
-  // for the other two vhosts on :443 as well.
+  // The http2 token is a per-socket option, so adding it here would change
+  // HTTP/2 for all seven other vhosts sharing :443. The runbook records why it
+  // is deliberately absent.
   assert.match(readme, /per-socket/i);
   assert.match(readme, /protocol options redefined/);
 

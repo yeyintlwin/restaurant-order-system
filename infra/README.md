@@ -135,29 +135,37 @@ that installs them, so there is nothing half-installed to repair by hand.
 `certbot` renews over HTTP-01, which is why the port-80 block keeps
 `/.well-known/acme-challenge/` reachable instead of redirecting everything.
 
-### `listen 443 ssl http2` is a per-socket option, so it changes the other vhosts too
+### `api.conf` enables no HTTP/2, on purpose — it is a per-socket option
 
-Ubuntu 22.04 ships nginx 1.18 and 24.04 ships 1.24, so `api.conf` uses the
-deprecated `listen 443 ssl http2;` form: `http2 on;` needs nginx >= 1.25.1 and
-fails `nginx -t` on both, which would abort the deploy.
+`api.conf` uses a plain `listen 443 ssl;`. Neither HTTP/2 form is used, and both
+exclusions are deliberate.
 
-The consequence reaches past this vhost. `ssl http2` on a listen line is a
-**per-socket** option, and Ubuntu's `nginx.conf` parses `conf.d/` *before*
-`sites-enabled/`, so this file's listen line is the first to touch
-`0.0.0.0:443` and its options apply to `order.yeyintlwin.com` and
-`epaper-hub.yeyintlwin.com` as well. `nginx -t` says so exactly once:
+`http2 on;` is not available: it needs nginx >= 1.25.1 and this box runs
+**1.24.0**, where it is an unknown directive and `nginx -t` fails outright —
+which the deploy treats as fatal, so that one line would abort the cutover.
+
+The deprecated `listen 443 ssl http2;` form *would* load, but it reaches past
+this vhost. `ssl http2` on a listen line is a **per-socket** option, and
+Ubuntu's `nginx.conf` parses `conf.d/` *before* `sites-enabled/`, so this file's
+listen line is the first to touch `0.0.0.0:443` and its options would apply to
+**every** vhost sharing that socket. On this box that is seven others —
+`airpaste-api`, `n8n`, `myanmyanlearn`, `epaper-hub`, `order`, `inkwire`,
+`lopaka` and the apex — none of which enable HTTP/2 today, and **three of which
+proxy WebSocket upgrades** (`airpaste-api`, `n8n`, `myanmyanlearn`). nginx does
+not implement RFC 8441, so WebSockets over HTTP/2 are unavailable; browsers
+normally fall back to an HTTP/1.1 ALPN connection for the handshake, but that is
+an untested protocol change to unrelated production services bought for no
+Phase-1 benefit.
+
+If you ever add the token back you will see `nginx -t` say so exactly once:
 
 ```
 nginx: [warn] protocol options redefined for 0.0.0.0:443
 ```
 
-That warning is a decision, not noise. If the other two sites must stay on
-HTTP/1.1, drop the `http2` token from both listen lines in `infra/nginx/api.conf`
-and from the two matching assertions in
-`apps/core-api/test/nginx-config.test.js`. Nothing in Phase 1 needs HTTP/2.
-The other warning you may see, `the "listen ... http2" directive is deprecated`,
-is harmless: `nginx -t` still exits 0 and the deprecated form is the only one
-that also loads on 1.18 and 1.24.
+That warning is a decision, not noise. Nothing in Phase 1 needs HTTP/2. If a
+later phase does, enable it on the socket deliberately and re-test those three
+WebSocket sites first.
 
 ### `/health` is loopback-only, `/health/ready` is 404
 
