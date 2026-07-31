@@ -140,3 +140,109 @@ test("api.conf redirects port 80 and keeps the ACME challenge path reachable", (
   // instead. That is why they select from tlsServer(conf), never from the file.
   assert.match(locationBody(conf, "/"), /^\s*return 301 https:\/\/\$host\$request_uri;\s*$/);
 });
+
+// Slices the TLS server block out of api.conf: find `listen 443 ssl http2;`,
+// walk BACK to the `server {` that opens the block it sits in, then brace-match
+// forward. Every assertion below selects from this slice rather than from the
+// file, because both server blocks own a `location /` and a whole-file select
+// finds the port-80 redirect first -- which would grade the redirect against
+// the catch-all's rate-limit rules and pass while asserting nothing.
+function tlsServer(text) {
+  const listenIndex = text.indexOf("listen 443 ssl http2;");
+  assert.ok(listenIndex !== -1, "api.conf has no `listen 443 ssl http2;` line");
+
+  const opener = /server\s*\{/g;
+  let start = -1;
+  for (let match = opener.exec(text); match && match.index < listenIndex; match = opener.exec(text)) {
+    start = match.index + match[0].length;
+  }
+  assert.ok(start !== -1, "no `server {` opens the block holding `listen 443 ssl http2;`");
+
+  let depth = 1;
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "{") depth += 1;
+    else if (text[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index);
+    }
+  }
+  assert.fail("unbalanced braces in the TLS server block");
+}
+
+test("the TLS server block uses the listen-line http2 form, not the 1.25.1 directive", () => {
+  const conf = apiConf();
+
+  assert.match(conf, /^[ \t]*listen 443 ssl http2;$/m);
+  assert.match(conf, /^[ \t]*listen \[::\]:443 ssl http2;$/m);
+
+  // `http2 on;` needs nginx >= 1.25.1. Ubuntu 22.04 ships 1.18 and 24.04 ships
+  // 1.24, where it is an unknown directive and nginx -t FAILS -- which the
+  // deploy treats as fatal, so this single line would abort the cutover.
+  assert.doesNotMatch(conf, /^[ \t]*http2\s+(?:on|off);/m);
+
+  // Both server blocks name the vhost: the port-80 redirect from the previous
+  // task and this one. A count of 1 means this block was appended to the wrong
+  // file, or the redirect block was replaced instead of extended.
+  assert.equal((conf.match(/server_name api\.yeyintlwin\.com;/g) || []).length, 2);
+
+  assert.match(conf, /^[ \t]*ssl_certificate\s+\/etc\/letsencrypt\/live\/api\.yeyintlwin\.com\/fullchain\.pem;$/m);
+  assert.match(conf, /^[ \t]*ssl_certificate_key \/etc\/letsencrypt\/live\/api\.yeyintlwin\.com\/privkey\.pem;$/m);
+
+  // No Phase-1 body is legitimately large, and a 5 MB body is otherwise a free
+  // way to hold one of only SCRYPT_SLOTS=2 open.
+  assert.match(conf, /^[ \t]*client_max_body_size\s+64k;$/m);
+  assert.match(conf, /^[ \t]*client_body_timeout\s+10s;$/m);
+  assert.match(conf, /^[ \t]*client_header_timeout 10s;$/m);
+
+  assert.match(conf, /add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;/);
+});
+
+test("/health is proxied loopback-only and /health/ready is never reachable publicly", () => {
+  const tls = tlsServer(apiConf());
+
+  const health = locationBody(tls, "= /health");
+  // A hard 404 here would abort EVERY deploy. The gate runs
+  //   curl -fsS --resolve api.yeyintlwin.com:443:127.0.0.1 https://.../health
+  // through the real TLS chain, and curl -fsS exits 22 on 4xx -- after the
+  // migration has already applied. The spec corrects an earlier draft that
+  // returned 404 for both paths for exactly this reason.
+  assert.match(health, /allow 127\.0\.0\.1;/);
+  assert.match(health, /allow ::1;/);
+  assert.match(health, /deny all;/);
+  assert.match(health, /include \/etc\/nginx\/snippets\/core-api-proxy\.conf;/);
+  assert.doesNotMatch(health, /return 404/);
+
+  // Readiness names the database and the migration ledger. Never public.
+  const ready = locationBody(tls, "= /health/ready");
+  assert.match(ready, /return 404;/);
+  assert.doesNotMatch(ready, /include|proxy_pass/);
+});
+
+test("the two credential routes are rate limited at the network layer and answer 429", () => {
+  const tls = tlsServer(apiConf());
+
+  // The network half of the login limiter. The application half
+  // (LOGIN_RATE_PER_MINUTE, PASSWORD_ABUSE_THRESHOLD) still runs; this one
+  // sheds the flood before it can occupy a scrypt slot at all.
+  const login = locationBody(tls, "= /api/admin/auth/login");
+  assert.match(login, /limit_req zone=core_login burst=5 nodelay;/);
+  assert.match(login, /limit_req_status 429;/);
+  assert.match(login, /include \/etc\/nginx\/snippets\/core-api-proxy\.conf;/);
+
+  const pair = locationBody(tls, "= /api/terminal/pair");
+  assert.match(pair, /limit_req zone=core_pair burst=5 nodelay;/);
+  assert.match(pair, /limit_req_status 429;/);
+  assert.match(pair, /include \/etc\/nginx\/snippets\/core-api-proxy\.conf;/);
+
+  // Selected from the TLS slice, never from the file: the port-80 redirect owns
+  // a `location /` too and it is written first.
+  const catchAll = locationBody(tls, "/");
+  assert.match(catchAll, /limit_req zone=core_api burst=40 nodelay;/);
+  assert.match(catchAll, /include \/etc\/nginx\/snippets\/core-api-proxy\.conf;/);
+
+  // NO limit_req_status here on purpose -- see the comment in api.conf. The
+  // catch-all sheds with nginx's default 503, and 503 vs 429 is the difference
+  // between "the whole API is being flooded" and "you specifically are going
+  // too fast" in the access log.
+  assert.doesNotMatch(catchAll, /limit_req_status/);
+});

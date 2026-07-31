@@ -1963,7 +1963,7 @@ honour a **forged** header and turn the loopback-only `/health` into a public on
 - Modify: `infra/nginx/api.conf` (append the 443 server block)
 - Test: `apps/core-api/test/nginx-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/nginx-config.test.js`:
 
@@ -2075,7 +2075,7 @@ test("the two credential routes are rate limited at the network layer and answer
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`
 
@@ -2086,7 +2086,7 @@ green. The messages, in order:
 2. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl http2;` line``
 3. ``AssertionError [ERR_ASSERTION]: api.conf has no `listen 443 ssl http2;` line``
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append verbatim to the end of `infra/nginx/api.conf`:
 
@@ -2180,11 +2180,11 @@ server {
 }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`  Expected: PASS (6 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/nginx/api.conf apps/core-api/test/nginx-config.test.js
