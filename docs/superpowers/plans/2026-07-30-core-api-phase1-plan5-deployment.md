@@ -2343,7 +2343,7 @@ touches no existing line of that file.
 - Modify: `infra/README.md` (append one section; no existing line changes)
 - Test: `apps/core-api/test/nginx-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/nginx-config.test.js`:
 
@@ -2397,14 +2397,14 @@ test("infra/README.md documents the install targets, the hop count and its four 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`
 
 Expected: FAIL with
 `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /\/etc\/nginx\/conf\.d\/api\.yeyintlwin\.com\.conf/`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to the end of `infra/README.md`, changing no existing line:
 
@@ -2551,7 +2551,7 @@ matches `api.yeyintlwin.com`, that the certificate serves, or that `limit_req`
 fires — which is what the `--resolve` curl and the deploy's burst probe are for.
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`  Expected: PASS (9 tests)
 
@@ -2581,7 +2581,7 @@ grep -cE 'proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for' infra/
 
 Expected: `1`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/README.md apps/core-api/test/nginx-config.test.js

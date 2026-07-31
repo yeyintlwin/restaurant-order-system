@@ -92,3 +92,144 @@ cd ~/restaurant-order-system && CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=..
 **Never run `docker compose config` on this box without `--quiet` or `--services`** — Compose
 interpolates env_file contents into its output, so a bare `docker compose config` prints
 POSTGRES_PASSWORD and both DSNs in cleartext, to your terminal and into your shell's scrollback.
+
+## Core API: Nginx for api.yeyintlwin.com
+
+`apps/core-api` is published by Compose on `127.0.0.1:3200` — never on a public
+interface — and Nginx terminates HTTPS for `api.yeyintlwin.com`, the same shape
+the hub (`127.0.0.1:3000`) and customer ordering (`127.0.0.1:3100`) already use.
+Two files in `infra/nginx/` are the whole of it, and the deploy installs both:
+
+| Repo file | Installed to | Why there |
+| --- | --- | --- |
+| `infra/nginx/api.conf` | `/etc/nginx/conf.d/api.yeyintlwin.com.conf` | `limit_req_zone` is an `http{}`-scope-only directive, and Ubuntu's stock `nginx.conf` carries `include /etc/nginx/conf.d/*.conf;` inside `http{}`. In a `server{}` block `nginx -t` fails with `"limit_req_zone" directive is not allowed here`. Installing to `conf.d/` needs **zero edits to `nginx.conf`**, so there is no hand-edited system file to lose on a package reinstall. |
+| `infra/nginx/core-api-proxy.conf` | `/etc/nginx/snippets/core-api-proxy.conf` | `proxy_pass` and `proxy_set_header` are `location`-scope, so every proxying `location` `include`s this snippet. Including it at `server{}` scope fails `nginx -t`. |
+
+Both are scp'd to `/tmp` on the box and installed from there, never into
+`~/restaurant-order-system/`: the deploy's
+`find ~/restaurant-order-system -mindepth 1 -maxdepth 1 ! -name docker-compose.yml ! -name config -exec rm -rf {} +`
+would delete anything else in that folder before `docker compose up -d`.
+
+The deploy snapshots **both** installed files — `/tmp/api.conf.bak` and
+`/tmp/core-api-proxy.conf.bak` — installs both, runs `nginx -t`, and **restores
+both and exits 1 if the test fails**, before it ever reloads. Snapshotting only
+the vhost would not be a rollback: a bad snippet survives it, the rollback's own
+`nginx -t` fails too, and the box is left holding a config it cannot load.
+Installing first and validating second is the same defect one step earlier — the
+running Nginx keeps its in-memory config, so nothing looks wrong until certbot's
+renew hook or a reboot reloads it, days later, taking `order.yeyintlwin.com` and
+`epaper-hub.yeyintlwin.com` down with it.
+
+### One-time prerequisite order — not negotiable
+
+1. DNS A record: `api.yeyintlwin.com` → the Lightsail instance.
+2. `sudo certbot certonly --nginx -d api.yeyintlwin.com`
+3. Only then push, so the deploy installs `api.conf`.
+
+`ssl_certificate` is read at **parse** time. With no certificate on disk,
+`nginx -t` fails with
+`cannot load certificate "/etc/letsencrypt/live/api.yeyintlwin.com/fullchain.pem"`,
+the deploy restores both files and exits 1 — and the deploy is the only thing
+that installs them, so there is nothing half-installed to repair by hand.
+
+`certbot` renews over HTTP-01, which is why the port-80 block keeps
+`/.well-known/acme-challenge/` reachable instead of redirecting everything.
+
+### `listen 443 ssl http2` is a per-socket option, so it changes the other vhosts too
+
+Ubuntu 22.04 ships nginx 1.18 and 24.04 ships 1.24, so `api.conf` uses the
+deprecated `listen 443 ssl http2;` form: `http2 on;` needs nginx >= 1.25.1 and
+fails `nginx -t` on both, which would abort the deploy.
+
+The consequence reaches past this vhost. `ssl http2` on a listen line is a
+**per-socket** option, and Ubuntu's `nginx.conf` parses `conf.d/` *before*
+`sites-enabled/`, so this file's listen line is the first to touch
+`0.0.0.0:443` and its options apply to `order.yeyintlwin.com` and
+`epaper-hub.yeyintlwin.com` as well. `nginx -t` says so exactly once:
+
+```
+nginx: [warn] protocol options redefined for 0.0.0.0:443
+```
+
+That warning is a decision, not noise. If the other two sites must stay on
+HTTP/1.1, drop the `http2` token from both listen lines in `infra/nginx/api.conf`
+and from the two matching assertions in
+`apps/core-api/test/nginx-config.test.js`. Nothing in Phase 1 needs HTTP/2.
+The other warning you may see, `the "listen ... http2" directive is deprecated`,
+is harmless: `nginx -t` still exits 0 and the deprecated form is the only one
+that also loads on 1.18 and 1.24.
+
+### `/health` is loopback-only, `/health/ready` is 404
+
+`GET /health` is proxied but wrapped in `allow 127.0.0.1; allow ::1; deny all;`,
+because the deploy gate curls it through the real TLS chain with `--resolve`
+from the box itself and `curl -fsS` exits 22 on any 4xx. Returning 404 there
+would abort **every** deploy, after the migration had already applied. From the
+internet it answers 403. `/health/ready` returns 404 unconditionally: it names
+the database and the migration ledger, and nothing off-box needs it — the
+container healthcheck calls `/health`.
+
+### `TRUSTED_PROXY_HOPS=1`, and the four ways it breaks silently
+
+`core-api-proxy.conf` sets the forwarded-for header to
+`$proxy_add_x_forwarded_for`. That variable is the client's incoming
+`X-Forwarded-For` with `$remote_addr` appended **on the right**, so counting
+**one** entry from the right yields the address Nginx actually saw. A client
+sending `X-Forwarded-For: 1.2.3.4` produces `1.2.3.4, <real ip>` and the real IP
+still wins. That is why the value is `1`, and it is correct only for the
+topology described here: one Nginx, on the same host, in front of core-api.
+
+Four ways this breaks with no error and no log line:
+
+1. **`real_ip_header` or `set_real_ip_from` added to this server block.** Either
+   rewrites `$remote_addr` *before* the forwarded-for chain is built, so a
+   forged header is appended to itself and the one-from-the-right read returns
+   the attacker's value — a total bypass. The same directives make
+   `allow 127.0.0.1` on `/health` honour a forged header too, publishing the
+   surface the 403 exists to hide. *Checked:*
+   `apps/core-api/test/nginx-config.test.js` asserts neither directive appears
+   in either file.
+2. **A `location` that proxies without the include.** Written without the
+   snippet, it sets no `X-Forwarded-For` at all, so Nginx forwards the client's
+   own header untouched. *Checked:* the same test pins the include count at four
+   and asserts `api.conf` never carries `proxy_pass` at all — the snippet is the
+   only file in `infra/nginx/` allowed to proxy.
+3. **Adding a proxy in front (a CDN, a load balancer) without changing the
+   number.** Every entry shifts one place to the left, the value read becomes
+   attacker-controlled, and one attacker can lock out every account on the
+   platform through the login limiter. Nothing can check this from a file:
+   change `TRUSTED_PROXY_HOPS` in the same commit that adds the proxy, and
+   re-run the deploy's XFF probe.
+4. **`proxy_set_header X-Forwarded-For $remote_addr`.** It produces the right
+   answer today at `hops=1` and discards the chain, so the day breaker 3
+   happens there is nothing left to count. *Checked:* the snippet test asserts
+   this form does not appear.
+
+Code side: when `X-Forwarded-For` is absent, has fewer than
+`TRUSTED_PROXY_HOPS` entries, or the selected entry fails `net.isIP()`, core-api
+treats the derivation as untrusted — the rate-limit bucket collapses to a single
+shared `"unknown"` key (strictest, fail-closed), `source_ip` is written NULL
+(fail-soft), and it logs at error level on **every** occurrence. A burst of
+those lines means the topology and the number disagree.
+
+### Verify the proxy on the box
+
+`nginx -T` prints every configuration file verbatim, comments included, and
+`api.conf` deliberately **names the directives it forbids** — so every grep
+below strips comment lines first, or it matches the warning instead of the
+directive and can never report a clean result. `nginx -T` dumps each file
+exactly once no matter how many times it is included, which is why the second
+count is 1 and not 4.
+
+```sh
+sudo nginx -t
+sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -c 'limit_req_zone .*zone=core_'                    # expect 3
+sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -cE 'proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for'    # expect 1
+sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -E 'real_ip_header|set_real_ip_from|real_ip_recursive' || echo NONE
+curl -s -o /dev/null -w '%{http_code}\n' -m 5 \
+  --resolve api.yeyintlwin.com:443:127.0.0.1 https://api.yeyintlwin.com/health   # expect 200
+```
+
+`nginx -T` proves the directives are **loaded**. It does not prove a server block
+matches `api.yeyintlwin.com`, that the certificate serves, or that `limit_req`
+fires — which is what the `--resolve` curl and the deploy's burst probe are for.

@@ -280,3 +280,51 @@ test("every location that forwards to core-api does so through the proxy snippet
   // and it is caught here whatever brace style it is written in.
   assert.doesNotMatch(conf, /proxy_pass/, "api.conf must never proxy_pass directly");
 });
+
+test("infra/README.md documents the install targets, the hop count and its four silent breakers", () => {
+  const readme = readText(repoRoot, "infra", "README.md");
+
+  // Where each file goes, and why conf.d rather than sites-available.
+  assert.match(readme, /\/etc\/nginx\/conf\.d\/api\.yeyintlwin\.com\.conf/);
+  assert.match(readme, /\/etc\/nginx\/snippets\/core-api-proxy\.conf/);
+  assert.match(readme, /limit_req_zone/);
+  assert.match(readme, /http\{\}/);
+
+  // Same shape as the 3000 / 3100 sentence this file already carries.
+  assert.match(readme, /127\.0\.0\.1:3200/);
+
+  // The rollback restores BOTH files. Snapshotting only the vhost leaves a bad
+  // snippet on disk, the rollback's own nginx -t fails, and the box is left
+  // holding a config it cannot load.
+  assert.match(readme, /core-api-proxy\.conf\.bak/);
+
+  // `listen 443 ssl http2` is a per-socket option, so this file changes HTTP/2
+  // for the other two vhosts on :443 as well.
+  assert.match(readme, /per-socket/i);
+  assert.match(readme, /protocol options redefined/);
+
+  // The hop count and the variable it derives from.
+  assert.match(readme, /TRUSTED_PROXY_HOPS=1/);
+  assert.match(readme, /\$proxy_add_x_forwarded_for/);
+
+  // All four silent breakers, each named where an operator will search for it.
+  assert.match(readme, /set_real_ip_from/);
+  assert.match(readme, /real_ip_header/);
+  assert.match(readme, /without the include/i);
+  assert.match(readme, /adding a proxy in front/i);
+  assert.match(readme, /X-Forwarded-For \$remote_addr/);
+
+  // Prerequisite ordering: nginx -t cannot pass before the certificate exists,
+  // and the deploy is the only thing that installs the file.
+  assert.match(readme, /A record/i);
+  assert.match(readme, /certbot certonly --nginx -d api\.yeyintlwin\.com/);
+  assert.match(readme, /nginx -t/);
+
+  // Every on-box grep strips comments first: nginx -T prints them verbatim and
+  // api.conf deliberately names the directives it forbids.
+  assert.match(readme, /nginx -T \| grep -vE/);
+
+  // The health split, so nobody "fixes" the 200 on /health.
+  assert.match(readme, /\/health\/ready/);
+  assert.match(readme, /\bcurl -fsS\b/);
+});
