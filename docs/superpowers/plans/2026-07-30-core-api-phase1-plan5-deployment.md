@@ -3337,12 +3337,24 @@ Three design points that are not obvious:
 It lives in `infra/`, not `apps/core-api/scripts/`, because it is a host script: it drives
 `docker compose`, which does not exist inside the image.
 
+> **DEFECT FOUND ON EXECUTION 2026-07-31, fixed in the text below.** Step 1 asserted
+> `assert.doesNotMatch(script, /n_live_tup/)` while Step 3's script names `n_live_tup` twice in
+> comments explaining why it is the wrong thing to use. The task failed its own assertion. The
+> assertion is now scoped to executable lines and mutation-tested — appending a real
+> `SELECT relname, n_live_tup FROM pg_stat_user_tables` still turns it red.
+>
+> **This is the FOURTH time this exact shape has appeared in this plan** — after must-fix 2
+> (`--no-owner`), Task 2 (`pg-native`) and Task 1's scp assertion. The pattern: this plan tests
+> files by matching their TEXT, and those files DOCUMENT THEMSELVES, so a comment that explains
+> why something is forbidden satisfies the rule that forbids it. **Any `doesNotMatch` over a
+> self-documenting file must be scoped to the lines that execute.**
+
 **Files:**
 - Create: `infra/restore-drill.sh`
 - Test: `apps/core-api/test/backup-restore.test.js` (append)
 - Referenced, not edited: the scp of this file into `config/` is handoff item (a) to `workflow`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/backup-restore.test.js`:
 
@@ -3440,17 +3452,27 @@ test("the drill refuses without headroom, rejects the wrong dump, then checks th
   // restored database that has never been ANALYZEd -- which is the exact failure this
   // drill exists to notice, reported as success.
   assert.match(script, /query_to_xml/);
-  assert.doesNotMatch(script, /n_live_tup/);
+  // Scoped to EXECUTABLE lines. The script names n_live_tup in a comment, to say why it
+  // is not used; a bare /n_live_tup/ forbids the script from explaining itself and the
+  // task fails its own assertion. Fourth time this shape has appeared in this plan --
+  // see must-fix 2 (--no-owner) and Task 2 (pg-native).
+  const drillCode = script
+    .split("
+")
+    .filter((line) => !/^s*#/.test(line))
+    .join("
+");
+  assert.doesNotMatch(drillCode, /n_live_tup/);
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`
 
 Expected: FAIL with `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\infra\restore-drill.sh'` — the two new tests; the first three still pass.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `infra/restore-drill.sh`:
 
@@ -3623,11 +3645,11 @@ nightly:
 git add --chmod=+x infra/restore-drill.sh
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`  Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add --chmod=+x infra/restore-drill.sh

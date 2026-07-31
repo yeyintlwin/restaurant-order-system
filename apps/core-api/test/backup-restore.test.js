@@ -127,3 +127,107 @@ test("the nightly keeps the password inside the container and is committed execu
     "infra/backup-core-db.sh is not executable in git's index: git add --chmod=+x it"
   );
 });
+
+const drill = () => readText(repoRoot, "infra", "restore-drill.sh");
+
+test("the drill restores into a scratch database and can never touch core", () => {
+  const script = drill();
+
+  assert.match(script, /^#!\/bin\/sh$/m);
+  assert.doesNotMatch(script, /^#!.*bash/m);
+  assert.match(script, /^set -eu$/m);
+  assert.match(script, /^DRILL_DB=core_restore_check$/m);
+
+  // Both env files, for the same reason the nightly needs both: compose interpolates
+  // every env_file in the project at load time, so one missing variable fails the
+  // drill before it reaches Postgres -- and a drill that never runs looks exactly
+  // like a drill that passes.
+  assert.match(script, /^export CORE_ENV_FILE=\.\.\/core-api\.env$/m);
+  assert.match(script, /^export EPAPER_ENV_FILE=\.\.\/restaurant-order-system\.env$/m);
+
+  // The one assertion that matters most: no line may drop anything but the scratch
+  // database. A typo here is not a failed drill, it is the outage the drill exists to
+  // rehearse for.
+  for (const line of script.split("\n")) {
+    if (!/DROP DATABASE/.test(line)) continue;
+    assert.match(
+      line,
+      /\$DRILL_DB|core_restore_check/,
+      `a DROP DATABASE that is not the scratch database: ${line.trim()}`
+    );
+  }
+  assert.doesNotMatch(script, /-d\s+"?core"?(?![-_\w])/);
+
+  // template0, so nothing that may have been added to template1 can make a restore look
+  // cleaner than it is.
+  assert.match(script, /CREATE DATABASE \$DRILL_DB OWNER core_api_owner TEMPLATE template0/);
+
+  // All-or-nothing, and WITHOUT --no-owner: the owner/app split is the point of this
+  // schema and --no-owner collapses it. This is the only place that split is ever proved
+  // to survive a restore.
+  assert.match(script, /pg_restore -U core_api_owner -d "\$1" --exit-on-error --single-transaction/);
+  assert.doesNotMatch(script, /pg_restore[^\n]*--no-owner/);
+
+  // Same two container-side disciplines as the nightly. The -T rule is scoped to lines
+  // that execute docker: the failure hint the drill echoes names a deliberately
+  // TTY-attached psql for a human to paste, and must survive.
+  for (const line of executableDockerLines(script)) {
+    assert.match(line, /docker compose exec -T\b/, `docker compose exec without -T: ${line.trim()}`);
+  }
+  assert.match(script, /'PGPASSWORD="\$POSTGRES_PASSWORD"/);
+  assert.doesNotMatch(script, /"PGPASSWORD=/);
+  assert.doesNotMatch(script, /\$\([^)]*POSTGRES_PASSWORD/);
+
+  // An optional dump argument. The normal case is no argument at all.
+  assert.match(script, /if \[ "\$#" -ge 1 \]; then/);
+  assert.match(script, /ls -1t "\$HOME"\/backups\/nightly-\*\.dump/);
+});
+
+test("the drill refuses without headroom, rejects the wrong dump, then checks the ledger with the production runner", () => {
+  const script = drill();
+
+  // It doubles the data footprint plus WAL inside the cluster production is serving
+  // from, on the one instance where spec 9.1 names the OOM killer as the top risk.
+  assert.match(script, /restore-drill: refusing, need \$need bytes free, have \$have/);
+  assert.match(script, /need="\$\(\(size \* 3\)\)"/);
+  assert.match(script, /\[ "\$used" -ge 70 \]/);
+  // The gate must come before anything is created or restored.
+  assertAscending(script, [
+    "restore-drill: refusing",
+    "CREATE DATABASE $DRILL_DB",
+    "pg_restore -U core_api_owner"
+  ]);
+
+  // A dump of an EMPTY or of the WRONG database restores perfectly cleanly. This check
+  // must come BEFORE the ledger check: migrate.js --check would reject such a dump first
+  // with "pending migration(s) never applied", which reads like version skew rather than
+  // "you restored the wrong file".
+  assertAscending(script, [
+    "expected at least 11",
+    "schema_migrations is empty",
+    "node apps/core-api/db/migrate.js --check"
+  ]);
+  assert.match(script, /to_regclass\('public\.schema_migrations'\)/);
+
+  // db/migrate.js --check recomputes each file's CRLF-normalised digest exactly the way
+  // the applied rows were written. A second implementation in SQL would drift from the
+  // runner on the first refactor and then disagree during an incident.
+  assert.match(script, /node apps\/core-api\/db\/migrate\.js --check/);
+  // Pointed at the scratch database by rewriting ONLY the DSN's path, so config.js's
+  // unconditional POSTGRES_PASSWORD == DATABASE_MIGRATION_URL password check still holds.
+  assert.match(script, /u\.pathname = "\/" \+ process\.env\.DRILL_DB/);
+
+  // Row counts via a real count(*) per table. n_live_tup reads 0 everywhere on a freshly
+  // restored database that has never been ANALYZEd -- which is the exact failure this
+  // drill exists to notice, reported as success.
+  assert.match(script, /query_to_xml/);
+  // Scoped to EXECUTABLE lines. The script names n_live_tup in a comment, to say why it
+  // is not used; a bare /n_live_tup/ forbids the script from explaining itself and the
+  // task fails its own assertion. Fourth time this shape has appeared in this plan --
+  // see must-fix 2 (--no-owner) and Task 2 (pg-native).
+  const drillCode = script
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+  assert.doesNotMatch(drillCode, /n_live_tup/);
+});
