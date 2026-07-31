@@ -1593,7 +1593,7 @@ meaningful once the snippet is known to carry exactly one `proxy_pass`.
 - Create: `infra/nginx/core-api-proxy.conf`
 - Test: `apps/core-api/test/nginx-config.test.js` (create)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/nginx-config.test.js`:
 
@@ -1670,13 +1670,13 @@ test("the proxy snippet sets the X-Forwarded-For header TRUSTED_PROXY_HOPS=1 dep
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`
 
 Expected: FAIL with `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\infra\nginx\core-api-proxy.conf'`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `infra/nginx/core-api-proxy.conf`:
 
@@ -1728,11 +1728,11 @@ proxy_send_timeout   30s;
 proxy_pass http://core_api;
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`  Expected: PASS (1 test)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/nginx/core-api-proxy.conf apps/core-api/test/nginx-config.test.js
