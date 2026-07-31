@@ -2221,7 +2221,7 @@ the first task in this area.
 **Files:**
 - Test: `apps/core-api/test/nginx-config.test.js` (append) — no nginx file changes
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/nginx-config.test.js`:
 
@@ -2261,7 +2261,7 @@ test("every location that forwards to core-api does so through the proxy snippet
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 These two are guard-rails against a **future** edit, so against the files as
 committed by the previous task they pass on the first run. Run them anyway and
@@ -2272,14 +2272,14 @@ Run: `node --test apps/core-api/test/nginx-config.test.js`
 Expected: PASS (8 tests) — and if either of the two new tests fails here, stop:
 one of the previous two tasks was transcribed wrong.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 None. Neither nginx file changes: this task adds only the two structural guards.
 `infra/nginx/api.conf` and `infra/nginx/core-api-proxy.conf` are correct as
 committed by the previous task, and Step 4 is what demonstrates that the guards
 are not passing vacuously.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/nginx-config.test.js`  Expected: PASS (8 tests)
 
@@ -2317,7 +2317,7 @@ git status --porcelain infra/nginx/api.conf
 
 Expected output: empty.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/nginx-config.test.js

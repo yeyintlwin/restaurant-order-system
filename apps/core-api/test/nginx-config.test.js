@@ -246,3 +246,37 @@ test("the two credential routes are rate limited at the network layer and answer
   // too fast" in the access log.
   assert.doesNotMatch(catchAll, /limit_req_status/);
 });
+
+test("no real_ip directive can rewrite $remote_addr before the XFF chain is built", () => {
+  // Silent breaker 1. real_ip_header / set_real_ip_from rewrite $remote_addr
+  // BEFORE $proxy_add_x_forwarded_for is evaluated, so a forged header is
+  // appended to itself and core-api's one-from-the-right read returns the
+  // attacker's value. No error, no log line, nothing to notice. The same
+  // directives also make `allow 127.0.0.1` on /health honour a forged header,
+  // which publishes the readiness surface the 404 above exists to hide.
+  for (const [label, text] of [["api.conf", apiConf()], ["core-api-proxy.conf", proxySnippet()]]) {
+    assert.doesNotMatch(text, /\breal_ip_header\b/, `${label} must not carry real_ip_header`);
+    assert.doesNotMatch(text, /\bset_real_ip_from\b/, `${label} must not carry set_real_ip_from`);
+    assert.doesNotMatch(text, /\breal_ip_recursive\b/, `${label} must not carry real_ip_recursive`);
+  }
+});
+
+test("every location that forwards to core-api does so through the proxy snippet", () => {
+  const conf = apiConf();
+  const INCLUDE_LINE = "include /etc/nginx/snippets/core-api-proxy.conf;";
+
+  const includeCount = conf.split(INCLUDE_LINE).length - 1;
+
+  // Four proxying locations today: /health, the login route, the pairing route
+  // and the catch-all. When Phase 4 adds the SSE location this number changes
+  // WITH it -- which is the point: the number is what makes whoever adds a
+  // location open this file and read the paragraph above.
+  assert.equal(includeCount, 4, "api.conf must include the proxy snippet from all four proxying locations");
+
+  // Silent breaker 2, stated as the thing that is actually true: the snippet is
+  // the ONLY file in infra/nginx/ that proxies. A location added later with a
+  // bare `proxy_pass http://core_api;` and no include would set no
+  // X-Forwarded-For at all and pass the client's own header straight through --
+  // and it is caught here whatever brace style it is written in.
+  assert.doesNotMatch(conf, /proxy_pass/, "api.conf must never proxy_pass directly");
+});
