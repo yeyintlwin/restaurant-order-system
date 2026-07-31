@@ -3050,7 +3050,7 @@ Spec §9.7. Four properties carry the whole design, and each has a reason:
 - Create: `infra/backup-core-db.sh`
 - Test: `apps/core-api/test/backup-restore.test.js` (create)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/backup-restore.test.js`:
 
@@ -3186,13 +3186,13 @@ test("the nightly keeps the password inside the container and is committed execu
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`
 
 Expected: FAIL with `Error: ENOENT: no such file or directory, open 'C:\Users\hwckv\OneDrive\Desktop\yeyintlwin\yeyintlwin-dev\restaurant-order-system\infra\backup-core-db.sh'` — all three tests, thrown from `backup()`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `infra/backup-core-db.sh`:
 
@@ -3258,7 +3258,7 @@ means `chmod +x` does not stick, and the index mode is what `ubuntu-latest` chec
 git add --chmod=+x infra/backup-core-db.sh
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`  Expected: PASS (3 tests)
 
@@ -3302,7 +3302,7 @@ before trusting cron.
    Expected: the good `nightly-<ts>.dump` from step 3 is still there, unchanged, and there is
    still no `*.part`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add --chmod=+x infra/backup-core-db.sh
