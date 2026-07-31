@@ -211,9 +211,12 @@ Raised during review and deliberately not resolved here, each with the reason.
 > **Out of scope, stated plainly.** `scripts/create-platform-admin.js` (spec §9.10) is **Plan 2** —
 > it needs the `users` table, `lib/password.js` and an audit writer, none of which exist. Where the
 > runbook references it, it says so. The migration-runner contract (spec §9.4) is **already
-> implemented** in Plan 1's `apps/core-api/db/migrate.js`; the `workflow` area wires
-> `npm --prefix apps/core-api run migrate` into the deploy. Local development (spec §9.9) is
-> already done in `apps/core-api/README.md`; nothing here changes it.
+> implemented** in Plan 1's `apps/core-api/db/migrate.js`, and **the deploy does not invoke it** —
+> `server.js` migrates at startup on a dedicated owner connection, closes that pool, then opens the
+> runtime pool and listens, so a deploy step running `npm --prefix apps/core-api run migrate` would
+> be a second runner racing the first for the same advisory lock. No task in this plan adds one.
+> Local development (spec §9.9) is already done in `apps/core-api/README.md`; nothing here changes
+> it.
 >
 > **Files this area does not own.** `.github/workflows/deploy.yml` belongs to the `workflow` area;
 > this area makes exactly the two edits sanctioned in the file-ownership table and nothing else.
