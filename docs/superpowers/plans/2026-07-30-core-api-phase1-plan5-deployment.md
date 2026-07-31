@@ -21,8 +21,8 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 3 of 30 tasks done.** The next thing to do is **Task 4** (isolate the two secrets files
-and `core-net`, and write the operator runbook).
+**Status: 4 of 30 tasks done. Part 1 is complete.** The next thing to do is **Task 5**
+(`infra/nginx/core-api-proxy.conf`), the first task of Part 2.
 
 > ⛔ **DO NOT PUSH past Task 3 until `~/core-api.env` exists on the Lightsail box.** Task 3's
 > MANUAL VERIFICATION block is spec §9.11 step 4 and it is a **precondition, not a follow-up**.
@@ -41,6 +41,7 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | 2026-07-31 | **Task 2.** `apps/core-api/Dockerfile` (root context, `npm ci`) and the new `apps/core-api/test/deploy-config.test.js` with its four shared helpers. **Plan defect found on execution:** Step 1 forbade `/pg-native/` anywhere while Step 3's Dockerfile explained in a comment why pg-native is absent — the task failed its own assertion. Scoped to instruction lines and mutation-tested. Docker-verified: image builds, `scripts/` and `pg` present, and a planted `apps/core-api/.env` does NOT reach the image. | **2/30** | `5c0dee7` | Task 3 |
 | 2026-07-31 | Tightened Task 1's scp assertion after an adversarial review of `b713280` proved it matched the DESTINATION path and stayed green with the scp source deleted. Mutation-tested all four ways. Third assertion in this plan that could not fail for its stated reason. | — | `9ad9303` | Task 3 |
 | 2026-07-31 | **Task 3.** `core-db` and `core-api` in Compose (`core-net`, no `ports:` on the database, pinned major, keepalive trio, `-h 127.0.0.1` healthcheck) plus the whole core-api image pipeline in `deploy.yml` — build, sha-named save, scp, load, both variables, and the `~/core-api.env` precondition. **Defect found and fixed first:** the must-fix pass had left `EPAPER_ENV_FILE=` twice on the `:86` line in two places; the earlier verifier checked only that it was PRESENT, never that it appeared once. `docker compose config --services` resolves all four services; `--quiet` clean; `deploy.yml` still valid YAML. 356 tests, 355 pass, 1 skip. | **3/30** | (this commit) | Task 4 |
+| 2026-07-31 | **Task 4 — Part 1 complete.** `oom_score_adj: 500` on the three restartable app containers, and the operator runbook: `infra/README.md`'s two-secrets-files section, plus the root, hub and core-api READMEs. **Defect found and fixed first:** the must-fix pass had rewritten the `-` side of Task 4's `apps/core-api/README.md` diff as well as the `+` side, making it an instruction to replace a line with itself — the real edit would have been silently skipped. Wrote a no-op-diff scanner; it was the only one. `~/core-api.env` created on the Lightsail box (mode 600, 3 lines, owner password verified identical in both places). Area gate green: 64 tests. 358 total, 357 pass, 1 skip. | **4/30** | (this commit) | Task 5 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -1275,7 +1276,7 @@ enforces that as a per-line rule rather than a fixture match.
 - Modify: `apps/epaper-hub/README.md` (the `## Docker` block gains `CORE_ENV_FILE`)
 - Test: `apps/core-api/test/deploy-config.test.js` (append two tests)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/deploy-config.test.js`:
 
@@ -1374,7 +1375,7 @@ test("the operator docs name the second secrets file and why core-db publishes n
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`
 
@@ -1385,7 +1386,7 @@ and the message `core-api`;
 `the operator docs name the second secrets file and why core-db publishes no port` fails with
 `The input did not match the regular expression /^## Core API runtime: two secrets files and core-net$/m`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `docker-compose.yml`, add `oom_score_adj: 500` to the three app services. After `core-api`'s
 `mem_limit: 512m`:
@@ -1439,7 +1440,7 @@ as it is — the script itself is Plan 2:
 
 ```diff
  cd ~/restaurant-order-system
--CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
+-CORE_ENV_FILE=../core-api.env docker compose exec core-api \
 +CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
    node apps/core-api/scripts/create-platform-admin.js you@example.com
 ```
@@ -1530,7 +1531,7 @@ interpolates env_file contents into its output, so a bare `docker compose config
 POSTGRES_PASSWORD and both DSNs in cleartext, to your terminal and into your shell's scrollback.
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: PASS (6 tests)
 
@@ -1539,7 +1540,7 @@ asserts on `README.md`, `infra/README.md` and `apps/epaper-hub/README.md` in fiv
 
 Run: `node --test apps/epaper-hub/test/deploy-config.test.js`  Expected: PASS (14 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker-compose.yml infra/README.md README.md apps/core-api/README.md apps/epaper-hub/README.md apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

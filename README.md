@@ -123,7 +123,9 @@ The Lightsail server should keep only the runtime deployment files in `~/restaur
 - `docker-compose.yml`
 - optional `config/`
 
-The environment file remains outside that folder at `~/restaurant-order-system.env`.
+The environment files remain outside that folder: `~/restaurant-order-system.env` for `epaper-hub`
+and `customer-order`, and `~/core-api.env` for `core-db` and `core-api`. They are separate on
+purpose — see `infra/README.md`, "Core API runtime: two secrets files and core-net".
 
 Customer-order production startup requires these values. Keep `SHOP_ID` and `CHECKOUT_API_KEY` in the external production environment file; Compose supplies the two non-secret business-time defaults.
 

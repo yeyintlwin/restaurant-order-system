@@ -239,3 +239,96 @@ test("every service the compose file declares is one the deploy can actually sta
   // Deliberately loose: the workflow area may fold these into /tmp/*-image*.tgz.
   assert.match(flat, /rm -f \/tmp\/[^\n]*image[^\n]*\.tgz/);
 });
+
+test("only core-db and core-api see the Postgres secrets file and the core network", () => {
+  const services = servicesOf(composeText());
+
+  // Pin core-db from its own side first, exactly, so `[core-net, default]` cannot
+  // slip past a substring match.
+  assert.match(services["core-db"], /^    networks: \[core-net\]$/m);
+  assert.doesNotMatch(services["core-db"], /networks:.*default/);
+
+  // epaper-hub is internet-facing and authenticates on req.query.api_key. Sharing an
+  // env_file or a network with core-db would turn any code-execution or SSRF bug
+  // there into `COPY ... TO PROGRAM` as core_api_owner -- a shell in the database
+  // container, every tenant row, every scrypt hash.
+  for (const [name, body] of Object.entries(services)) {
+    const core = name === "core-db" || name === "core-api";
+    assert.equal(/\$\{CORE_ENV_FILE:-\.env\}/.test(body), core, `${name} env_file`);
+    assert.equal(/^    networks: \[[^\]]*\bcore-net\b/m.test(body), core, `${name} core-net`);
+    // core-api is the ONLY service on both. epaper-hub and customer-order declare no
+    // networks key at all, so they are on default implicitly -- which is correct.
+    assert.equal(
+      /^    networks: \[[^\]]*\bdefault\b/m.test(body),
+      name === "core-api",
+      `${name} default`
+    );
+  }
+
+  assert.match(services["epaper-hub"], /\$\{EPAPER_ENV_FILE:-\.env\}/);
+  assert.match(services["customer-order"], /\$\{EPAPER_ENV_FILE:-\.env\}/);
+  assert.doesNotMatch(services["core-db"], /EPAPER_ENV_FILE/);
+  assert.doesNotMatch(services["core-api"], /EPAPER_ENV_FILE/);
+
+  // The OOM killer is the named top risk on this box: point it at the three
+  // restartable app containers and away from the one holding the data.
+  assert.match(services["core-db"], /^    oom_score_adj: -500$/m);
+  for (const name of ["core-api", "epaper-hub", "customer-order"]) {
+    assert.match(services[name], /^    oom_score_adj: 500$/m, name);
+  }
+});
+
+test("the operator docs name the second secrets file and why core-db publishes no port", () => {
+  const infra = readText(repoRoot, "infra", "README.md");
+  const rootReadme = readText(repoRoot, "README.md");
+  const hubReadme = readText(repoRoot, "apps", "epaper-hub", "README.md");
+  const coreReadme = readText(repoRoot, "apps", "core-api", "README.md");
+
+  assert.match(infra, /^## Core API runtime: two secrets files and core-net$/m);
+  assert.match(infra, /~\/core-api\.env/);
+  assert.match(infra, /mode `600`/);
+  assert.match(infra, /CORE_ENV_FILE=\.\.\/core-api\.env/);
+  assert.match(infra, /POSTGRES_PASSWORD/);
+  assert.match(infra, /DATABASE_MIGRATION_URL/);
+  assert.match(infra, /DATABASE_URL/);
+  assert.match(infra, /COPY \.\.\. TO PROGRAM/);
+  assert.match(infra, /core-net/);
+  assert.match(infra, /api\.yeyintlwin\.com/);
+  assert.match(infra, /127\.0\.0\.1:3200/);
+
+  // The ufw fact infra/README.md does not currently record, and this phase must add.
+  assert.match(infra, /DNAT/);
+  assert.match(infra, /bypasses ufw/);
+  assert.match(infra, /no `ports:` key at all/);
+
+  // `docker compose config` INTERPOLATES env_file contents into its output. A bare
+  // invocation on the box prints POSTGRES_PASSWORD and both DSNs in cleartext.
+  assert.match(infra, /Never run `docker compose config` on this box without `--quiet` or `--services`/);
+
+  // And nobody is told to put the database secrets in the shared file.
+  assert.doesNotMatch(infra, /POSTGRES_PASSWORD[^\n]*restaurant-order-system\.env/);
+  assert.doesNotMatch(rootReadme, /POSTGRES_PASSWORD[^\n]*restaurant-order-system\.env/);
+
+  assert.match(rootReadme, /~\/core-api\.env/);
+  assert.match(hubReadme, /^CORE_ENV_FILE=\/path\/to\/core-api\.env \\$/m);
+
+  // Plan 2 owns the script itself; the runbook line must at least be RUNNABLE when it
+  // arrives. Compose validates EVERY service's env_file on EVERY subcommand, so a
+  // one-variable `docker compose exec` dies at project load complaining about the
+  // OTHER file. This is a per-line rule, so it cannot pass by matching a fixture.
+  for (const [label, document] of [
+    ["infra/README.md", infra],
+    ["apps/core-api/README.md", coreReadme],
+    ["apps/epaper-hub/README.md", hubReadme],
+    ["README.md", rootReadme]
+  ]) {
+    for (const line of document.split("\n")) {
+      if (line.includes("docker compose") && line.includes("CORE_ENV_FILE=")) {
+        assert.match(line, /EPAPER_ENV_FILE=/, `${label}: ${line}`);
+      }
+    }
+  }
+
+  // Plan 2, said plainly, so nobody goes looking for the script in this plan.
+  assert.match(coreReadme, /Ships in a later plan of this phase/);
+});

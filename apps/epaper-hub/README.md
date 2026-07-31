@@ -19,13 +19,17 @@ API documentation is available at `http://localhost:3000/api/docs`.
 
 ## Docker
 
-`docker-compose.yml` lives at the repository root, not in this folder. Run Compose from the root.
+`docker-compose.yml` lives at the repository root, not in this folder. It also declares `core-db`
+and `core-api`, which read a **second** secrets file. Compose validates every service's `env_file`
+on every subcommand, so both variables must be supplied even when you name only these two
+services. Run Compose from the root.
 
 ```bash
 cd ../..
 docker build -f apps/customer-order/Dockerfile -t customer-order .
 EPAPER_ENV_FILE=/path/to/restaurant-order-system.env \
-  docker compose up -d --build
+CORE_ENV_FILE=/path/to/core-api.env \
+  docker compose up -d --build epaper-hub customer-order
 ```
 
 Compose starts the customer-order service after `/health` reports that the e-paper hub is ready. Customer ordering uses the private Docker URL `http://epaper-hub:3000`, publishes `127.0.0.1:3100`, and resets all 12 display screens before accepting traffic. Each of those 12 screens carries that table's opaque visit URL, `https://order.yeyintlwin.com/t/AAAAAAAAAAAAAAAAAAAAAA`, where the trailing 22 Base64URL characters are the only table credential; the hub itself never parses or validates it. That startup bootstrap mints a fresh token per table, so every restart or redeploy replaces all 12 table URLs and invalidates every enrolled phone session. The visit store is in-memory only and nothing survives a restart. Latest e-paper screen state is persisted in the Docker named volume `epaper-data`, so browser refreshes and container restarts keep the last update.

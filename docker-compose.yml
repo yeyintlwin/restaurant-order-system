@@ -119,6 +119,9 @@ services:
       retries: 5
       start_period: 60s
     mem_limit: 512m
+    # The OOM killer is the named top risk on a 1 GB box: bias it toward the
+    # restartable app containers and away from core-db, which holds the data.
+    oom_score_adj: 500
 
   epaper-hub:
     image: ${EPAPER_IMAGE:-epaper-hub}
@@ -145,6 +148,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    oom_score_adj: 500
 
   customer-order:
     image: ${CUSTOMER_ORDER_IMAGE:-customer-order}
@@ -163,6 +167,7 @@ services:
     depends_on:
       epaper-hub:
         condition: service_healthy
+    oom_score_adj: 500
 
 volumes:
   epaper-data:

@@ -135,7 +135,7 @@ failure behind a timeout.
 
 ```sh
 cd ~/restaurant-order-system
-CORE_ENV_FILE=../core-api.env docker compose exec core-api \
+CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
   node apps/core-api/scripts/create-platform-admin.js you@example.com
 ```
 
