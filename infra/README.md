@@ -424,3 +424,22 @@ runner issues `ALTER ROLE core_api_app … PASSWORD` on every boot.
 
 If startup dies with `DATABASE_MIGRATION_URL was rejected by the server (28P01)`, the secrets
 file was rotated and the cluster was not. Go back to step 1.
+
+## Before core-api's first production deploy
+
+Tick these on the box, in this order. They are host state, not repository state, so nothing in
+CI can check them for you.
+
+- [ ] `~/core-api.env` exists at mode 600 with `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL` and
+      `DATABASE_URL`, and `~/restaurant-order-system.env` is untouched
+- [ ] `~/backups` exists at mode 700
+- [ ] `config/backup-core-db.sh` has been run by hand once and left one `nightly-*.dump` at mode
+      600, a `LAST_OK`, and no `*.part`
+- [ ] **`config/restore-drill.sh` has been run by hand once, with NO argument — against that
+      nightly — and exited 0.** Not against deploy #1's `pre-deploy-*.dump`: that is a dump of an
+      empty `core` taken before the service had ever migrated, and the drill will correctly
+      reject it. This work is not finished until this box is ticked. Do not skip it because it
+      is the day everything worked — that is exactly when it is cheap
+- [ ] Scenario A rehearsed against `core_scenario_a`, never against `core`, with a dated receipt
+      at `~/backups/SCENARIO_A_REHEARSED`
+- [ ] `crontab -l | grep -q backup-core-db.sh` exits 0

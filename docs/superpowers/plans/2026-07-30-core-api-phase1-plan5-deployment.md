@@ -21,10 +21,19 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 14 of 30 tasks done. Parts 1 and 2 are code-complete; Part 3 is under way.** The
-oldest open item is **Task 10** (MANUAL VERIFICATION on the box), still blocked on DNS +
-certbot for `api.yeyintlwin.com`. The next thing that can actually be executed is **Task 15**
-(the pre-cutover checklist).
+**Status: 15 of 30 tasks done. Parts 1 and 2 are code-complete; Part 3's repository work is
+done.** The next thing that can actually be executed is **Task 16** (the concurrency key), which
+opens Part 4.
+
+**Two MANUAL VERIFICATION blocks are open and neither can be closed from the repository:**
+
+- **Task 10** — install and prove the nginx proxy. Blocked on the DNS A record for
+  `api.yeyintlwin.com` and `sudo certbot certonly --nginx -d api.yeyintlwin.com`; `nginx -t`
+  fails without the certificate.
+- **Task 15** — run `config/backup-core-db.sh` and then `config/restore-drill.sh` by hand on the
+  box. Blocked on Task 18 (`workflow` handoff (a)), which is what scp's both scripts into
+  `config/`. **Part 3 is not finished until that box in `infra/README.md` is ticked in a
+  commit** — the checklist ships unticked on purpose.
 
 > ⛔ **DO NOT PUSH past Task 3 until `~/core-api.env` exists on the Lightsail box.** Task 3's
 > MANUAL VERIFICATION block is spec §9.11 step 4 and it is a **precondition, not a follow-up**.
@@ -50,7 +59,8 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | | **FINDING for Plan 2, deliberately NOT fixed here:** `core_api_app` can INSERT into `schema_migrations`, because `0001_init.sql:512` grants DML on ALL tables in `public`. A compromised app role could forge or delete a ledger row and make the next deploy skip or re-apply a migration. **Do not edit `0001_init.sql`** — it is applied in production with its checksum recorded, so editing it yields `checksum_mismatch` and a 503 readiness. Fix in a `0002_` migration that REVOKEs on the ledger. | — | — | — |
 | 2026-07-31 | **Tasks 11 and 12** — `infra/backup-core-db.sh` (the nightly, `.part` discipline, `LAST_OK` written only after a full decompressing read) and `infra/restore-drill.sh` (scratch restore, free-space gate, table-count check ahead of the ledger check, ledger verified by the production runner in `--check` mode). Row recorded retroactively on 2026-08-03: these two sessions ticked their checkboxes and committed, but never appended here, so the status header read `9 of 30` for three days while the work was on `main`. | **12/30** | `408849c`, `93adc95` | Task 13 |
 | 2026-08-03 | **Task 13.** The schema invariants mirrored into the drill as raising SQL — S1, S3, S4, S5, S7 plus the owner/app GRANT split the node suite deliberately cannot assert — with a source-text cross-check that goes red when the two exception lists drift. RED reproduced exactly as written (`S1 exception audit_events is missing from the drill`); GREEN at 8 tests; `sh -n` parses; 0 CR bytes. **Defect found first, in Task 12's OUTPUT rather than its text:** `git ls-files -s` reported `infra/restore-drill.sh` at **100644**, though `93adc95`'s own message claims "Committed 100755" — Task 12 Steps 3 and 5 both say `git add --chmod=+x` and neither ran. Nothing caught it because the mode assertion in `backup-restore.test.js` names only `backup-core-db.sh`. Fixed with `git add --chmod=+x`; the missing assertion is Task 14's to add. | **13/30** | `5fadf3e` | Task 14 |
-| 2026-08-03 | **Task 14.** `infra/README.md`'s `## core-db backups` section: what the backup does and does **not** protect as a four-row table, the drill's service-hours warning, Scenario A (stop the writer, prove the dump, dump the broken state, three separate psql invocations, restore without `--no-owner`, verify before starting), Scenario B, and the password-rotation ordering. RED reproduced exactly as written; 11 tests green, plus 14 in the hub's `deploy-config.test.js` and 6 in core-api's = 31, `# fail 0`. **Two plan defects found and fixed first** — see the callout on Task 14: prose assertions written with a literal space against a hard-wrapped markdown file. Both mutation-tested after the fix. Verified before appending that the new `docker compose` lines satisfy Task 4's live per-line `CORE_ENV_FILE`/`EPAPER_ENV_FILE` rule, and that no line carries both `pg_restore` and `--no-owner`. | **14/30** | (this commit) | Task 15 |
+| 2026-08-03 | **Task 14.** `infra/README.md`'s `## core-db backups` section: what the backup does and does **not** protect as a four-row table, the drill's service-hours warning, Scenario A (stop the writer, prove the dump, dump the broken state, three separate psql invocations, restore without `--no-owner`, verify before starting), Scenario B, and the password-rotation ordering. RED reproduced exactly as written; 11 tests green, plus 14 in the hub's `deploy-config.test.js` and 6 in core-api's = 31, `# fail 0`. **Two plan defects found and fixed first** — see the callout on Task 14: prose assertions written with a literal space against a hard-wrapped markdown file. Both mutation-tested after the fix. Verified before appending that the new `docker compose` lines satisfy Task 4's live per-line `CORE_ENV_FILE`/`EPAPER_ENV_FILE` rule, and that no line carries both `pg_restore` and `--no-owner`. | **14/30** | `1da334a` | Task 15 |
+| 2026-08-03 | **Task 15 — Part 3's repository work complete.** The pre-cutover checklist in `infra/README.md`, six host-state boxes in the order that matters: the drill needs a nightly, and deploy #1's pre-deploy dump is a dump of an empty `core` that `migrate.js --check` correctly rejects. 12 + 14 + 6 = 32 tests, `# fail 0`, exactly the count the task predicted. **The checklist ships UNTICKED and that is the point** — Task 15's MANUAL VERIFICATION has NOT been performed: it needs `config/backup-core-db.sh` and `config/restore-drill.sh` to be on the box, which is Task 18's scp. Part 3 is not finished until those boxes are ticked in a commit. | **15/30** | (this commit) | Task 16 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -4338,7 +4348,7 @@ checklist box in `infra/README.md` is ticked in a commit.**
 - Modify: `infra/README.md` (append; reserved heading `## Before core-api's first production deploy`)
 - Test: `apps/core-api/test/backup-restore.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/backup-restore.test.js`:
 
@@ -4371,13 +4381,13 @@ test("infra/README.md carries the pre-cutover checklist, drill included", () => 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^## Before core-api's first production deploy$/m`. The eleven earlier tests still pass.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to `infra/README.md`:
 
@@ -4402,7 +4412,7 @@ CI can check them for you.
 - [ ] `crontab -l | grep -q backup-core-db.sh` exits 0
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`  Expected: PASS (12 tests)
 
@@ -4479,7 +4489,7 @@ nothing in CI performs it.** It requires the `workflow` handoff (a) to have ship
    Expected: `cron=0`, and one zero-byte marker dated at the first deploy.
 9. Tick the drill box and the backup box in `infra/README.md`, commit and push.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/README.md apps/core-api/test/backup-restore.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

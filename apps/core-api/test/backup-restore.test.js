@@ -434,3 +434,30 @@ test("the docs state what the backup does and does not protect, and how the gate
 
   assert.match(doc, /AUDIT_RETENTION_DAYS[\s\S]{0,120}Plan 2/);
 });
+
+test("infra/README.md carries the pre-cutover checklist, drill included", () => {
+  const doc = infraReadme();
+
+  assert.match(doc, /^## Before core-api's first production deploy$/m);
+  for (const item of [
+    /- \[[ x]\] `~\/core-api\.env` exists/,
+    /- \[[ x]\] `~\/backups` exists at mode 700/,
+    /- \[[ x]\] `config\/backup-core-db\.sh` has been run by hand/,
+    /- \[[ x]\] \*\*`config\/restore-drill\.sh` has been run by hand once, with NO argument/,
+    /- \[[ x]\] Scenario A rehearsed against `core_scenario_a`/,
+    /- \[[ x]\] `crontab -l \| grep -q backup-core-db\.sh` exits 0/
+  ]) {
+    assert.match(doc, item);
+  }
+
+  // The order is the point: the drill needs a nightly, and deploy #1's pre-deploy dump is
+  // a dump of an empty core that migrate.js --check correctly rejects.
+  assertAscending(doc, [
+    "`config/backup-core-db.sh` has been run by hand",
+    "`config/restore-drill.sh` has been run by hand once, with NO argument"
+  ]);
+
+  // The drill is the gate, not a nice-to-have, and the README says so in words an operator
+  // reading it at 02:00 cannot talk themselves out of.
+  assert.match(doc, /not finished until this box is ticked/i);
+});
