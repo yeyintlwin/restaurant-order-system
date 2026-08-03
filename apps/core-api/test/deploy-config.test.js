@@ -816,3 +816,60 @@ test("deploy heredoc installs cron in a way that survives a box with no crontab"
   assert.match(workflow, /rm -f \/tmp\/api\.conf \/tmp\/core-api-proxy\.conf/);
   assert.doesNotMatch(workflow, /rm -f \/tmp\/\*-image\*\.tgz/);
 });
+
+test("deploy uploads the pre-deploy dump, and never a stale one", () => {
+  const workflow = workflowText();
+
+  assert.match(workflow, /if: always\(\)/);
+  assert.match(workflow, /uses: actions\/upload-artifact@v4/);
+  assert.match(workflow, /if-no-files-found: error/);
+
+  // retention-days must be asserted on the EXECUTING `with:` line. The header comment
+  // above the step explains the retention decision in prose and contains the same
+  // literal, so a document-wide match is green with the `with:` key deleted -- the
+  // artifact would then default to 90 days and hold scrypt hashes three times as long
+  // as the file says.
+  const retention = workflow
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#") && /retention-days:/.test(line));
+  assert.equal(retention.length, 1, `expected one retention-days: key, found ${retention.length}`);
+  assert.match(retention[0], /^ {10}retention-days: 14$/);
+
+  // if: always() runs after failures too. A run that died before "Install SSH key" has
+  // no key, and that is not this step's failure to report.
+  assert.match(workflow, /test -f ~\/\.ssh\/lightsail\.pem/);
+
+  // The MARKER is the evidence, not the volume: `docker volume create` runs
+  // unconditionally above block 1's gate, so the volume exists after the first ATTEMPT
+  // whether or not a dump was ever written.
+  assert.match(workflow, /cat ~\/backups\/LAST_PRE_DEPLOY/);
+  assert.match(workflow, /no pre-deploy dump recorded - the run failed before block 1/);
+  assert.doesNotMatch(workflow, /"\$remote" 'docker volume inspect/);
+
+  // Hard-fail on a stale sha only when the deploy itself succeeded. On a failed run an
+  // older sha is the expected reading, and a second red X would bury the real failure.
+  assert.match(workflow, /if \[ "\$\{\{ job\.status \}\}" = "success" \]; then/);
+  assert.match(workflow, /refusing to upload a stale dump/);
+  assert.match(workflow, /the deploy failed before block 1 rewrote the marker - nothing to upload/);
+
+  // The exposure is named in the file, not only in the spec. [\s#]+, not a literal space
+  // and not even \s+: this is must-fix 10's shape again, but in a YAML COMMENT block, so
+  // the wrap between the two words is "\n      # " -- and `#` is not whitespace. Task 14
+  // hit the same shape in hard-wrapped markdown, where \s+ was enough; it is not enough
+  // here. Any prose assertion over a commented, wrapped block must tolerate the marker.
+  assert.match(workflow, /scrypt[\s#]+hashes/);
+
+  // Registration count, not a pass count. Compose writes the header, the shared helpers
+  // and the first six tests; this area appends exactly one top-level test per deploy.yml
+  // task. A different number means a test was nested inside another test(), where
+  // node --test still runs it but --test-name-pattern cannot select it.
+  const suite = fs
+    .readFileSync(path.join(__dirname, "deploy-config.test.js"), "utf8")
+    .replace(/\r\n/g, "\n");
+  const registered = (suite.match(/^test\(/gm) || []).length;
+  assert.equal(
+    registered,
+    15,
+    `apps/core-api/test/deploy-config.test.js registers ${registered} top-level tests, expected 15 (compose's six plus nine deploy.yml tasks)`,
+  );
+});

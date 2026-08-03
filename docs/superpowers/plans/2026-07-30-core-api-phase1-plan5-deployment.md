@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 23 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 24 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -113,6 +113,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 22.** Blocks 4 and 5, in that order and for that reason: run the burst first and it exhausts the `core_login` bucket for this source address, nginx sheds the probe, it never reaches core-api, and every assertion after it passes vacuously. The probe asserts on the RESPONSE — 404 **and** `{"code":"not_found"}`, so it can tell core-api's JSON tail from an nginx-level `text/html` 404 and from a dead upstream's 502 page — and reads `TRUSTED_PROXY_HOPS` from `/proc/1/environ`, never through an `exec` session, which would echo back the compose file this same deploy just uploaded and agree with itself while PID 1 carried an older environment. **Two plan defects found and fixed first** — see the callout on Task 22: the ninth signature-shape occurrence, and a MANUAL VERIFICATION item that contradicts a guard this plan already ships. Five mutations, all correct: swallowing the probe with `\|\| true` → red, `printenv` as code → red with its diagnostic, the same string in a comment → green, deleting the `PLAN 2:` marker → red. **The whole probe was run against the box before pushing**, because a failing block-4 aborts the deploy *after* the migration has applied: `location = /api/admin/auth/login` exists with `limit_req zone=core_login burst=5 nodelay` and includes the snippet, the probe returned **404** with `{"error":{"code":"not_found","message":"Not found.","requestId":"3UkD1e3G"}}`, and PID 1 carries `TRUSTED_PROXY_HOPS=1`. Ran one request, not the burst, to leave the bucket intact for the deploy. 12 tests, `# fail 0`, YAML 14 steps. | **21/30** | (this commit) | Task 23 |
 | 2026-08-03 | **Task 23.** The backup-health gate: sweep `*.part`, then fail the build when `LAST_OK` is older than 48 hours. `LAST_OK` means specifically *a dump completed **and** passed `pg_restore --list`* — checking the newest `nightly-*.dump` instead would be satisfied by a truncated file an OOM kill left behind. Gated on `CRON_INSTALLED_AT`, **never** on `[ -f LAST_OK ]`: a missing `LAST_OK` is exactly the failure worth catching — the nightly has never once succeeded — and gating on its existence makes that case skip the check and stay green forever. That was must-fix 5 in this plan's original review, and the implementation now matches the design it was written to have. Asserted that the 85% disk gate stayed at the TOP of the heredoc rather than living here, where it would fire after the migration has applied. **No plan defect in this task's text** — its one `doesNotMatch` forbids `&& [ -f "$HOME/backups/LAST_OK" ]`, a form specific enough that the explanatory comment's shorter `[ -f LAST_OK ]` does not collide with it. Three mutations, all red: dropping the `.part` sweep, introducing the inert `&& [ -f LAST_OK ]` conjunction, and neutering the `CRON_INSTALLED_AT` freshness check. 13 tests, `# fail 0`, YAML 14 steps. | **22/30** | (this commit) | Task 24 |
 | 2026-08-03 | **Task 24 — Part 4's most dangerous line, shipped safely.** Each stage of the crontab rewrite gets its own `\|\| true` in its own brace group and the crontab is installed from a **file**, because the obvious pipeline exits 1 under `set -e` on a box with no crontab — the listing exits 1, grep on empty input exits 1, `pipefail` propagates, and the deploy aborts with an **empty** error message before the service starts; on Vixie cron the empty stdin also wipes any crontab that did exist. The box is in exactly that state (`no crontab for ubuntu`, confirmed in this session's recon), so this is not hypothetical. The exact `PATH=` string is in the strip list because the `printf` re-appends it — leaving it out grows the crontab by one line every deploy, forever. `CRON_INSTALLED_AT` is written **once**: touching it every deploy would keep it permanently fresh on a repo that deploys daily and Task 23's 48-hour gate would never fire at all. **Two plan defects found and fixed first** — see the callout on Task 24 — and this time **the plan's own Step 1 and Step 3 blocks were edited, not just the shipped files**, which the pre-flight audit showed had been missed for Tasks 19 and 22. Proved by probe rather than by argument, since the failure is silent: with a stub for `crontab -l` on a bare box, the unguarded pipeline exits 1 and never reaches the next line; the shipped form reaches it with exit 0. 14 tests, `# fail 0`, YAML 14 steps. | **23/30** | (this commit) | Task 25 |
+| 2026-08-03 | **Task 25 — deploy.yml is complete.** The `if: always()` artifact steps: read `LAST_PRE_DEPLOY`, refuse a dump that does not belong to this commit, scp exactly that file, upload it with a 14-day window. The **marker is the only evidence, and the volume is not** — `docker volume create` runs unconditionally above block 1's gate, so the volume exists after the first *attempt* whether or not a dump was ever written. The sha mismatch hard-fails **only when the deploy itself succeeded**: on a failed run an older sha is the expected reading, and a second red X buries the real failure. Guarded on `~/.ssh/lightsail.pem` existing, because `if: always()` also runs for a job that died before `Install SSH key`. **Two plan defects found and fixed first** — see the callout on Task 25 — one of which the audit's own suggested fix would not have closed: `\s+` is enough for hard-wrapped markdown but **not** for a wrapped YAML comment, where the join is `"\n      # "` and `#` is not whitespace. Three mutations, all red: deleting `retention-days`, dropping the ssh-key guard, and hard-failing on a stale sha regardless of job status. **Area gate, run as the task demands — with a real Postgres and NOT `CORE_API_SKIP_DB_TESTS`, because the skip variable would turn the database-backed suites into a green no-op on the very run that ships the pipeline: 281 tests, 280 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 across the other three workspaces.** YAML now parses to **16 steps** and the ssh heredoc is still terminated — a `run: \|` block that swallowed its `EOF` is valid YAML and a dead deploy. | **24/30** | (this commit) | Task 26 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -6202,11 +6203,29 @@ One guard the spec does not spell out, and `if: always()` needs it: the run may 
 
 This is the last deploy.yml task in the area, so its Step 4 is also the area's gate.
 
+> **TWO DEFECTS FOUND ON EXECUTION 2026-08-03, fixed in the Step 1 block below.** Both were
+> surfaced by a read-only pre-flight audit and then reproduced by running the task.
+>
+> 1. **`assert.match(workflow, /retention-days: 14/)` had no teeth.** Step 3's header comment
+>    ends *"…is the trigger decision on how long those names live here"* and an earlier draft
+>    spelled `retention-days: 14` inside it, so the assertion was satisfied by the prose and
+>    stayed green with the `with:` key deleted — at which point the artifact silently defaults
+>    to **90 days** and the scrypt hashes live three times as long as the file claims. Now
+>    scoped to non-comment lines, required to appear exactly once, and anchored to the column
+>    the `with:` block puts it in. The comment no longer names the number at all.
+> 2. **`assert.match(workflow, /scrypt hashes/)` is red against a correct workflow**, because
+>    the header comment hard-wraps between the two words. **`\s+` is NOT sufficient here** —
+>    unlike Task 14's markdown, the wrap in a YAML comment block is `"\n      # "`, and `#` is
+>    not whitespace. The pattern is `/scrypt[\s#]+hashes/`. This is must-fix 10's shape in its
+>    third file type: column-aligned nginx conf, hard-wrapped markdown, and now a wrapped
+>    comment block. **Any prose assertion over commented, wrapped text must tolerate the
+>    comment marker, not merely whitespace.**
+
 **Files:**
 - Modify: `.github/workflows/deploy.yml` (two new steps at the end of the job)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -6216,8 +6235,17 @@ test("deploy uploads the pre-deploy dump, and never a stale one", () => {
 
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /uses: actions\/upload-artifact@v4/);
-  assert.match(workflow, /retention-days: 14/);
   assert.match(workflow, /if-no-files-found: error/);
+
+  // retention-days on the EXECUTING `with:` line, not anywhere in the file: the header
+  // comment explains the retention decision in prose, and a document-wide match stays
+  // green with the key deleted -- at which point the artifact defaults to 90 days.
+  const retention = workflow
+    .split("
+")
+    .filter((line) => !line.trim().startsWith("#") && /retention-days:/.test(line));
+  assert.equal(retention.length, 1, `expected one retention-days: key, found ${retention.length}`);
+  assert.match(retention[0], /^ {10}retention-days: 14$/);
 
   // if: always() runs after failures too. A run that died before "Install SSH key" has
   // no key, and that is not this step's failure to report.
@@ -6237,7 +6265,11 @@ test("deploy uploads the pre-deploy dump, and never a stale one", () => {
   assert.match(workflow, /the deploy failed before block 1 rewrote the marker - nothing to upload/);
 
   // The exposure is named in the file, not only in the spec.
-  assert.match(workflow, /scrypt hashes/);
+  // [s#]+, not a literal space and not even s+: the header comment wraps between the
+  // two words, and in a YAML comment block the join is "
+      # " -- `#` is not
+  // whitespace. must-fix 10’s shape in its third file type.
+  assert.match(workflow, /scrypt[s#]+hashes/);
 
   // Registration count, not a pass count. Compose writes the header, the shared helpers
   // and the first six tests; this area appends exactly one top-level test per deploy.yml
@@ -6255,13 +6287,13 @@ test("deploy uploads the pre-deploy dump, and never a stale one", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="uploads the pre-deploy dump, and never a stale one" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /if: always\(\)/.`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, append the following two steps at the end of the job — after the `Deploy on Lightsail` step, at the same indentation as `- name: Deploy on Lightsail`:
 
@@ -6271,8 +6303,8 @@ In `.github/workflows/deploy.yml`, append the following two steps at the end of 
       # hashes, readable by anyone with repository access. For a private personal
       # repository that is an accepted trade against having NO off-box copy at all --
       # the nightlies live on the very instance they protect. Upgrade path: a write-only
-      # bucket. retention-days: 14 is the trigger decision on how long those names live
-      # here.
+      # bucket. The retention window below is the trigger decision on how long those
+      # names live here.
       - name: Fetch the pre-deploy dump
         if: always()
         id: predeploy
@@ -6317,7 +6349,7 @@ In `.github/workflows/deploy.yml`, append the following two steps at the end of 
           if-no-files-found: error
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="uploads the pre-deploy dump, and never a stale one" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -6337,7 +6369,7 @@ Run: `node --test apps/core-api/test/ci-contract.test.js`  Expected: `# fail 0`
 
 Run: `npm test`  Expected: green across all suites, including `apps/core-api`. **If core-api is red for a missing `CORE_API_TEST_DATABASE_URL`, start the container — do NOT set `CORE_API_SKIP_DB_TESTS`.** The container is `docker run -d --name core-ci-probe -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5432:5432 postgres:16-alpine` with `CORE_API_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres`, exactly as in the CI-service task; the skip variable would turn the database-backed suites into a green no-op on the run that ships the pipeline.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

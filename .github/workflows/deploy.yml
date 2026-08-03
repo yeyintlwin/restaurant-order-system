@@ -363,3 +363,52 @@ jobs:
           # `docker load`, not here, so a failed deploy does not leave them on the disk.
           rm -f /tmp/api.conf /tmp/core-api-proxy.conf
           EOF
+
+      # THE ARTIFACT CONTAINS PRODUCTION DATA: email addresses, IP addresses and scrypt
+      # hashes, readable by anyone with repository access. For a private personal
+      # repository that is an accepted trade against having NO off-box copy at all --
+      # the nightlies live on the very instance they protect. Upgrade path: a write-only
+      # bucket. The retention window below is the trigger decision on how long those
+      # names live here.
+      - name: Fetch the pre-deploy dump
+        if: always()
+        id: predeploy
+        run: |
+          set -euo pipefail
+          # This step runs after failures too. A run that died before "Install SSH key"
+          # has no key, and that is not this step's failure to report.
+          test -f ~/.ssh/lightsail.pem || { echo 'no ssh key: the run failed before Install SSH key'; exit 0; }
+          remote="${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}"
+          # The MARKER is the evidence, never the volume: `docker volume create` runs
+          # unconditionally above block 1's gate, so the volume exists after the first
+          # ATTEMPT whether or not a dump was written.
+          record=$(ssh -i ~/.ssh/lightsail.pem "$remote" 'cat ~/backups/LAST_PRE_DEPLOY 2>/dev/null || true')
+          if [ -z "$record" ]; then
+            echo 'no pre-deploy dump recorded - the run failed before block 1'
+            exit 0
+          fi
+          recorded_sha=${record%% *}
+          dump_name=${record##* }
+          if [ "$recorded_sha" != "${{ github.sha }}" ]; then
+            echo "LAST_PRE_DEPLOY records $recorded_sha, not ${{ github.sha }}"
+            if [ "${{ job.status }}" = "success" ]; then
+              # The deploy succeeded, so block 1 must have rewritten the marker. An older
+              # sha here means the dump on the box is not this schema's, and uploading it
+              # under this commit's artifact name is worse than no artifact at all.
+              echo "refusing to upload a stale dump under this commit's artifact name"
+              exit 1
+            fi
+            echo 'the deploy failed before block 1 rewrote the marker - nothing to upload'
+            exit 0
+          fi
+          scp -i ~/.ssh/lightsail.pem "$remote:~/backups/$dump_name" "/tmp/$dump_name"
+          echo "dump_name=$dump_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the pre-deploy dump
+        if: always() && steps.predeploy.outputs.dump_name != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deploy-dump-${{ github.sha }}
+          path: /tmp/${{ steps.predeploy.outputs.dump_name }}
+          retention-days: 14
+          if-no-files-found: error
