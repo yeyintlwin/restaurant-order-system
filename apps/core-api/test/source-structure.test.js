@@ -63,6 +63,10 @@ test("C12 - the repository pins SQL line endings and keeps per-app .env out of i
   assert.match(attributes, /^\*\.sql text eol=lf$/m);
   assert.match(attributes, /^\*\.sh text eol=lf$/m);
 
+  // .github/workflows/deploy.yml carries an `ssh … <<'EOF'` heredoc whose body IS the
+  // remote shell's stdin, so a CRLF checkout ships \r on every line of that script.
+  assert.match(attributes, /^\*\.yml text eol=lf$/m);
+
   // No `*.js` rule, deliberately: adding one would renormalise every existing .js
   // file in the repository on the next checkout.
   assert.doesNotMatch(attributes, /^\*\.js\b/m);

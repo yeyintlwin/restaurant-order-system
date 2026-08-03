@@ -8,3 +8,10 @@
 # A shell script checked out with CRLF fails on the Lightsail box with the
 # unhelpful "\r: command not found" on its first line.
 *.sh text eol=lf
+
+# .github/workflows/deploy.yml carries an `ssh … <<'EOF'` heredoc whose body IS the
+# remote shell's stdin. Checked out with CRLF, every line of that script reaches the
+# Lightsail box with a trailing \r -- the same failure `*.sh text eol=lf` prevents,
+# one indirection away. It is also what makes the `^`/`$`-anchored deploy-config
+# assertions mean the same thing on win32 and on ubuntu-latest.
+*.yml text eol=lf

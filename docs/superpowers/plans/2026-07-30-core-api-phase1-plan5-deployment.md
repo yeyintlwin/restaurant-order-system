@@ -21,9 +21,9 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 15 of 30 tasks done. Parts 1 and 2 are code-complete; Part 3's repository work is
-done.** The next thing that can actually be executed is **Task 16** (the concurrency key), which
-opens Part 4.
+**Status: 16 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+way.** The next thing that can actually be executed is **Task 17** (the CI Postgres service
+container).
 
 **Two MANUAL VERIFICATION blocks are open and neither can be closed from the repository:**
 
@@ -61,7 +61,8 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | 2026-08-03 | **Task 13.** The schema invariants mirrored into the drill as raising SQL — S1, S3, S4, S5, S7 plus the owner/app GRANT split the node suite deliberately cannot assert — with a source-text cross-check that goes red when the two exception lists drift. RED reproduced exactly as written (`S1 exception audit_events is missing from the drill`); GREEN at 8 tests; `sh -n` parses; 0 CR bytes. **Defect found first, in Task 12's OUTPUT rather than its text:** `git ls-files -s` reported `infra/restore-drill.sh` at **100644**, though `93adc95`'s own message claims "Committed 100755" — Task 12 Steps 3 and 5 both say `git add --chmod=+x` and neither ran. Nothing caught it because the mode assertion in `backup-restore.test.js` names only `backup-core-db.sh`. Fixed with `git add --chmod=+x`; the missing assertion is Task 14's to add. | **13/30** | `5fadf3e` | Task 14 |
 | 2026-08-03 | **Task 14.** `infra/README.md`'s `## core-db backups` section: what the backup does and does **not** protect as a four-row table, the drill's service-hours warning, Scenario A (stop the writer, prove the dump, dump the broken state, three separate psql invocations, restore without `--no-owner`, verify before starting), Scenario B, and the password-rotation ordering. RED reproduced exactly as written; 11 tests green, plus 14 in the hub's `deploy-config.test.js` and 6 in core-api's = 31, `# fail 0`. **Two plan defects found and fixed first** — see the callout on Task 14: prose assertions written with a literal space against a hard-wrapped markdown file. Both mutation-tested after the fix. Verified before appending that the new `docker compose` lines satisfy Task 4's live per-line `CORE_ENV_FILE`/`EPAPER_ENV_FILE` rule, and that no line carries both `pg_restore` and `--no-owner`. | **14/30** | `1da334a` | Task 15 |
 | 2026-08-03 | **Task 15 — Part 3's repository work complete.** The pre-cutover checklist in `infra/README.md`, six host-state boxes in the order that matters: the drill needs a nightly, and deploy #1's pre-deploy dump is a dump of an empty `core` that `migrate.js --check` correctly rejects. 12 + 14 + 6 = 32 tests, `# fail 0`, exactly the count the task predicted. **The checklist ships UNTICKED and that is the point** — Task 15's MANUAL VERIFICATION has NOT been performed: it needs `config/backup-core-db.sh` and `config/restore-drill.sh` to be on the box, which is Task 18's scp. Part 3 is not finished until those boxes are ticked in a commit. | **15/30** | `f644f6e` | Task 16 |
-| 2026-08-03 | **Task 13 hardening, found by mutation-testing the work already committed.** Two of Task 13's assertions were satisfied by the drill's own comments rather than its SQL — killing the S4 `users.password_hash` branch and the S5 trigger predicate both left the suite green. Fifth and sixth occurrence of this plan's signature shape, and the first two in the `includes`/`match` direction rather than `doesNotMatch`; see the callout on Task 13. Both now pinned to the executing SQL and both mutations re-run: each turns exactly one test red. **Method note:** the earlier occurrences were all caught by reading; these two were only caught by deliberately breaking the drill and watching the suite. A green suite is evidence about the assertions, not about the file. | — | (this commit) | Task 16 |
+| 2026-08-03 | **Task 13 hardening, found by mutation-testing the work already committed.** Two of Task 13's assertions were satisfied by the drill's own comments rather than its SQL — killing the S4 `users.password_hash` branch and the S5 trigger predicate both left the suite green. Fifth and sixth occurrence of this plan's signature shape, and the first two in the `includes`/`match` direction rather than `doesNotMatch`; see the callout on Task 13. Both now pinned to the executing SQL and both mutations re-run: each turns exactly one test red. **Method note:** the earlier occurrences were all caught by reading; these two were only caught by deliberately breaking the drill and watching the suite. A green suite is evidence about the assertions, not about the file. | — | `cffdb73` | Task 16 |
+| 2026-08-03 | **Task 16 — Part 4 opens.** The workflow-level `concurrency: deploy-production` with `cancel-in-progress: false`, `*.yml text eol=lf` in `.gitattributes`, and the C12 assertion that pins it. Both REDs reproduced exactly as written. GREEN, and the YAML parses to **12 steps** — the count the task predicted — with `concurrency.group` and `cancel-in-progress is False` asserted through the parser rather than only by regex, because a regex cannot see an indentation slip and an invalid workflow makes GitHub run nothing at all: no tests, no deploy, no red X. `git status` shows exactly the four files the task touched, so the new attribute renormalised nothing (this clone is `core.autocrlf=false` and already LF). 52 tests across the four affected suites, `# fail 0`. | **16/30** | (this commit) | Task 17 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -4546,7 +4547,7 @@ Two other things land here because they are the same class of problem — a file
 - Modify: `apps/core-api/test/source-structure.test.js` (one line added inside the existing C12 test)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `apps/core-api/test/source-structure.test.js`, inside the existing `C12` test, replace the line that currently reads:
 
@@ -4592,7 +4593,7 @@ test("deploy workflow serialises production deploys with a concurrency group", (
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="C12" apps/core-api/test/source-structure.test.js`
 
@@ -4602,7 +4603,7 @@ Run: `node --test --test-name-pattern="serialises production deploys" apps/core-
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^concurrency:$/m. Input:` followed by the workflow text, and `# fail 1`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to `.gitattributes`:
 
@@ -4651,7 +4652,7 @@ jobs:
   deploy:
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="serialises production deploys" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test — `# pass 1`, `# fail 0`)
 
@@ -4669,7 +4670,7 @@ Finally confirm the new attribute did not renormalise anything (this repository 
 
 Run: `git status --porcelain`  Expected: only the four files this task touched
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml .gitattributes apps/core-api/test/source-structure.test.js apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

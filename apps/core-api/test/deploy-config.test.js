@@ -332,3 +332,27 @@ test("the operator docs name the second secrets file and why core-db publishes n
   // Plan 2, said plainly, so nobody goes looking for the script in this plan.
   assert.match(coreReadme, /Ships in a later plan of this phase/);
 });
+
+test("deploy workflow serialises production deploys with a concurrency group", () => {
+  const workflow = workflowText();
+
+  // Two simultaneous deploys share one host, one project directory, one set of
+  // container_name: values and one set of fixed /tmp paths. Spec 9.5 calls this a
+  // blocker, not hardening.
+  assert.match(workflow, /^concurrency:$/m);
+  assert.match(workflow, /^  group: deploy-production$/m);
+
+  // cancel-in-progress: false SPECIFICALLY. Cancelling mid-ssh kills the LOCAL SSH
+  // client and leaves the remote shell running, which is how the migration advisory
+  // lock gets orphaned.
+  assert.match(workflow, /^  cancel-in-progress: false$/m);
+  assert.doesNotMatch(workflow, /cancel-in-progress: true/);
+
+  // Workflow level, not job level: a job-level key would not serialise across runs.
+  const concurrencyAt = workflow.indexOf("\nconcurrency:");
+  const jobsAt = workflow.indexOf("\njobs:");
+  assert.ok(
+    concurrencyAt > -1 && jobsAt > -1 && concurrencyAt < jobsAt,
+    "concurrency: must be declared at workflow level, above jobs:",
+  );
+});

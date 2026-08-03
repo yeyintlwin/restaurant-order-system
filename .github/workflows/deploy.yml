@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
 
+# One host, one project directory, one set of container_name: values, one set of fixed
+# /tmp paths. Two pushes deploying at once end with production running sha A's code
+# against sha B's schema and both builds green (spec 9.5). cancel-in-progress: false
+# because cancelling in the middle of the ssh heredoc kills the LOCAL SSH client
+# without stopping the remote shell, which orphans the migration advisory lock.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
