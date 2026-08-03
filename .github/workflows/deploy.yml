@@ -89,8 +89,21 @@ jobs:
       - name: Upload app
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" 'mkdir -p ~/restaurant-order-system'
+          # config/ is the one directory the deploy's `find` preserves, and ~/backups
+          # must exist at mode 0700 before block 1 writes the first dump into it.
+          ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" 'mkdir -p ~/restaurant-order-system/config ~/backups && chmod 700 ~/backups'
           scp -i ~/.ssh/lightsail.pem docker-compose.yml "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/docker-compose.yml"
+          # api.conf and core-api-proxy.conf go to /tmp, NOT alongside the compose file:
+          # `find … ! -name docker-compose.yml ! -name config -exec rm -rf {} +` erases
+          # everything else in that directory, so the network half of the rate limiting
+          # would silently never ship while every text assertion stayed green.
+          scp -i ~/.ssh/lightsail.pem infra/nginx/api.conf "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/api.conf"
+          scp -i ~/.ssh/lightsail.pem infra/nginx/core-api-proxy.conf "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/core-api-proxy.conf"
+          # Both host scripts live under config/. restore-drill.sh drives `docker
+          # compose`, which does not exist inside the image -- that is why spec 9.7's
+          # scripts/ path is superseded by config/ here.
+          scp -i ~/.ssh/lightsail.pem infra/backup-core-db.sh "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/config/backup-core-db.sh"
+          scp -i ~/.ssh/lightsail.pem infra/restore-drill.sh "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/config/restore-drill.sh"
           scp -i ~/.ssh/lightsail.pem /tmp/epaper-hub-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/epaper-hub-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/customer-order-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/customer-order-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/core-api-image-${{ github.sha }}.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/core-api-image-${{ github.sha }}.tgz"
@@ -118,8 +131,12 @@ jobs:
           # subcommand -- up, config and exec all fail at project load -- so the
           # operator's ssh-and-restart reflex is dead too. Fail here, with a message.
           test -f ~/core-api.env || { echo 'MISSING ~/core-api.env for user '"$(whoami)"' -- see infra/README.md'; exit 1; }
-          if [ -d ~/epaper-emulator/config ] && [ ! -d ~/restaurant-order-system/config ]; then
-            mv ~/epaper-emulator/config ~/restaurant-order-system/config
+          # Upload app has already created config/, so `[ ! -d … ]` would be permanently
+          # false and the rm -rf below would take the legacy config with it. Test for
+          # EMPTY, not absent, and copy -- mv into an existing directory makes
+          # config/config.
+          if [ -d ~/epaper-emulator/config ] && [ -z "$(ls -A ~/restaurant-order-system/config 2>/dev/null)" ]; then
+            cp -a ~/epaper-emulator/config/. ~/restaurant-order-system/config/
           fi
           rm -rf ~/epaper-emulator
           docker load -i /tmp/epaper-hub-image.tgz

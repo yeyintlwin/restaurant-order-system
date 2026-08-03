@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 16 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 17 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -104,6 +104,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 17.** The `postgres:16-alpine` service container in the existing `deploy` job, the two core-api steps, and the new `apps/core-api/test/ci-contract.test.js`. RED at `# fail 2` (tests 1 and 3) exactly as the task predicted. YAML parses in its full standing form: `concurrency`, `services.postgres`, **14 steps**. **Step 4 executed for real, not deferred** — a `postgres:16-alpine` container on 127.0.0.1:5432 and the whole suite run as the superuser maintenance role: **273 tests, 272 pass, 0 fail, 1 skip**, the first time these have ever run as `postgres` on 5432 rather than `core_api_owner` on 5433. Confirmed the pass condition rather than the skip path, per suite: schema-invariants 13, migrate 22, db-index 29, db-health 13, fixtures-two-tenant 13, testing-database-clone 8, scripts 7 — all `skipped 0`. Hatch still works: `CORE_API_SKIP_DB_TESTS=1` gives `# fail 0` with 17 skips, and `ci-contract` is reported RUN, not skipped. **Spec §12 BREAK 7 verified verbatim:** deleting the `services: postgres:` block turns ONLY `ci-contract.test.js` red — deploy-config, source-structure, backup-restore and config all stay `# fail 0`. | **16/30** | `c4c7961` | Task 18 |
 | 2026-08-03 | **PRODUCTION DEFECT found on the box, fixed: `core-api` had been `unhealthy` since its first deploy.** SSH recon (WSL, `ssh lightsail`) showed `core-api  Up 7 minutes (unhealthy)` with `FailingStreak 44`, while `curl http://127.0.0.1:3200/health` from the host answered `{"ok":true,"app":"core-api"}` the whole time. Cause, proven inside the container rather than reasoned about: `/etc/hosts` maps `localhost` to **`::1` only**, and `apps/core-api/Dockerfile:28` sets `HOST=0.0.0.0`, which is **IPv4-only** — so the shipped probe dialled `[::1]:3200` and was refused every 10s. `wget --spider http://127.0.0.1:3200/health` inside that same container returns `remote file exists`, exit 0. Fixed the probe to `127.0.0.1` — the form `core-db`'s healthcheck already uses one screen above, for the same class of reason. `epaper-hub` survives the identical hostname form only because it sets no `HOST` and binds dual-stack (`:::3000`, verified on the box) — **left unchanged on purpose**: its literal is pinned by `apps/epaper-hub/test/deploy-config.test.js:63`, which belongs to the hub area and not to Plan 5, per this plan's File ownership table. Both compose comments now record the trap. The new guard is scoped twice — to the line that executes, and to core-api's own `:3200` probe — and mutation-tested: restoring the hostname form turns it red. **Nothing in this repository would have caught it.** The compose assertion pinned the literal that was broken, and the deploy has no health gate yet; that gate is Task 21, which would have started failing on a service that was working. | — | (this commit) | Task 18 |
 | 2026-08-03 | **Healthcheck fix verified in production, and `api.yeyintlwin.com` now has a certificate.** Pushed `6ea3b63`; run 30789230264 green. On the box `core-api` went from `unhealthy / FailingStreak 44` to `Up 36 seconds (healthy)`, `streak=0`, with the probe now logging `Connecting to 127.0.0.1:3200 … remote file exists`. Then issued the certificate Task 10 has been blocked on since the plan was written: `certbot certonly --nginx -d api.yeyintlwin.com --non-interactive`, preceded by a `--dry-run` against Let's Encrypt staging so the challenge was proved end to end before any rate limit was spent. `nginx -t` was valid before the dry run, after the dry run, and after the real issuance — none of the thirteen `listen … 443` lines moved, which is the whole reason the plan specifies `certonly` and not `--nginx` as an installer. Certificate: `CN=api.yeyintlwin.com`, issuer `YE1`, valid to **2026-11-01**, renewal timer installed by certbot. **Task 10 is no longer blocked; it is now simply a cutover task**, because everything left in it needs the two conf files on the box — Task 18's scp and Task 20's install. | — | (this commit) | Task 18 |
+| 2026-08-03 | **Task 18.** The `Upload app` step now creates `config/` and `~/backups` at 0700, scp's `api.conf` and `core-api-proxy.conf` to **`/tmp`** — not alongside the compose file, where the deploy's own `find … -exec rm -rf {} +` would erase them before `docker compose up -d` with every text assertion still green — and scp's both host scripts into `config/`, the one directory that `find` preserves. `restore-drill.sh` in particular: spec §9.7 writes it as `scripts/`, superseded here, because it drives `docker compose`, which does not exist inside the image. **The legacy-config migration was fixed in the same commit, as the task insists:** the new `mkdir` runs in `Upload app`, which is *before* `Deploy on Lightsail`, so `[ ! -d ~/restaurant-order-system/config ]` becomes permanently false and `rm -rf ~/epaper-emulator` on the next line would have taken the legacy config with it, unmigrated. Now tests for EMPTY rather than absent and copies with `cp -a … /.` rather than `mv`, which would also have produced `config/config`. RED reproduced exactly as written. GREEN, 8 tests in the suite, YAML still parses to **14 steps**. Both load-bearing guards mutation-tested: scp'ing `api.conf` alongside the compose file goes red, and restoring the dead `[ ! -d … ]` guard goes red. Also asserts every tracked scp SOURCE exists on disk — the check that turns "a scp of a file no area ever wrote" from a red deploy into a red `node --test`. | **17/30** | (this commit) | Task 19 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -4932,7 +4933,7 @@ the `mkdir` is the commit that creates the defect.
   migration at `:72-74`)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -5002,13 +5003,13 @@ test("deploy workflow uploads the nginx configs and both infra scripts", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="uploads the nginx configs" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /mkdir -p ~\/restaurant-order-system\/config ~\/backups && chmod 700 ~\/backups/.`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, replace the `Upload app` step with the following. **Two lines here belong to the compose area and are already present when this task runs** — the `scp … docker-compose.yml` line (its Task 1) and the `scp … /tmp/core-api-image-${{ github.sha }}.tgz` line (its core-api service task). They are shown for context; do not retype them differently, and do not add them if they are absent — run compose's tasks first.
 
@@ -5064,7 +5065,7 @@ old stack is `docker compose down`ed (`:58-61`), `~/epaper-emulator.env` and
 lives in the named volume `epaper-emulator_epaper-data` under `/var/lib/docker` — migrated
 separately at `:79-83`, *after* the `rm -rf`.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="uploads the nginx configs" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -5074,7 +5075,7 @@ Then the whole suite, as a regression check only:
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

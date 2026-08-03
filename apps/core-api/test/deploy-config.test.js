@@ -376,3 +376,67 @@ test("deploy workflow serialises production deploys with a concurrency group", (
     "concurrency: must be declared at workflow level, above jobs:",
   );
 });
+
+test("deploy workflow uploads the nginx configs and both infra scripts", () => {
+  const workflow = workflowText();
+  const root = path.join(__dirname, "..", "..", "..");
+
+  // ~/backups must exist and be 0700 before block 1 writes the first pre-deploy dump
+  // into it, and config/ is the one directory the deploy's find preserves.
+  assert.match(
+    workflow,
+    /mkdir -p ~\/restaurant-order-system\/config ~\/backups && chmod 700 ~\/backups/,
+  );
+
+  // The mkdir above runs in Upload app, BEFORE Deploy on Lightsail, so `[ ! -d
+  // ~/restaurant-order-system/config ]` is false from this commit onward: the mv is
+  // dead code and `rm -rf ~/epaper-emulator` becomes the only line touching the legacy
+  // config. Content-aware, and a copy -- `mv` into an existing directory would also
+  // produce config/config.
+  assert.match(workflow, /\[ -z "\$\(ls -A ~\/restaurant-order-system\/config 2>\/dev\/null\)" \]/);
+  assert.match(workflow, /cp -a ~\/epaper-emulator\/config\/\. ~\/restaurant-order-system\/config\//);
+  assert.doesNotMatch(workflow, /\[ ! -d ~\/restaurant-order-system\/config \]/);
+  assert.doesNotMatch(workflow, /mv ~\/epaper-emulator\/config ~\/restaurant-order-system\/config/);
+
+  // Nginx files land in /tmp. The find in the deploy heredoc deletes everything in
+  // ~/restaurant-order-system that is not docker-compose.yml or config/, so a file
+  // scp'd "alongside the compose file" is erased before docker compose up -d while
+  // every text assertion here would still be green.
+  assert.match(workflow, /scp -i [^\n]*infra\/nginx\/api\.conf [^\n]*:\/tmp\/api\.conf"/);
+  assert.match(
+    workflow,
+    /scp -i [^\n]*infra\/nginx\/core-api-proxy\.conf [^\n]*:\/tmp\/core-api-proxy\.conf"/,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /scp -i [^\n]*api\.conf [^\n]*:~\/restaurant-order-system\/api\.conf/,
+  );
+
+  // Both host scripts go under config/. restore-drill.sh drives `docker compose`, so
+  // it cannot live inside the image -- spec 9.7's scripts/ path is superseded, and
+  // without this line the drill is never on the box.
+  assert.match(
+    workflow,
+    /scp -i [^\n]*infra\/backup-core-db\.sh [^\n]*:~\/restaurant-order-system\/config\/backup-core-db\.sh"/,
+  );
+  assert.match(
+    workflow,
+    /scp -i [^\n]*infra\/restore-drill\.sh [^\n]*:~\/restaurant-order-system\/config\/restore-drill\.sh"/,
+  );
+
+  // Every scp SOURCE that is a tracked repository file must exist, or the deploy dies
+  // on the box for a reason node --test could have caught. The image tarballs are
+  // build outputs and are deliberately not in this list.
+  for (const source of [
+    "docker-compose.yml",
+    "infra/nginx/api.conf",
+    "infra/nginx/core-api-proxy.conf",
+    "infra/backup-core-db.sh",
+    "infra/restore-drill.sh",
+  ]) {
+    assert.ok(
+      fs.existsSync(path.join(root, source)),
+      `${source} is scp'd by the Upload app step but does not exist in the working tree`,
+    );
+  }
+});
