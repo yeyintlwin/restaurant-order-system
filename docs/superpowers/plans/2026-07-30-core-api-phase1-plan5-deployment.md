@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 26 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 27 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -118,6 +118,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 27 — PART 4 IS COMPLETE.** `## The client-IP chain` in `infra/README.md` plus `apps/core-api/test/operations-docs.test.js`. The section is a **summary and a pointer**, not the restatement Step 3 originally specified: the nginx area already documents all four breakers with a *Checked:* line each, and the ufw/DNAT reasoning already exists too. What is genuinely new is the honesty paragraph — **the pipeline checks the four directives at the config layer and nothing more; the behavioural forged-XFF probe needs a route and an audit writer that arrive in Plan 2, so until then nothing proves the derived address is unforgeable.** The secrets test bans the WRITE, not the word: `deploy.yml` names `~/core-api.env` three times legitimately, and what must never appear is a redirection into it — asserted with a positive control so the rule cannot pass because the regex is wrong. **Three plan defects found and fixed first** — see the callout on Task 27 — including one where the guard meant to prevent duplication banned an H2 nobody writes while the real duplicate went straight past it. Added a fourth test the task did not ask for: a standing rule over **every** `nginx -T` line in `infra/README.md`, forbidding both the single-space pattern against a column-aligned conf and the `\| grep -q` SIGPIPE form, since this repository has now shipped each of those twice. Three mutations, all red: dropping the secrets link, reintroducing the single-space recipe, duplicating the detailed heading. **Area gate with a real Postgres and no skip variable: 287 tests, 286 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 elsewhere.** | **26/30** | (this commit) | Task 28 |
 | 2026-08-03 | **Task 23 corrected after the fact — two defects the pre-flight audit found in text I had already committed.** (1) **`LAST_OK` was defined wrongly, in three places, and the wrong definition is the weaker one.** The plan, the Step 1 comment and the shipped `deploy.yml` comment all said it means *"a dump completed and passed `pg_restore --list`"*. `infra/backup-core-db.sh:47` says *"completed AND was read end to end"*, and touches it only after `pg_restore --data-only -f /dev/null` — and `infra/README.md` explains why `--list` alone is worthless here: `-Fc` writes the table of contents first, so a dump truncated at 80% by a full disk passes it. My comment named the check the runbook exists to warn against. Corrected everywhere, and the workflow now carries an assertion forbidding the weaker phrasing from coming back. (2) **MANUAL VERIFICATION step 2 was inert at cutover.** `touch -d '3 days ago' ~/backups/LAST_OK` then pushing leaves the deploy **green**, because the gate is skipped while `CRON_INSTALLED_AT` is newer than 48 hours — which it always is at cutover, since the deploy that created it is the deploy under test. The step's escape hatch ("step 1 closes that window early") was simply false: nothing in the deploy backdates the marker. The recipe now ages **both** files, and says plainly that the obvious version does not work. **Both defects were in prose I wrote and tested, and neither test could have caught them: one was a comment, the other an instruction to a human.** | — | (this commit) | Task 28 |
 | 2026-08-03 | **PRODUCTION FAILURE, diagnosed and fixed: the deploy heredoc had been inheriting the login shell, and the login shell is zsh.** Run `30794872094` died at block 6 with `zsh: no matches found: /home/***/backups/*.part`. zsh's default `NOMATCH` makes an **unmatched glob a fatal error** instead of passing the pattern through, and "no `.part` leftovers" is the *healthy* state — so `rm -f "$HOME"/backups/*.part` would have failed **every** deploy from Task 23 onward, after the migration had applied and the containers had restarted. The gate before it passed, so production was left running the new images with **no crontab**: block 7 never ran. Fixed at the class, not the line: the heredoc now names its interpreter, `ssh … 'bash -s' <<'EOF'`. That also makes `set -o pipefail` honest — it is not POSIX, so this script could never have run under dash and the interpreter was an unstated assumption in both directions. **A probe of the other two globs found a second latent failure:** `ls -1t …/pre-deploy-*.dump \| tail \| xargs` fails under **bash too**, because `ls` exits non-zero on a missing path and `pipefail` propagates — it survives only because the prune runs immediately after the dump it just wrote. Wrapped in the same `{ … \|\| true; }` brace group Task 24 established. The `.part` sweep became `find … -delete`, which is correct under any shell. Verified by running the **exact** deploy shape against the box — `ssh host 'bash -s' < heredoc`, `set -euo pipefail` first line — with all three patterns matching nothing: all survive, `END REACHED`, exit 0; and `bash -n` parses the real 256-line heredoc on the box. **The signal was there and I read past it:** this session's own recon printed `zsh: no matches found` twice, and I treated it as noise from my command rather than as the box telling me its shell. | — | (this commit) | Task 28 |
+| 2026-08-03 | **Task 28.** `## Deploy window` and `## Cutover checklist` in `infra/README.md`. The window sentence is the one spec §9.5 asks for literally: every push already resets all twelve displays to `Welcome` and drops every in-memory order session — Phase 1 does not introduce that, it **lengthens** the window by putting a migration and a 90-second gate in front of it. The section also states what a push destroys **on disk** and what it spares, because "empties that folder" is exactly how the two host scripts end up somewhere the `find` deletes with every text assertion still green — and it is the real reason `~/core-api.env` lives one directory up. The cutover list pins the order that matters: DNS → certbot → secrets file → push → drill, with `certbot` before the first push because `nginx -t` fails without the certificate **after** the migration has applied. **Two wrap defects caught before writing** — `/resets all twelve e-paper displays/` and `/outside service hours/` both straddle this file's hard wrap — written with `\s+`. **A mutation of mine was wrong, not the assertion:** removing the `find`'s flags appeared not to bite, and the reason was that the string occurs **twice** in `infra/README.md` and `String.replace` hit the other one. Re-run against the copy inside the section, it bites. That turned into a real guard: both quoted copies are now **pinned byte-for-byte to the line `deploy.yml` actually runs**, so a quoted command cannot outlive the command. Verified by changing the workflow's `find` and watching the README copies go red. 6 tests here, 16 in `deploy-config`, 14 in the hub's. | **27/30** | (this commit) | Task 29 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -6948,7 +6949,7 @@ certificate and it fails *after* the migration has already applied.
 - Modify: `infra/README.md` (append two sections)
 - Test: `apps/core-api/test/operations-docs.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/operations-docs.test.js`:
 
@@ -7006,7 +7007,7 @@ test("infra/README.md carries the cutover order, certbot before the first push",
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/operations-docs.test.js`
 
@@ -7019,7 +7020,7 @@ Expected: FAIL, `# fail 2`, with:
 
 The three tests from the previous task still pass.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to the end of `infra/README.md`:
 
@@ -7099,7 +7100,7 @@ docker stats --no-stream : (paste here)
 ```
 ````
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/operations-docs.test.js`  Expected: PASS (5 tests)
 
@@ -7107,7 +7108,7 @@ This task appends to `infra/README.md`, so the Task 4 rule applies:
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/README.md apps/core-api/test/operations-docs.test.js

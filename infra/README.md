@@ -492,3 +492,76 @@ today is a routing probe that proves core-api answered, plus a read of
 The three secrets — `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL` and `DATABASE_URL` —
 live in `~/core-api.env` and nowhere else; creation, mode and rationale are under
 **Core API runtime: two secrets files and core-net** above.
+
+## Deploy window
+
+Every push to `main` rebuilds `epaper-hub` and `customer-order` with a fresh commit tag
+and recreates both containers, which **resets all twelve e-paper
+displays to `Welcome`** and drops every in-memory order session. A table mid-order at
+that moment loses its cart and has to rescan.
+
+This is not new with core-api, but core-api **lengthens the window**: a database
+migration now runs before anything starts, and the deploy will not proceed until
+`/health/ready` answers, which the gate allows up to 90 seconds. **Deploy outside service
+hours.** There is no way to shorten it in this phase short of not deploying.
+
+**What a push destroys on disk, and what it spares.** Before Compose is invoked the
+deploy runs
+
+```sh
+find ~/restaurant-order-system -mindepth 1 -maxdepth 1 ! -name docker-compose.yml ! -name config -exec rm -rf {} +
+```
+
+so everything directly inside `~/restaurant-order-system` is deleted **except**
+`docker-compose.yml` and `config/`. That is exactly why the two host scripts are
+installed as `config/backup-core-db.sh` and `config/restore-drill.sh`, and why the Nginx
+files are scp'd to `/tmp` and then `install`ed into `/etc/nginx` rather than dropped
+"next to the compose file". And it is the real reason `~/core-api.env` sits one directory
+**up**, outside the deploy folder entirely: a bad edit to that `find` can never reach it.
+
+`business_date` is the related trap for whoever reads the numbers afterwards. It is
+computed from the shop's `time_zone` and `business_day_rollover_hour` and **stored at
+write time, never recomputed**. Correcting a shop's timezone later is the right thing to
+do, and yesterday's rows keep their original bucket — that is correct accounting, not a
+bug. Every such change writes a `shop.updated` audit row, so it stays attributable.
+
+## Cutover checklist
+
+Once, before the first core-api deploy. The exact commands and their expected output are
+in the Plan 5 deployment plan under **MANUAL VERIFICATION — cutover**; the order below is
+not negotiable.
+
+1. DNS `A` record for `api.yeyintlwin.com` → the Lightsail instance.
+2. `sudo certbot certonly --nginx -d api.yeyintlwin.com`. The deploy's `nginx -t` fails
+   without the certificate, and it fails *after* the migration has already applied.
+3. Host prerequisites: 2 GB swap and `vm.swappiness=10`; paste `free -m` and
+   `docker stats --no-stream` into the baseline block below; confirm the deploy user has
+   passwordless `sudo` for `install`, `nginx -t` and `systemctl reload nginx`. A password
+   prompt there hangs the deploy until it times out.
+4. Create `~/core-api.env` at mode 600 — see **Core API runtime: two secrets files and
+   core-net** — and confirm `~/restaurant-order-system.env` is untouched.
+5. Merge the compose move as ONE commit, outside service hours; it recreates every
+   container.
+6. Push, and watch the health gate. On failure, `docker compose logs core-api`: the
+   migration runner prints the file, both digests and its verdict.
+7. Bootstrap the first platform administrator — **Plan 2**.
+   `apps/core-api/scripts/create-platform-admin.js` needs the `users` table,
+   `lib/password.js` and the audit writer, none of which exist yet. Until then core-api
+   serves `/health` and `/health/ready` and nothing else, so there is no login to verify.
+   The runbook entry is already in `apps/core-api/README.md`.
+8. Record the live client-IP topology in **The client-IP chain** above. The behavioural
+   forged-XFF probe needs the login route and an audit writer, so it arrives with Plan 2;
+   today the check is at the config layer (`sudo nginx -T`).
+9. Run `~/restaurant-order-system/config/restore-drill.sh` against the first dump you
+   have. On the very first deploy there is none — the pre-deploy dump is gated on the
+   `core-db` volume, which did not exist yet — so the first dump appears either at
+   03:17 UTC that night (the nightly) or on the second push (that push's pre-deploy
+   dump), whichever comes first. Do not skip it because it is the day everything worked;
+   that is exactly when a restore drill is cheap.
+
+**Host baseline, recorded at cutover:**
+
+```text
+free -m                  : (paste here)
+docker stats --no-stream : (paste here)
+```

@@ -153,3 +153,75 @@ test("the three secrets live only in ~/core-api.env, never in a file the reposit
   assert.match(compose, /\$\{CORE_ENV_FILE:-\.env\}/);
   assert.match(workflow, /CORE_ENV_FILE=\.\.\/core-api\.env/);
 });
+
+test("infra/README.md warns that every push resets the dining room", () => {
+  const readme = readText(repoRoot, "infra", "README.md");
+  const window = sectionSlice(readme, "## Deploy window");
+
+  // Spec 9.5. Phase 1 does not introduce this; it lengthens the window by putting a
+  // migration in front of it, which is the whole reason the sentence has to be here.
+  // \s+ throughout: this file is hard-wrapped prose and both phrases straddle a wrap.
+  assert.match(window, /resets all twelve e-paper\s+displays to `Welcome`/);
+  assert.match(window, /in-memory order session/i);
+  assert.match(window, /lengthens the window/);
+
+  // Spec 12 greps infra/README.md for both of these strings by name.
+  assert.match(window, /outside service\s+hours/);
+  assert.match(window, /business_date/);
+
+  // deploy.yml preserves docker-compose.yml AND config/. Stating it as "empties the
+  // folder" is how the two infra scripts end up installed somewhere the find deletes,
+  // with the workflow-text assertion still green.
+  assert.match(window, /! -name docker-compose\.yml ! -name config/);
+  assert.match(window, /config\/backup-core-db\.sh/);
+  assert.doesNotMatch(readme, /empties that (?:directory|folder) on every push/);
+
+  // PINNED TO THE REAL COMMAND. infra/README.md quotes this `find` twice -- once in
+  // the nginx section to explain why the confs go to /tmp, once here -- and a quoted
+  // command is a copy that goes stale the day deploy.yml's changes. Every copy must be
+  // byte-identical to the line the deploy actually runs.
+  const workflow = readText(repoRoot, ".github", "workflows", "deploy.yml");
+  const live = workflow
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("find ~/restaurant-order-system -mindepth 1"));
+  assert.equal(live.length, 1, `deploy.yml runs ${live.length} such find commands, expected 1`);
+  const quoted = readme
+    .split("\n")
+    .map((line) => line.replace(/^`|`$/g, "").trim())
+    .filter((line) => line.startsWith("find ~/restaurant-order-system -mindepth 1"));
+  assert.ok(quoted.length >= 1, "infra/README.md quotes the deploy's find nowhere");
+  for (const copy of quoted) {
+    assert.equal(copy, live[0], "infra/README.md quotes a find that deploy.yml no longer runs");
+  }
+});
+
+test("infra/README.md carries the cutover order, certbot before the first push", () => {
+  const readme = readText(repoRoot, "infra", "README.md");
+  const cutover = sectionSlice(readme, "## Cutover checklist");
+
+  // A needle that is absent returns -1, which compares "less than" everything and
+  // would make every ordering assertion below pass vacuously.
+  const step = (needle) => {
+    const index = cutover.indexOf(needle);
+    assert.notEqual(index, -1, `the cutover list never mentions "${needle}"`);
+    return index;
+  };
+
+  assert.ok(step("DNS") < step("certbot"), "DNS must come before certbot");
+  assert.ok(step("certbot") < step("core-api.env"), "certbot must come before the secrets file");
+  assert.ok(step("core-api.env") < step("Push"), "the secrets file must exist before the first push");
+  assert.ok(step("Push") < step("restore drill"), "the restore drill runs after the first deploy");
+
+  assert.match(cutover, /vm\.swappiness=10/);
+  assert.match(cutover, /systemctl reload nginx/);
+
+  // PATH PINNED. The drill is a HOST script driving `docker compose`, so it cannot
+  // live inside the image; the deploy scp's it into config/, which the find spares.
+  assert.match(cutover, /~\/restaurant-order-system\/config\/restore-drill\.sh/);
+
+  // create-platform-admin.js needs the users table, lib/password.js and the audit
+  // writer. None exist yet, so the bootstrap step must say which plan brings them
+  // rather than sending an operator to a script that is not there.
+  assert.match(cutover, /Plan 2/);
+});
