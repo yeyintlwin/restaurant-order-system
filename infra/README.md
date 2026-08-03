@@ -565,3 +565,21 @@ not negotiable.
 free -m                  : (paste here)
 docker stats --no-stream : (paste here)
 ```
+
+### What this pipeline proves, and what it does not
+
+Four sections above were written by four different pieces of work. Three claims are easy
+to over-state, so they are stated once, here, correctly.
+
+| Claim | What is actually true today |
+| --- | --- |
+| The deploy proves `X-Forwarded-For` is unforgeable | It does not. It asserts the four **directives** with `sudo nginx -T`, which is a check on the config file. The behavioural probe — POST a login with `X-Forwarded-For: 203.0.113.99` and read the `audit_events` row back — needs the login route and the audit writer, and arrives with **Plan 2**. |
+| A missing nightly backup turns the deploy red | Only once `~/backups/CRON_INSTALLED_AT` is itself more than 48 hours old. That marker is written once, when the deploy first installs the crontab. Before then the gate is deliberately quiet, because the nightly has legitimately had no chance to run. From then on, a missing **or** stale `LAST_OK` fails the deploy — including the case where the nightly has never once succeeded. |
+| The deploy wipes `~/restaurant-order-system` | It deletes everything directly inside it **except** `docker-compose.yml` and `config/`. That is why `config/backup-core-db.sh` and `config/restore-drill.sh` survive, and why the Nginx files go via `/tmp`. |
+
+Two credentials, two mechanisms, and mixing them up is what the startup equality check
+exists to catch: the **app** password rotates by itself, because the migration runner
+issues `ALTER ROLE core_api_app LOGIN PASSWORD …` on every boot, so editing `DATABASE_URL`
+and redeploying is a complete rotation; the **owner** password does not, because `initdb`
+reads `POSTGRES_PASSWORD` once, when the volume is created. The ordered procedure is in
+*Rotating database passwords* above and in `apps/core-api/README.md`.

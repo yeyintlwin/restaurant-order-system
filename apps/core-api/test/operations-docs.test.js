@@ -225,3 +225,64 @@ test("infra/README.md carries the cutover order, certbot before the first push",
   // rather than sending an operator to a script that is not there.
   assert.match(cutover, /Plan 2/);
 });
+
+test("no section of infra/README.md over-states what the pipeline proves", () => {
+  const readme = readText(repoRoot, "infra", "README.md");
+  const reconciliation = sectionSlice(readme, "## Cutover checklist");
+
+  // 1. The XFF check. Config layer today; the behavioural probe is Plan 2. Spec 9.12
+  //    words it as "the deploy runs a forged-XFF probe as a gate", which is true of
+  //    the finished phase and false of this one, so it is the phrase most likely to
+  //    be copied in.
+  assert.doesNotMatch(readme, /runs a forged-XFF probe as a gate/);
+
+  // 2. The backup-health gate. It is gated on the BOOTSTRAP MARKER, not on LAST_OK's
+  //    existence -- gating on `[ -f LAST_OK ]` would make a nightly that has never
+  //    once succeeded green forever. So the honest sentence is about the marker's age.
+  //    Case-tolerant on the first word: this sentence opens a markdown table cell, so
+  //    it is naturally capitalised, and the lowercase form the plan specified could
+  //    never have matched.
+  assert.match(
+    reconciliation,
+    /[Oo]nly once `~\/backups\/CRON_INSTALLED_AT` is itself more than 48 hours old/,
+  );
+  assert.doesNotMatch(readme, /any deploy with no nightly in 48 hours fails/i);
+
+  // 3. The find. It preserves docker-compose.yml and config/. Backticks optional: the
+  //    path is written as inline code everywhere in this file, so a pattern that
+  //    insists on a bare path guards a phrasing nobody would write.
+  assert.doesNotMatch(
+    readme,
+    /deletes everything in `?~\/restaurant-order-system`?(?![^\n]*except)/,
+  );
+});
+
+test("the restore drill's runbook path and the shipping script agree", () => {
+  const readme = readText(repoRoot, "infra", "README.md");
+  const workflow = readText(repoRoot, ".github", "workflows", "deploy.yml");
+
+  // Both ends, so the runbook cannot name a path nothing installs. Spec 9.7 writes it
+  // as scripts/restore-drill.sh; that path is superseded because the drill is a HOST
+  // script driving `docker compose`, which does not exist inside the image.
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, "infra", "restore-drill.sh")),
+    "infra/restore-drill.sh is the file the deploy scp's into config/"
+  );
+  assert.match(readme, /config\/restore-drill\.sh/);
+  assert.match(workflow, /infra\/restore-drill\.sh/);
+  assert.match(workflow, /config\/restore-drill\.sh/);
+});
+
+test("spec 12's documentation greps pass", () => {
+  const infra = readText(repoRoot, "infra", "README.md");
+  const core = readText(repoRoot, "apps", "core-api", "README.md");
+
+  // The exact six strings spec 12's final item greps for, asserted here so the
+  // failure is a named test rather than a shell one-liner nobody runs.
+  assert.match(infra, /TRUSTED_PROXY_HOPS/);
+  assert.match(infra, /ALTER ROLE/);
+  assert.match(infra, /business_date/);
+  assert.match(infra, /outside service\s+hours/);
+  assert.match(core, /create-platform-admin/);
+  assert.match(core, /CORE_API_TEST_DATABASE_URL/);
+});
