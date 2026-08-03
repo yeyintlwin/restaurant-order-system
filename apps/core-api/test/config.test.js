@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const { startupConfiguration, ConfigurationError, DEFAULTS } = require("../config");
+const { composeEnvironment, composeText, COMPOSE_PATH } = require("../testing/compose");
 
 // The literal recipe from spec 9.9 "Local development". Every case below starts
 // from one of these two environments and breaks exactly one thing, so a failure
@@ -366,38 +367,13 @@ test("SESSION_ABSOLUTE_SECONDS must strictly exceed SESSION_IDLE_SECONDS", () =>
 });
 
 // --- the Compose contract ---------------------------------------------------
-// docker-compose.yml is Plan 5. Until it lands, these two literals ARE the
-// contract: they are copied character for character from the core-api service's
-// `environment:` block in spec 9.1. When the compose file arrives, replace them
-// with a parse of the real file; the assertions below do not change.
+// Plan 1 reproduced the core-api `environment:` block here as a literal, because
+// docker-compose.yml did not exist yet. It exists now, so a literal would be a
+// SECOND place to edit -- exactly the drift these assertions exist to catch. The
+// table below is read from the real file the deploy scp's to the box.
 
-const COMPOSE_CORE_API_ENVIRONMENT_KEYS = [
-  "PORT", "HOST", "TZ", "API_PUBLIC_ORIGIN", "TERMINAL_ALLOWED_ORIGINS", "TRUSTED_PROXY_HOPS",
-  "SESSION_IDLE_SECONDS", "SESSION_ABSOLUTE_SECONDS", "PAIRING_CODE_TTL_SECONDS",
-  "TERMINAL_TOKEN_TTL_SECONDS", "LOGIN_RATE_PER_MINUTE", "LOGIN_TIME_BUDGET_MS", "SCRYPT_SLOTS",
-  "PAIR_RATE_PER_MINUTE", "ADMIN_MINT_RATE_PER_10MIN", "PAIRING_MINT_RATE_PER_10MIN",
-  "PASSWORD_ABUSE_THRESHOLD", "ROTATE_RATE_PER_HOUR", "AUDIT_RETENTION_DAYS", "DB_POOL_MAX"
-];
-
-const COMPOSE_DEFAULTS = {
-  PORT: "3200",
-  HOST: "0.0.0.0",
-  TERMINAL_ALLOWED_ORIGINS: "",
-  SESSION_IDLE_SECONDS: "28800",
-  SESSION_ABSOLUTE_SECONDS: "604800",
-  PAIRING_CODE_TTL_SECONDS: "900",
-  TERMINAL_TOKEN_TTL_SECONDS: "7776000",
-  LOGIN_RATE_PER_MINUTE: "30",
-  LOGIN_TIME_BUDGET_MS: "400",
-  SCRYPT_SLOTS: "2",
-  PAIR_RATE_PER_MINUTE: "20",
-  ADMIN_MINT_RATE_PER_10MIN: "20",
-  PAIRING_MINT_RATE_PER_10MIN: "30",
-  PASSWORD_ABUSE_THRESHOLD: "5",
-  ROTATE_RATE_PER_HOUR: "5",
-  AUDIT_RETENTION_DAYS: "365",
-  DB_POOL_MAX: "8"
-};
+const COMPOSE_CORE_API = composeEnvironment("core-api");
+const COMPOSE_CORE_API_ENVIRONMENT_KEYS = Object.keys(COMPOSE_CORE_API);
 
 // The three keys Compose sets that config.js deliberately does NOT default, each
 // with the reason stated so the exclusion is a decision rather than a hole.
@@ -406,6 +382,13 @@ const NOT_DEFAULTED_IN_CODE = {
   API_PUBLIC_ORIGIN: "required with no default: a default would let a misconfigured box accept logins for the wrong origin",
   TRUSTED_PROXY_HOPS: "required under NODE_ENV=production; the development default is 0, deliberately not Compose's 1"
 };
+
+// Everything Compose sets that config.js is expected to default: the file's own
+// block minus the three stated exclusions. Values stay RAW STRINGS -- "3200", not
+// 3200 -- which is why DEFAULTS stores strings.
+const COMPOSE_DEFAULTS = Object.fromEntries(
+  Object.entries(COMPOSE_CORE_API).filter(([name]) => !(name in NOT_DEFAULTED_IN_CODE))
+);
 
 function camelCaseOf(name) {
   return name
@@ -421,13 +404,57 @@ test("config.js defaults every knob to the value the Compose file sets", () => {
 });
 
 test("the Compose keys config.js does not default are a stated, closed list", () => {
+  // Compared against config.js's own DEFAULTS, never against COMPOSE_DEFAULTS,
+  // which is derived from this very exclusion list and would agree with itself
+  // whatever either file said.
   assert.deepEqual(
-    [...Object.keys(COMPOSE_DEFAULTS), ...Object.keys(NOT_DEFAULTED_IN_CODE)].sort(),
+    [...Object.keys(DEFAULTS), ...Object.keys(NOT_DEFAULTED_IN_CODE)].sort(),
     [...COMPOSE_CORE_API_ENVIRONMENT_KEYS].sort()
   );
   for (const [variable, reason] of Object.entries(NOT_DEFAULTED_IN_CODE)) {
+    assert.ok(
+      Object.hasOwn(COMPOSE_CORE_API, variable),
+      `${variable} is excluded from DEFAULTS but docker-compose.yml no longer sets it`
+    );
     assert.ok(reason.length > 0, `${variable} needs a stated reason`);
   }
+});
+
+test("the compose reader reads the real file and cannot pass by returning nothing", () => {
+  // An empty parse would make every deepEqual above compare two empty objects and
+  // the whole contract would go quiet. This is the test that keeps it loud.
+  assert.ok(COMPOSE_PATH.endsWith("docker-compose.yml"));
+  assert.match(composeText(), /^services:$/m);
+  assert.ok(
+    COMPOSE_CORE_API_ENVIRONMENT_KEYS.length >= 20,
+    `parsed only ${COMPOSE_CORE_API_ENVIRONMENT_KEYS.length} core-api environment keys`
+  );
+
+  // Quote stripping, inline-comment stripping, and the empty value -- which is the
+  // one legitimate value a broken parser also produces.
+  assert.ok(Object.hasOwn(COMPOSE_CORE_API, "TERMINAL_ALLOWED_ORIGINS"));
+  assert.equal(COMPOSE_CORE_API.TERMINAL_ALLOWED_ORIGINS, "");
+  assert.equal(COMPOSE_CORE_API.TZ, "UTC");
+  assert.equal(COMPOSE_CORE_API.API_PUBLIC_ORIGIN, "https://api.yeyintlwin.com");
+  assert.equal(COMPOSE_CORE_API.TRUSTED_PROXY_HOPS, "1");
+
+  assert.throws(() => composeEnvironment("core-apiii"), /declares no service "core-apiii"/);
+});
+
+test("the compose core-db role and database match the DSNs config.js demands in production", () => {
+  // POSTGRES_USER is what initdb creates; the production username rule is what
+  // refuses to listen. The two files are edited by different hands months apart,
+  // and when they disagree the box fails at 28P01 in the middle of a deploy.
+  const database = composeEnvironment("core-db");
+  assert.equal(database.POSTGRES_USER, "core_api_owner");
+  assert.equal(database.POSTGRES_DB, "core");
+  assert.equal(database.TZ, "UTC");
+
+  const config = startupConfiguration(PRODUCTION_ENV);
+  assert.match(config.databaseMigrationUrl, new RegExp(`^postgres://${database.POSTGRES_USER}:`));
+  assert.match(config.databaseUrl, /^postgres:\/\/core_api_app:/);
+  assert.ok(config.databaseMigrationUrl.endsWith(`/${database.POSTGRES_DB}`));
+  assert.ok(config.databaseUrl.endsWith(`/${database.POSTGRES_DB}`));
 });
 
 test("the defaults table is what config.js actually applies", () => {

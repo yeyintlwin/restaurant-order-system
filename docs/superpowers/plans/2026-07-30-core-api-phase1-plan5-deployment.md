@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 24 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 25 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -114,6 +114,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 23.** The backup-health gate: sweep `*.part`, then fail the build when `LAST_OK` is older than 48 hours. `LAST_OK` means specifically *a dump completed **and** passed `pg_restore --list`* — checking the newest `nightly-*.dump` instead would be satisfied by a truncated file an OOM kill left behind. Gated on `CRON_INSTALLED_AT`, **never** on `[ -f LAST_OK ]`: a missing `LAST_OK` is exactly the failure worth catching — the nightly has never once succeeded — and gating on its existence makes that case skip the check and stay green forever. That was must-fix 5 in this plan's original review, and the implementation now matches the design it was written to have. Asserted that the 85% disk gate stayed at the TOP of the heredoc rather than living here, where it would fire after the migration has applied. **No plan defect in this task's text** — its one `doesNotMatch` forbids `&& [ -f "$HOME/backups/LAST_OK" ]`, a form specific enough that the explanatory comment's shorter `[ -f LAST_OK ]` does not collide with it. Three mutations, all red: dropping the `.part` sweep, introducing the inert `&& [ -f LAST_OK ]` conjunction, and neutering the `CRON_INSTALLED_AT` freshness check. 13 tests, `# fail 0`, YAML 14 steps. | **22/30** | (this commit) | Task 24 |
 | 2026-08-03 | **Task 24 — Part 4's most dangerous line, shipped safely.** Each stage of the crontab rewrite gets its own `\|\| true` in its own brace group and the crontab is installed from a **file**, because the obvious pipeline exits 1 under `set -e` on a box with no crontab — the listing exits 1, grep on empty input exits 1, `pipefail` propagates, and the deploy aborts with an **empty** error message before the service starts; on Vixie cron the empty stdin also wipes any crontab that did exist. The box is in exactly that state (`no crontab for ubuntu`, confirmed in this session's recon), so this is not hypothetical. The exact `PATH=` string is in the strip list because the `printf` re-appends it — leaving it out grows the crontab by one line every deploy, forever. `CRON_INSTALLED_AT` is written **once**: touching it every deploy would keep it permanently fresh on a repo that deploys daily and Task 23's 48-hour gate would never fire at all. **Two plan defects found and fixed first** — see the callout on Task 24 — and this time **the plan's own Step 1 and Step 3 blocks were edited, not just the shipped files**, which the pre-flight audit showed had been missed for Tasks 19 and 22. Proved by probe rather than by argument, since the failure is silent: with a stub for `crontab -l` on a bare box, the unguarded pipeline exits 1 and never reaches the next line; the shipped form reaches it with exit 0. 14 tests, `# fail 0`, YAML 14 steps. | **23/30** | (this commit) | Task 25 |
 | 2026-08-03 | **Task 25 — deploy.yml is complete.** The `if: always()` artifact steps: read `LAST_PRE_DEPLOY`, refuse a dump that does not belong to this commit, scp exactly that file, upload it with a 14-day window. The **marker is the only evidence, and the volume is not** — `docker volume create` runs unconditionally above block 1's gate, so the volume exists after the first *attempt* whether or not a dump was ever written. The sha mismatch hard-fails **only when the deploy itself succeeded**: on a failed run an older sha is the expected reading, and a second red X buries the real failure. Guarded on `~/.ssh/lightsail.pem` existing, because `if: always()` also runs for a job that died before `Install SSH key`. **Two plan defects found and fixed first** — see the callout on Task 25 — one of which the audit's own suggested fix would not have closed: `\s+` is enough for hard-wrapped markdown but **not** for a wrapped YAML comment, where the join is `"\n      # "` and `#` is not whitespace. Three mutations, all red: deleting `retention-days`, dropping the ssh-key guard, and hard-failing on a stale sha regardless of job status. **Area gate, run as the task demands — with a real Postgres and NOT `CORE_API_SKIP_DB_TESTS`, because the skip variable would turn the database-backed suites into a green no-op on the very run that ships the pipeline: 281 tests, 280 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 across the other three workspaces.** YAML now parses to **16 steps** and the ssh heredoc is still terminated — a `run: \|` block that swallowed its `EOF` is valid YAML and a dead deploy. | **24/30** | (this commit) | Task 26 |
+| 2026-08-03 | **Task 26 — the Plan 1 seam is closed.** `apps/core-api/testing/compose.js` reads the real repo-root `docker-compose.yml`; `config.test.js` no longer carries a copy of the `environment:` block. Plan 1 Task 8 marked this seam in the test itself — *"these two literals ARE the contract… when the compose file arrives, replace them with a parse of the real file; the assertions below do not change"* — and that is exactly what happened: the three untouched tests now compare against the file instead of against a copy, without a character changing. The closed-list test was rewritten to compare `Object.keys(DEFAULTS)` — config.js's own table — against the parsed keys, because comparing `COMPOSE_DEFAULTS` (derived from the exclusion list) with the exclusion list would agree with itself whatever either file said. A hand-written reader rather than a YAML dependency, because `apps/core-api` declares exactly `express` and `pg` and `source-structure.test.js` pins that list; it lives in `testing/`, not `test/`, because C13 allows only `*.test.js` there. **The DoD's BREAK now works for the first time.** Changing `SCRYPT_SLOTS: 2` to `3` in the real compose file turns **exactly two** tests red — `config.js defaults every knob to the value the Compose file sets` and `the defaults table is what config.js actually applies` — the two the DoD names verbatim. Against the old literal that break was unsatisfiable: a copy cannot react to the file it copies. Deleting a key instead turns three red, including the reader's own non-vacuity check. 27 tests, the count the task predicts. **Process slip, recorded:** the module was created before Step 2 ran, so the documented `MODULE_NOT_FOUND` red was not observed in order; it was reproduced afterwards by moving the file aside, which is weaker evidence than having done it first. | **25/30** | (this commit) | Task 27 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -6416,7 +6417,7 @@ fails when the two disagree.
 - Modify: `apps/core-api/test/config.test.js`
 - Test: `apps/core-api/test/config.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Three edits to `apps/core-api/test/config.test.js`.
 
@@ -6519,7 +6520,7 @@ test("the compose core-db role and database match the DSNs config.js demands in 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/config.test.js`
 
@@ -6533,7 +6534,7 @@ Require stack:
 # fail 1
 ```
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Create `apps/core-api/testing/compose.js`:
 
@@ -6638,11 +6639,11 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/config.test.js`  Expected: PASS (27 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/testing/compose.js apps/core-api/test/config.test.js
