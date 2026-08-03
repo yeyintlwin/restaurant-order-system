@@ -545,3 +545,75 @@ test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump"
   assert.ok(workflow.includes(`docker volume create ${full}`), `deploy.yml does not create ${full}`);
   assert.ok(workflow.includes(`docker volume inspect ${full}`), `deploy.yml does not inspect ${full}`);
 });
+
+test("deploy heredoc installs nginx with a two-file snapshot, validate and rollback", () => {
+  const workflow = workflowText();
+
+  // Order is the whole point. Install-then-validate leaves a broken file on disk that
+  // only bites days later, when certbot's renew hook or a reboot reloads nginx.
+  const staleAt = workflow.indexOf("sudo rm -f /tmp/api.conf.bak /tmp/core-api-proxy.conf.bak");
+  const snapshotAt = workflow.indexOf("/tmp/api.conf.bak 2>/dev/null");
+  const installAt = workflow.indexOf("sudo install -m0644 /tmp/api.conf");
+  const validateAt = workflow.indexOf("if ! sudo nginx -t; then");
+  const reloadAt = workflow.indexOf("sudo systemctl reload nginx");
+  const proofAt = workflow.indexOf("nginx_dump=$(sudo nginx -T");
+
+  assert.ok(staleAt > -1, "the stale .bak files must be removed before this run snapshots");
+  assert.ok(snapshotAt > staleAt, "the snapshot must follow the stale-bak removal");
+  assert.ok(installAt > snapshotAt, "the snapshot must be taken before the install");
+  assert.ok(validateAt > installAt, "nginx -t must run after the install");
+  assert.ok(reloadAt > validateAt, "the reload must come only after a passing nginx -t");
+  assert.ok(proofAt > reloadAt, "the directive proofs read the config nginx actually loaded");
+
+  // BOTH files are snapshotted and BOTH are restored. Rolling back half of a two-file
+  // change leaves the box in a state neither version produced.
+  assert.match(
+    workflow,
+    /sudo cp -a \/etc\/nginx\/snippets\/core-api-proxy\.conf \/tmp\/core-api-proxy\.conf\.bak 2>\/dev\/null \|\| :/,
+  );
+  assert.match(
+    workflow,
+    /sudo cp -a \/tmp\/api\.conf\.bak \/etc\/nginx\/conf\.d\/api\.yeyintlwin\.com\.conf/,
+  );
+  assert.match(
+    workflow,
+    /sudo cp -a \/tmp\/core-api-proxy\.conf\.bak \/etc\/nginx\/snippets\/core-api-proxy\.conf/,
+  );
+  assert.match(workflow, /sudo rm -f \/etc\/nginx\/conf\.d\/api\.yeyintlwin\.com\.conf/);
+  assert.match(workflow, /sudo rm -f \/etc\/nginx\/snippets\/core-api-proxy\.conf/);
+  assert.match(
+    workflow,
+    /sudo install -m0644 -D \/tmp\/core-api-proxy\.conf \/etc\/nginx\/snippets\/core-api-proxy\.conf/,
+  );
+
+  // The two directives TRUSTED_PROXY_HOPS=1 and the login rate limit depend on.
+  // Captured ONCE: `nginx -T` piped straight into `grep -q` has the pipe closed on the
+  // first match, and once the config dump exceeds the 64 KB pipe buffer nginx -T takes
+  // SIGPIPE and pipefail aborts the deploy AFTER the reload has already happened.
+  assert.match(workflow, /nginx_dump=\$\(sudo nginx -T 2>\/dev\/null\)/);
+  // Scoped to the lines that EXECUTE: the heredoc names the broken form in a comment
+  // to explain why it is forbidden, so a document-wide doesNotMatch is red against a
+  // CORRECT workflow. Eighth occurrence of this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(line, /sudo nginx -T \| grep/, `nginx -T into grep -q takes SIGPIPE: ${line.trim()}`);
+  }
+
+  // Whitespace-tolerant: api.conf is column-aligned (`X-Forwarded-For   $proxy_add_…`,
+  // three spaces) and a literal single-space pattern never matches anything.
+  assert.match(
+    workflow,
+    /printf '%s\\n' "\$nginx_dump" \| grep -Eq 'limit_req_zone \+\[\^;\]\*zone=core_login' \|\| \{ echo/,
+  );
+  assert.match(
+    workflow,
+    /printf '%s\\n' "\$nginx_dump" \| grep -Eq 'proxy_set_header \+X-Forwarded-For \+\\\$proxy_add_x_forwarded_for' \|\| \{ echo/,
+  );
+
+  // The patterns must match the files this step actually installs. If they do not, the
+  // deploy reloads nginx and THEN aborts -- the failure mode is a live reload followed
+  // by a red build, which reads as "nginx is broken" when nginx is fine.
+  const apiConf = readText(repoRoot, "infra", "nginx", "api.conf");
+  const proxyConf = readText(repoRoot, "infra", "nginx", "core-api-proxy.conf");
+  assert.match(apiConf, /limit_req_zone +[^;]*zone=core_login/);
+  assert.match(proxyConf, /proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for/);
+});

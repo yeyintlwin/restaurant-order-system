@@ -199,6 +199,41 @@ jobs:
             ls -1t "$HOME"/backups/pre-deploy-*.dump 2>/dev/null | tail -n +15 | xargs -r rm -f
           fi
 
+          # ---- 2. NGINX: snapshot, install, validate, ROLL BACK on failure, then reload ----
+          # Installing first and validating second leaves a broken file latent on disk
+          # when nginx -t fails: the running nginx keeps its in-memory config so nothing
+          # looks wrong, and the box goes down the next time certbot's renew hook or a
+          # reboot reloads it -- taking order.yeyintlwin.com and epaper-hub.yeyintlwin.com
+          # with it, days later, with no deploy anywhere near the failure.
+          # Remove last run's snapshots FIRST, so `[ -f … .bak ]` means "this run
+          # snapshotted a file that existed" and the rollback cannot restore a config
+          # from an unrelated deploy. sudo, because `sudo cp -a` writes them as root.
+          sudo rm -f /tmp/api.conf.bak /tmp/core-api-proxy.conf.bak
+          sudo cp -a /etc/nginx/conf.d/api.yeyintlwin.com.conf /tmp/api.conf.bak 2>/dev/null || :
+          sudo cp -a /etc/nginx/snippets/core-api-proxy.conf /tmp/core-api-proxy.conf.bak 2>/dev/null || :
+          sudo install -m0644 /tmp/api.conf               /etc/nginx/conf.d/api.yeyintlwin.com.conf
+          sudo install -m0644 -D /tmp/core-api-proxy.conf /etc/nginx/snippets/core-api-proxy.conf
+          if ! sudo nginx -t; then
+            # BOTH files roll back. The snippet is installed in the same breath and is
+            # equally able to fail nginx -t; restoring only api.conf leaves the box in a
+            # state neither version produced.
+            if [ -f /tmp/api.conf.bak ]; then sudo cp -a /tmp/api.conf.bak /etc/nginx/conf.d/api.yeyintlwin.com.conf
+            else sudo rm -f /etc/nginx/conf.d/api.yeyintlwin.com.conf; fi
+            if [ -f /tmp/core-api-proxy.conf.bak ]; then sudo cp -a /tmp/core-api-proxy.conf.bak /etc/nginx/snippets/core-api-proxy.conf
+            else sudo rm -f /etc/nginx/snippets/core-api-proxy.conf; fi
+            sudo nginx -t          # prove the box is left loadable
+            exit 1
+          fi
+          sudo systemctl reload nginx
+          # Capture ONCE. Piping the config dump straight into `grep -q` closes the pipe
+          # on the first match, so as soon as that dump exceeds the 64 KB pipe buffer
+          # nginx -T takes SIGPIPE and pipefail aborts the deploy -- after the reload has
+          # already happened. The patterns are whitespace-tolerant because api.conf is
+          # column-aligned and the literal single-space pattern never matches.
+          nginx_dump=$(sudo nginx -T 2>/dev/null)
+          printf '%s\n' "$nginx_dump" | grep -Eq 'limit_req_zone +[^;]*zone=core_login' || { echo 'nginx: limit_req_zone core_login is not loaded'; exit 1; }
+          printf '%s\n' "$nginx_dump" | grep -Eq 'proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for' || { echo 'nginx: X-Forwarded-For is not set from $proxy_add_x_forwarded_for - the hop count is meaningless'; exit 1; }
+
           docker compose up -d --no-build
           docker image prune -f
           EOF

@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 18 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 19 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -107,6 +107,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 18.** The `Upload app` step now creates `config/` and `~/backups` at 0700, scp's `api.conf` and `core-api-proxy.conf` to **`/tmp`** — not alongside the compose file, where the deploy's own `find … -exec rm -rf {} +` would erase them before `docker compose up -d` with every text assertion still green — and scp's both host scripts into `config/`, the one directory that `find` preserves. `restore-drill.sh` in particular: spec §9.7 writes it as `scripts/`, superseded here, because it drives `docker compose`, which does not exist inside the image. **The legacy-config migration was fixed in the same commit, as the task insists:** the new `mkdir` runs in `Upload app`, which is *before* `Deploy on Lightsail`, so `[ ! -d ~/restaurant-order-system/config ]` becomes permanently false and `rm -rf ~/epaper-emulator` on the next line would have taken the legacy config with it, unmigrated. Now tests for EMPTY rather than absent and copies with `cp -a … /.` rather than `mv`, which would also have produced `config/config`. RED reproduced exactly as written. GREEN, 8 tests in the suite, YAML still parses to **14 steps**. Both load-bearing guards mutation-tested: scp'ing `api.conf` alongside the compose file goes red, and restoring the dead `[ ! -d … ]` guard goes red. Also asserts every tracked scp SOURCE exists on disk — the check that turns "a scp of a file no area ever wrote" from a red deploy into a red `node --test`. | **17/30** | (this commit) | Task 19 |
 | 2026-08-03 | **Task 19.** The 85% disk gate moved to the TOP of the heredoc — in block 6 it fires after the migration has applied, images have loaded and containers have restarted, which reports the problem at the one point where nothing can be done about it. Tarballs deleted the moment they are in the image store, with a `core-api-image-*.tgz` glob that also sweeps earlier runs' leftovers; the old trailing `rm -f` became dead code and was removed. Pre-deploy dump gated on `docker volume inspect`, never `docker compose ps --quiet core-db`, which is true only while core-db is RUNNING and so cannot tell "does not exist yet" from "exists and is down" — the deploy most likely to need the dump being exactly the one that would silently skip it. `exec -T` on every dump and `</dev/null` on every exec, because the heredoc IS the remote shell's stdin. **Two plan defects found and fixed first** — see the callout on Task 19: a duplicated `export EPAPER_ENV_FILE` (the same defect Task 3's row already records, one task after the lesson was written down), and a document-wide `doesNotMatch` for `docker compose ps --quiet core-db` that the task's own comment makes red on a correct file. Three mutations run after the fix, each turning it red: the `ps` gate, a dropped `</dev/null`, and a re-inserted duplicate export. 9 tests, `# fail 0`, YAML still 14 steps. | **18/30** | (this commit) | Task 20 |
 | 2026-08-03 | **Tasks 18 and 19 verified on the box, and TASK 15's GATE IS CLOSED — the restore drill has been run.** Deploy `30790217047` green. Task 18: both host scripts landed in `config/` **executable** (`-rwxr-xr-x`) — which is where this morning's `git add --chmod=+x` fix paid off, since scp copies the source mode and a 644 `restore-drill.sh` is an unrunnable drill; `api.conf` and `core-api-proxy.conf` in `/tmp`. Task 19: `~/backups` 700, `pre-deploy-*.dump` 600, `LAST_PRE_DEPLOY` naming sha `f0171bd` (matches the push), `/tmp/*-image*.tgz` gone, and the dump structurally readable — `dbname: core`, **112 TOC entries**. Then `config/backup-core-db.sh` by hand, then `config/restore-drill.sh` with no argument: **PASS, exit 0**, `0001_init.sql sha256:432e324975c3 already applied`, **six `DO` blocks** — Task 13's S1/S3/S4/S5/S7 and GRANTS assertions executing against a real restored dump for the first time, none raising — 11 base tables, `schema_migrations` 1, scratch database dropped. **Proved non-vacuous** per Task 15 item 4: an empty dump through the same drill gives `only 0 base tables restored; expected at least 11` and exit 1, leaving the scratch database in place with its inspect/drop hints. That is the message that had to fire — **not** `pending migration(s) never applied` — which is the whole reason the table count runs ahead of the ledger check. Cleaned up; only `core` remains; `/health/ready` 200 throughout. Ticked four of the six pre-cutover boxes in `infra/README.md`; the two left open are Scenario A's rehearsal and the crontab, which is Task 24's. **Found by doing:** feeding the drill script over ssh stdin truncated it silently at the first `docker compose exec -T` — the exact trap Task 19 documents, met from the operator's side rather than the deploy's. | — | (this commit) | Task 20 |
+| 2026-08-03 | **Task 20.** The nginx block: remove last run's `.bak` files, snapshot **both** installed files, install both, `nginx -t`, roll **both** back and re-run `nginx -t` to prove the box is left loadable, and only then reload. Order is the whole property — install-then-validate leaves a broken file latent on disk while the running nginx keeps its in-memory config, and the box goes down days later when certbot's renew hook or a reboot reloads it, taking `order` and `epaper-hub` with it, nowhere near a deploy. **One plan defect found and fixed first** — see the callout on Task 20: eighth occurrence of the signature shape. Four mutations run: dropping the stale-`.bak` removal, rolling back only `api.conf`, reloading before validating, and writing the SIGPIPE-prone `nginx -T \| grep` form as code — all four red. The scoping fix was checked **both ways**: that form as code is red, the same string in a comment is green. Pre-flight on the box before pushing, because this is the deploy that touches production nginx: `sudo -n install`, `sudo -n nginx -t` and `sudo -n systemctl reload nginx` all succeed with no password prompt (a prompt hangs the ssh heredoc forever), and `real_ip_header\|set_real_ip_from\|real_ip_recursive` in the loaded config counts **0** — either directive rewrites `$remote_addr` before `$proxy_add_x_forwarded_for` is evaluated and voids the hop count entirely. Also verified the two grep patterns match the real conf files before they could reload nginx and *then* abort; `X-Forwarded-For` is column-aligned with three spaces, exactly the case the plan's whitespace-tolerant rewrite exists for. 10 tests, `# fail 0`, YAML 14 steps. | **19/30** | (this commit) | Task 21 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5366,11 +5367,26 @@ The second `sudo nginx -t` inside the rollback branch is not redundant: it prove
 
 **Dependency:** the nginx area must have created `infra/nginx/api.conf` and `infra/nginx/core-api-proxy.conf`, and the certificate for `api.yeyintlwin.com` must already exist (§9.11 step 2) or `nginx -t` fails on a missing `ssl_certificate`.
 
+> **DEFECT FOUND ON EXECUTION 2026-08-03, fixed in the text below — EIGHTH occurrence of this
+> plan's signature shape.** Step 1's `assert.doesNotMatch(workflow, /sudo nginx -T \| grep/)` is
+> red against a CORRECT workflow, because Step 3's own comment names the broken form to explain
+> why it is forbidden: *"Capture ONCE. `sudo nginx -T | grep -q` closes the pipe on the first
+> match…"*. Now scoped to lines that execute, and the scoping itself was mutation-tested in both
+> directions: the offending form as **code** turns it red, the same string in a **comment**
+> leaves it green. That two-way check is what the rule needs and what the earlier occurrences
+> never got.
+>
+> Step 4's pattern check was also promoted out of the shell block into the suite. Running it by
+> hand once proves the patterns match today; asserting `api.conf` and `core-api-proxy.conf`
+> inside the test keeps them matching, and the failure it prevents is the worst-shaped one in
+> this task — nginx reloads successfully and the deploy *then* aborts, which reads as "nginx is
+> broken" when nginx is fine.
+
 **Files:**
 - Modify: `.github/workflows/deploy.yml` (the `Deploy on Lightsail` heredoc)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -5435,13 +5451,13 @@ test("deploy heredoc installs nginx with a two-file snapshot, validate and rollb
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="installs nginx with a two-file snapshot" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: the stale .bak files must be removed before this run snapshots`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, replace the single line that currently reads:
 
@@ -5490,7 +5506,7 @@ with:
           docker compose up -d --no-build
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="installs nginx with a two-file snapshot" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -5514,7 +5530,7 @@ Expected: `core_login ok` and `xff ok`. If either prints nothing, the deploy wou
 3. `sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -E 'real_ip_header|set_real_ip_from|real_ip_recursive' || echo NONE`
    Expected: `0`. Either directive rewrites `$remote_addr` before `$proxy_add_x_forwarded_for` is evaluated, which is a total bypass of the hop count.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
