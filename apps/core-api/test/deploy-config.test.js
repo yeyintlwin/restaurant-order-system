@@ -746,3 +746,73 @@ test("deploy heredoc makes a silent backup failure a red build", () => {
   const sweepAt = workflow.indexOf('rm -f "$HOME"/backups/*.part');
   assert.ok(dfAt > -1 && sweepAt > dfAt, "the disk gate must stay above the backup-health block");
 });
+
+test("deploy heredoc installs cron in a way that survives a box with no crontab", () => {
+  const workflow = workflowText();
+
+  // On a box with NO crontab: crontab -l exits 1, grep on empty input exits 1, pipefail
+  // propagates, and set -e aborts the deploy with an EMPTY message before the service
+  // starts. On Vixie cron `| crontab -` with empty stdin also wipes whatever crontab did
+  // exist.
+  assert.match(
+    workflow,
+    /\{ crontab -l 2>\/dev\/null \|\| true; \} \| \{ grep -Fv [^\n]*\|\| true; \} > \/tmp\/ct\.\$\$/,
+  );
+  // Scoped to the lines that EXECUTE: the heredoc names the fragile form in a comment to
+  // explain why it is forbidden, so a document-wide doesNotMatch is red against a CORRECT
+  // workflow. Tenth occurrence of this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(
+      line,
+      /crontab -l \| grep -Fv/,
+      `this form aborts the deploy on a box with no crontab: ${line.trim()}`,
+    );
+  }
+  assert.doesNotMatch(workflow, /\| crontab -$/m);
+  assert.match(workflow, /crontab \/tmp\/ct\.\$\$ && rm -f \/tmp\/ct\.\$\$/);
+
+  // Rewriting the crontab every deploy must be idempotent. The PATH line is re-appended
+  // by the printf below, so the EXACT string has to be in the strip list or the crontab
+  // grows by one line per deploy, forever.
+  assert.match(
+    workflow,
+    /grep -Fv -e 'backup-core-db\.sh' -e 'sweep-expired\.js' -e 'PATH=\/usr\/local\/sbin:\/usr\/local\/bin:\/usr\/sbin:\/usr\/bin:\/sbin:\/bin'/,
+  );
+
+  assert.match(workflow, /17 3 \* \* \* %s\/restaurant-order-system\/config\/backup-core-db\.sh/);
+  assert.match(
+    workflow,
+    /43 3 \* \* \* cd %s\/restaurant-order-system && CORE_ENV_FILE=\.\.\/core-api\.env EPAPER_ENV_FILE=\.\.\/restaurant-order-system\.env docker compose exec -T core-api node apps\/core-api\/scripts\/sweep-expired\.js/,
+  );
+
+  // Both proofs. AUDIT_RETENTION_DAYS configures nothing unless the sweep is installed,
+  // and the line without its grep is the one combination that must never ship.
+  assert.match(workflow, /crontab -l \| grep -q backup-core-db\.sh/);
+  assert.match(workflow, /crontab -l \| grep -q sweep-expired\.js/);
+
+  // The bootstrap marker block 6 gates on. Written ONCE -- touching it every deploy
+  // would keep it permanently fresh on a repo that deploys daily and the 48-hour
+  // backup-health gate would never fire. Nothing else in the deploy writes this file,
+  // so if this line is missing the gate in Task 23 is inert forever.
+  assert.match(
+    workflow,
+    /\[ -f "\$HOME\/backups\/CRON_INSTALLED_AT" \] \|\| touch "\$HOME\/backups\/CRON_INSTALLED_AT"/,
+  );
+
+  // scp does not reliably carry the executable bit; cron would fail with
+  // "Permission denied" and restore-drill.sh would refuse to run by hand.
+  assert.match(
+    workflow,
+    /chmod 700 ~\/restaurant-order-system\/config\/backup-core-db\.sh ~\/restaurant-order-system\/config\/restore-drill\.sh/,
+  );
+
+  // Cron is LAST, after the health gate and the probes.
+  const gateAt = workflow.indexOf("http://127.0.0.1:3200/health/ready");
+  const cronAt = workflow.indexOf("crontab /tmp/ct.$$");
+  assert.ok(gateAt > -1 && cronAt > gateAt, "cron must be installed after the health gate");
+
+  // The tarballs are already gone -- they are deleted straight after docker load, so the
+  // final cleanup is the two nginx files and nothing else.
+  assert.match(workflow, /rm -f \/tmp\/api\.conf \/tmp\/core-api-proxy\.conf/);
+  assert.doesNotMatch(workflow, /rm -f \/tmp\/\*-image\*\.tgz/);
+});

@@ -329,5 +329,37 @@ jobs:
               || { echo 'no successful core-db nightly in 48h'; exit 1; }
           fi
 
+          # ---- 7. CRON, LAST, AND FAILURE-PROOF ----
+          # The obvious pipeline -- listing the crontab, filtering it and piping straight
+          # back into `crontab -` -- exits 1 under set -e on a box with NO crontab: the
+          # listing exits 1, grep on empty input exits 1, pipefail propagates, and the
+          # deploy aborts with an EMPTY error message BEFORE the service ever starts.
+          # On Vixie cron the empty stdin also wipes any crontab that did exist. So each
+          # stage gets its own `|| true` in its own brace group, and the crontab is
+          # installed from a FILE.
+          # The exact PATH string is in the strip list because the printf re-appends it;
+          # leaving it out grows the crontab by one line on every deploy, forever.
+          # scp does not reliably carry the executable bit, hence the chmod.
+          chmod 700 ~/restaurant-order-system/config/backup-core-db.sh ~/restaurant-order-system/config/restore-drill.sh
+          { crontab -l 2>/dev/null || true; } | { grep -Fv -e 'backup-core-db.sh' -e 'sweep-expired.js' -e 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' || true; } > /tmp/ct.$$
+          printf 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n17 3 * * * %s/restaurant-order-system/config/backup-core-db.sh >> %s/backups/backup.log 2>&1\n43 3 * * * cd %s/restaurant-order-system && CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec -T core-api node apps/core-api/scripts/sweep-expired.js >> %s/backups/sweep.log 2>&1\n' "$HOME" "$HOME" "$HOME" "$HOME" >> /tmp/ct.$$
+          crontab /tmp/ct.$$ && rm -f /tmp/ct.$$
+          crontab -l | grep -q backup-core-db.sh
+          # AUDIT_RETENTION_DAYS configures nothing unless the sweep is actually
+          # installed, so the sweep line and THIS grep ship together or neither ships.
+          # ACCEPTED DEBT: apps/core-api/scripts/sweep-expired.js does not exist yet, so
+          # the 03:43 job logs "Cannot find module" into ~/backups/sweep.log nightly
+          # until the plan that ships it lands. Visible, bounded, non-destructive.
+          crontab -l | grep -q sweep-expired.js
+          # Bootstrap marker for block 6's backup-health gate, written ONCE. Block 6 stays
+          # quiet until this file is 48 hours old, which is the window in which the
+          # nightly has legitimately had no chance to run. Touching it on every deploy
+          # would keep it permanently fresh on a repository that deploys daily, and the
+          # gate would then never fire at all.
+          [ -f "$HOME/backups/CRON_INSTALLED_AT" ] || touch "$HOME/backups/CRON_INSTALLED_AT"
+
           docker image prune -f
+          # The image tarballs are already gone: they are deleted immediately after
+          # `docker load`, not here, so a failed deploy does not leave them on the disk.
+          rm -f /tmp/api.conf /tmp/core-api-proxy.conf
           EOF

@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 22 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 23 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -112,6 +112,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 21.** The 90 s gate (45 × 2 s) on loopback `/health/ready`, then the `--resolve` curl through `https://api.yeyintlwin.com/health` — which proves what `nginx -T` cannot: that a server block actually matches that name, that the certificate serves, and that the request reaches core-api. Failure prints `core-api` and `core-db` logs, because otherwise the only artefact of a bad deploy is a red tick. The no-auto-rollback statement and its one-line recipe are carried in the file on purpose: by the time the gate runs the migration has applied, so rolling the image back leaves the schema **ahead** of the image, which the runner treats as a warning — the old container starts and looks healthy against a schema it does not know. **No plan defect in this task's text** — the first since Task 11 — and the reason is visible: it contains no `doesNotMatch`, so the shape had nothing to attach to. Added one guard the task did not ask for: the rollback recipe must stay a comment, since run as code it would pin production to a literal image tag named `<previous-sha>`. Four mutations, all red: gating on `/health` instead of `/health/ready`, dropping the TLS-chain curl, dropping the diagnostics, and uncommenting the recipe. Both gates were run against the box before pushing, because a gate that fails runs *after* the migration has applied: `/health/ready` and the `--resolve` curl each returned `{"ok":true,"app":"core-api"}`, exit 0. 11 tests, `# fail 0`, YAML 14 steps. | **20/30** | (this commit) | Task 22 |
 | 2026-08-03 | **Task 22.** Blocks 4 and 5, in that order and for that reason: run the burst first and it exhausts the `core_login` bucket for this source address, nginx sheds the probe, it never reaches core-api, and every assertion after it passes vacuously. The probe asserts on the RESPONSE — 404 **and** `{"code":"not_found"}`, so it can tell core-api's JSON tail from an nginx-level `text/html` 404 and from a dead upstream's 502 page — and reads `TRUSTED_PROXY_HOPS` from `/proc/1/environ`, never through an `exec` session, which would echo back the compose file this same deploy just uploaded and agree with itself while PID 1 carried an older environment. **Two plan defects found and fixed first** — see the callout on Task 22: the ninth signature-shape occurrence, and a MANUAL VERIFICATION item that contradicts a guard this plan already ships. Five mutations, all correct: swallowing the probe with `\|\| true` → red, `printenv` as code → red with its diagnostic, the same string in a comment → green, deleting the `PLAN 2:` marker → red. **The whole probe was run against the box before pushing**, because a failing block-4 aborts the deploy *after* the migration has applied: `location = /api/admin/auth/login` exists with `limit_req zone=core_login burst=5 nodelay` and includes the snippet, the probe returned **404** with `{"error":{"code":"not_found","message":"Not found.","requestId":"3UkD1e3G"}}`, and PID 1 carries `TRUSTED_PROXY_HOPS=1`. Ran one request, not the burst, to leave the bucket intact for the deploy. 12 tests, `# fail 0`, YAML 14 steps. | **21/30** | (this commit) | Task 23 |
 | 2026-08-03 | **Task 23.** The backup-health gate: sweep `*.part`, then fail the build when `LAST_OK` is older than 48 hours. `LAST_OK` means specifically *a dump completed **and** passed `pg_restore --list`* — checking the newest `nightly-*.dump` instead would be satisfied by a truncated file an OOM kill left behind. Gated on `CRON_INSTALLED_AT`, **never** on `[ -f LAST_OK ]`: a missing `LAST_OK` is exactly the failure worth catching — the nightly has never once succeeded — and gating on its existence makes that case skip the check and stay green forever. That was must-fix 5 in this plan's original review, and the implementation now matches the design it was written to have. Asserted that the 85% disk gate stayed at the TOP of the heredoc rather than living here, where it would fire after the migration has applied. **No plan defect in this task's text** — its one `doesNotMatch` forbids `&& [ -f "$HOME/backups/LAST_OK" ]`, a form specific enough that the explanatory comment's shorter `[ -f LAST_OK ]` does not collide with it. Three mutations, all red: dropping the `.part` sweep, introducing the inert `&& [ -f LAST_OK ]` conjunction, and neutering the `CRON_INSTALLED_AT` freshness check. 13 tests, `# fail 0`, YAML 14 steps. | **22/30** | (this commit) | Task 24 |
+| 2026-08-03 | **Task 24 — Part 4's most dangerous line, shipped safely.** Each stage of the crontab rewrite gets its own `\|\| true` in its own brace group and the crontab is installed from a **file**, because the obvious pipeline exits 1 under `set -e` on a box with no crontab — the listing exits 1, grep on empty input exits 1, `pipefail` propagates, and the deploy aborts with an **empty** error message before the service starts; on Vixie cron the empty stdin also wipes any crontab that did exist. The box is in exactly that state (`no crontab for ubuntu`, confirmed in this session's recon), so this is not hypothetical. The exact `PATH=` string is in the strip list because the `printf` re-appends it — leaving it out grows the crontab by one line every deploy, forever. `CRON_INSTALLED_AT` is written **once**: touching it every deploy would keep it permanently fresh on a repo that deploys daily and Task 23's 48-hour gate would never fire at all. **Two plan defects found and fixed first** — see the callout on Task 24 — and this time **the plan's own Step 1 and Step 3 blocks were edited, not just the shipped files**, which the pre-flight audit showed had been missed for Tasks 19 and 22. Proved by probe rather than by argument, since the failure is silent: with a stub for `crontab -l` on a bare box, the unguarded pipeline exits 1 and never reaches the next line; the shipped form reaches it with exit 0. 14 tests, `# fail 0`, YAML 14 steps. | **23/30** | (this commit) | Task 25 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5175,7 +5176,12 @@ test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump"
     workflow,
     /if docker volume inspect restaurant-order-system_core-db-data >\/dev\/null 2>&1; then/,
   );
-  assert.doesNotMatch(workflow, /docker compose ps --quiet core-db/);
+  // Scoped to the lines that EXECUTE: the heredoc names the forbidden form in a comment
+  // to explain why it is forbidden, so a document-wide doesNotMatch is red against a
+  // CORRECT workflow -- this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(line, /docker compose ps --quiet core-db/, `ps cannot see a stopped core-db: ${line.trim()}`);
+  }
 
   // exec -T on every dump: a TTY translates CRLF and silently corrupts a binary
   // custom-format dump, which is not visible until the restore.
@@ -5292,10 +5298,10 @@ with:
           export CORE_API_IMAGE=core-api:${{ github.sha }}
 
           # ---- 1. PRE-DEPLOY DUMP. Gated on the VOLUME, not on a running container. ----
-          # `docker compose ps --quiet core-db` is true only when core-db is RUNNING, so
-          # it cannot distinguish "does not exist yet" (legitimate skip) from "exists and
-          # is down" (backup mandatory) -- and the deploy most likely to need the dump is
-          # the one that silently skips it.
+          # Gated on the VOLUME. Asking compose whether the container is running is true
+          # only while core-db is up, so it cannot distinguish "does not exist yet"
+          # (legitimate skip) from "exists and is down" (backup mandatory) -- and the
+          # deploy most likely to need the dump is the one that silently skips it.
           # Every `exec -T` below carries </dev/null: this heredoc IS the remote shell's
           # stdin, and an exec with stdin attached consumes the rest of the deploy script.
           if docker volume inspect restaurant-order-system_core-db-data >/dev/null 2>&1; then
@@ -5732,7 +5738,12 @@ test("deploy heredoc probes the login path before it exhausts the limit_req buck
   assert.match(workflow, /tr "\\0" "\\n" < \/proc\/1\/environ/);
   assert.match(workflow, /sed -n 's\/\^TRUSTED_PROXY_HOPS=\/\/p'/);
   assert.match(workflow, /test "\$hops" = "1" \|\| \{ echo "core-api PID 1 has TRUSTED_PROXY_HOPS/);
-  assert.doesNotMatch(workflow, /printenv TRUSTED_PROXY_HOPS/);
+  // Scoped to the lines that EXECUTE: the heredoc names the forbidden form in a comment
+  // to explain why it is forbidden, so a document-wide doesNotMatch is red against a
+  // CORRECT workflow -- this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(line, /printenv TRUSTED_PROXY_HOPS/, `printenv reports the environment compose builds now, not PID 1's: ${line.trim()}`);
+  }
 
   // The forgeability half needs Plan 2's auth route and audit writer. The marker is what
   // stops it from being forgotten, and it has a defined removal trigger.
@@ -5798,8 +5809,8 @@ In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, ins
           test "$probe_status" = "404" || { echo "login probe: expected 404 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
           grep -q '"code":"not_found"' /tmp/xff-probe.body || { echo 'login probe: that 404 did not come from core-api'; cat /tmp/xff-probe.body; exit 1; }
           rm -f /tmp/xff-probe.body
-          # Read the RUNNING PROCESS, not the project files: `docker compose exec -T
-          # core-api printenv TRUSTED_PROXY_HOPS` reports the environment compose builds
+          # Read the RUNNING PROCESS, not the project files. Asking the container to print
+          # the variable through an `exec` session reports the environment compose builds
           # NOW, from the compose file this same deploy just uploaded, so it agrees with
           # itself even when PID 1 is still carrying an older environment.
           hops=$(docker compose exec -T core-api sh -c 'tr "\0" "\n" < /proc/1/environ' </dev/null | sed -n 's/^TRUSTED_PROXY_HOPS=//p' | tr -d '\r')
@@ -5991,11 +6002,32 @@ Both scripts are `chmod 700`'d here because `scp` does not reliably carry the ex
 
 **Scope note.** Spec §9.10's `scripts/create-platform-admin.js` is **not** written by this plan and is not referenced by any line in this task. It needs the `users` table, `lib/password.js` and an audit writer — **it arrives in Plan 2**.
 
+> **TWO DEFECTS FOUND ON EXECUTION 2026-08-03, fixed in the Step 1 and Step 3 blocks below —
+> not merely in the shipped files.**
+>
+> 1. **TENTH occurrence of this plan's signature shape.** Step 1's
+>    `assert.doesNotMatch(workflow, /crontab -l \| grep -Fv/)` is red against a CORRECT
+>    workflow, because Step 3's own comment spells that pipeline out to explain why it is
+>    forbidden. Step 1 below is now scoped to lines that execute, and Step 3's comment is
+>    reworded so it no longer contains the literal — **both**, because scoping alone leaves the
+>    text one re-wrap away from red and rewording alone leaves an unscoped guard that goes red
+>    the moment anyone documents the forbidden form again.
+> 2. **Step 3's replace-anchor names a line that no longer exists.** It quotes the last two
+>    lines of the heredoc as `docker image prune -f` followed by
+>    `rm -f /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz`. Task 19 deleted that
+>    second line — its tarball prune moved to immediately after `docker load`, which made the
+>    trailing `rm -f` dead code. The anchor is now the single line that is actually there.
+>
+> Verified by probe rather than by argument, since the whole task is about a failure mode that
+> is silent: with a stub standing in for `crontab -l` on a box with no crontab, the unguarded
+> pipeline exits 1 and never reaches the next line, and the shipped brace-group form reaches it
+> with exit 0.
+
 **Files:**
 - Modify: `.github/workflows/deploy.yml` (the `Deploy on Lightsail` heredoc)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -6011,7 +6043,12 @@ test("deploy heredoc installs cron in a way that survives a box with no crontab"
     workflow,
     /\{ crontab -l 2>\/dev\/null \|\| true; \} \| \{ grep -Fv [^\n]*\|\| true; \} > \/tmp\/ct\.\$\$/,
   );
-  assert.doesNotMatch(workflow, /crontab -l \| grep -Fv/);
+  // Scoped to the lines that EXECUTE: the heredoc names the forbidden form in a comment
+  // to explain why it is forbidden, so a document-wide doesNotMatch is red against a
+  // CORRECT workflow -- this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(line, /crontab -l \\| grep -Fv/, `this form aborts the deploy on a box with no crontab: ${line.trim()}`);
+  }
   assert.doesNotMatch(workflow, /\| crontab -$/m);
   assert.match(workflow, /crontab \/tmp\/ct\.\$\$ && rm -f \/tmp\/ct\.\$\$/);
 
@@ -6062,13 +6099,13 @@ test("deploy heredoc installs cron in a way that survives a box with no crontab"
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="installs cron in a way that survives" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /\{ crontab -l 2>\/dev\/null \|\| true; \} \| \{ grep -Fv [^\n]*\|\| true; \} > \/tmp\/ct\.\$\$/.`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, replace the last two lines of the heredoc body, which currently read:
 
@@ -6082,12 +6119,12 @@ with:
 ```yaml
 
           # ---- 7. CRON, LAST, AND FAILURE-PROOF ----
-          # `crontab -l | grep -Fv … | crontab -` exits 1 under set -e on a box with NO
-          # crontab (crontab -l exits 1, grep on empty input exits 1, pipefail
-          # propagates), aborting the deploy with an EMPTY error message BEFORE the
-          # service ever starts -- and on Vixie cron the empty stdin also wipes any
-          # crontab that did exist. So: each stage gets its own `|| true` in its own
-          # brace group, and the crontab is installed from a FILE.
+          # The obvious pipeline -- listing the crontab, filtering it and piping straight
+          # back in -- exits 1 under set -e on a box with NO crontab: the listing exits 1,
+          # grep on empty input exits 1, pipefail propagates, and the deploy aborts with
+          # an EMPTY error message BEFORE the service ever starts. On Vixie cron the empty
+          # stdin also wipes any crontab that did exist. So each stage gets its own
+          # `|| true` in its own brace group, and the crontab is installed from a FILE.
           # The exact PATH string is in the strip list because the printf re-appends it;
           # leaving it out grows the crontab by one line on every deploy, forever.
           # scp does not reliably carry the executable bit, hence the chmod.
@@ -6115,7 +6152,7 @@ with:
           rm -f /tmp/api.conf /tmp/core-api-proxy.conf
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="installs cron in a way that survives" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -6142,7 +6179,7 @@ Expected: `survived with exit=0`, and `/tmp/ct.probe` is an empty file. Removing
 4. The morning after the first night: `tail -5 ~/backups/backup.log` and `tail -5 ~/backups/sweep.log`
    Expected: `backup.log` quiet with a fresh `LAST_OK`; `sweep.log` showing `Cannot find module '/app/apps/core-api/scripts/sweep-expired.js'` — the accepted debt above, and the signal that clears the moment that script ships.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
