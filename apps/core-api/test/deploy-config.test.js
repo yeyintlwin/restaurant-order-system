@@ -440,3 +440,108 @@ test("deploy workflow uploads the nginx configs and both infra scripts", () => {
     );
   }
 });
+
+test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump", () => {
+  const workflow = workflowText();
+
+  // A full disk is the most common cause of a truncated dump. In block 6 this fires
+  // AFTER the migration applied; at the top of the heredoc it aborts before anything
+  // on the box has changed.
+  assert.match(workflow, /df -P "\$HOME" \| awk 'NR==2 && \$5\+0 > 85 \{ print "disk " \$5 " full"; exit 1 \}'/);
+  const dfAt = workflow.indexOf('df -P "$HOME"');
+  const loadAt = workflow.indexOf("docker load -i /tmp/epaper-hub-image.tgz");
+  assert.ok(dfAt > -1 && loadAt > dfAt, "the disk gate must run before the first docker load");
+
+  // One tarball per deploy, kept forever, is what eventually trips the gate above for
+  // a reason that has nothing to do with the database.
+  assert.match(
+    workflow,
+    /rm -f \/tmp\/core-api-image-\*\.tgz \/tmp\/epaper-hub-image\.tgz \/tmp\/customer-order-image\.tgz/,
+  );
+  const pruneAt = workflow.indexOf("rm -f /tmp/core-api-image-*.tgz");
+  assert.ok(pruneAt > loadAt, "the tarballs are deleted only once they are in the image store");
+
+  assert.match(workflow, /docker volume create restaurant-order-system_core-db-data/);
+
+  // The exports must be exports, not a one-line prefix: every later `docker compose`
+  // call in the heredoc has to agree about CORE_ENV_FILE. Compose's two variables must
+  // survive the rewrite verbatim.
+  assert.match(workflow, /export EPAPER_ENV_FILE=\.\.\/restaurant-order-system\.env/);
+  assert.match(workflow, /export CORE_ENV_FILE=\.\.\/core-api\.env/);
+  assert.match(workflow, /export CORE_API_IMAGE=core-api:\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /export CUSTOMER_ORDER_IMAGE=customer-order:\$\{\{ github\.sha \}\}/);
+
+  // ONCE each, not merely present. Task 3's log records this plan shipping
+  // `EPAPER_ENV_FILE=` twice on one line because the verifier of the day checked only
+  // that it appeared; this task's own Step 3 text then wrote the export twice. A
+  // duplicate is harmless until the two copies disagree, and then it is a variable
+  // whose value depends on which line came last.
+  for (const name of ["EPAPER_ENV_FILE", "CORE_ENV_FILE", "EPAPER_IMAGE", "CUSTOMER_ORDER_IMAGE", "CORE_API_IMAGE"]) {
+    const exports = workflow.split("\n").filter((line) => line.trim().startsWith(`export ${name}=`));
+    assert.equal(exports.length, 1, `export ${name} appears ${exports.length} times, expected once`);
+  }
+
+  // `docker compose ps --quiet core-db` is true only when core-db is RUNNING, so it
+  // cannot tell "does not exist yet" from "exists and is down" -- and the deploy most
+  // likely to need the dump is the one that would silently skip it.
+  assert.match(
+    workflow,
+    /if docker volume inspect restaurant-order-system_core-db-data >\/dev\/null 2>&1; then/,
+  );
+  // Scoped to the lines that EXECUTE. The heredoc explains the `ps` trap in a comment
+  // directly above the gate, so a document-wide doesNotMatch is red against a CORRECT
+  // workflow -- this plan's signature shape, seventh occurrence. Mutation-tested:
+  // swapping the volume gate for the ps form turns this red.
+  const executable = workflow.split("\n").filter((line) => !line.trim().startsWith("#"));
+  for (const line of executable) {
+    assert.doesNotMatch(line, /docker compose ps --quiet core-db/, `ps cannot see a stopped core-db: ${line.trim()}`);
+  }
+
+  // exec -T on every dump: a TTY translates CRLF and silently corrupts a binary
+  // custom-format dump, which is not visible until the restore.
+  assert.match(
+    workflow,
+    /docker compose exec -T core-db sh -c 'PGPASSWORD="\$POSTGRES_PASSWORD" pg_dump -U core_api_owner -d core -Fc'/,
+  );
+  assert.doesNotMatch(workflow, /docker compose exec core-db[^\n]*pg_dump/);
+
+  // The heredoc IS the remote shell's stdin; an exec -T with stdin attached eats the
+  // rest of it and truncates the deploy at an arbitrary line with no error.
+  assert.match(workflow, /pg_isready -U core_api_owner -d core -h 127\.0\.0\.1 <\/dev\/null/);
+
+  // Size, then structure -- an OOM kill or a full disk mid-dump yields a truncated file
+  // that pg_dump exits 0 on often enough to matter.
+  assert.match(workflow, /test -s ~\/backups\/pre-deploy-"\$ts"\.dump/);
+  assert.match(workflow, /pg_restore --list < ~\/backups\/pre-deploy-"\$ts"\.dump/);
+  assert.match(workflow, /chmod 600 ~\/backups\/pre-deploy-"\$ts"\.dump/);
+
+  // The sha in LAST_PRE_DEPLOY is what lets the artifact step refuse a stale dump.
+  assert.match(
+    workflow,
+    /printf '%s %s\\n' "\$\{\{ github\.sha \}\}" "pre-deploy-\$ts\.dump" > ~\/backups\/LAST_PRE_DEPLOY/,
+  );
+  assert.match(workflow, /ln -sfn ~\/backups\/pre-deploy-"\$ts"\.dump ~\/backups\/latest-pre-deploy\.dump/);
+
+  // Retention: one pre-deploy dump per deploy, forever, is the other new disk consumer.
+  assert.match(
+    workflow,
+    /ls -1t "\$HOME"\/backups\/pre-deploy-\*\.dump 2>\/dev\/null \| tail -n \+15 \| xargs -r rm -f/,
+  );
+
+  // The volume literal in deploy.yml must not drift from docker-compose.yml's
+  // declaration. Docker names the volume <project>_<declared name>, and the project is
+  // the deploy directory -- so renaming the volume in compose alone would leave this
+  // deploy creating and inspecting a volume nothing else uses, and the dump gate would
+  // silently skip on every deploy. Both literals ship in THIS task, which is why the
+  // check lives here.
+  const compose = composeText();
+  const volumesAt = compose.indexOf("\nvolumes:\n");
+  assert.notEqual(volumesAt, -1, "docker-compose.yml has no top-level volumes: block");
+  const declared = (compose.slice(volumesAt).match(/^ {2}([a-z0-9_-]+):$/gm) || [])
+    .map((line) => line.trim().replace(":", ""));
+  const coreVolume = declared.find((name) => name.includes("core-db"));
+  assert.ok(coreVolume, `docker-compose.yml declares no core-db volume; found ${declared.join(", ")}`);
+  const full = `restaurant-order-system_${coreVolume}`;
+  assert.ok(workflow.includes(`docker volume create ${full}`), `deploy.yml does not create ${full}`);
+  assert.ok(workflow.includes(`docker volume inspect ${full}`), `deploy.yml does not inspect ${full}`);
+});

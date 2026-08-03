@@ -113,6 +113,11 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" <<'EOF'
           set -euo pipefail
+          # A full disk is the most common cause of a truncated dump, and 85% on a
+          # Lightsail instance is already late. This is at the TOP of the heredoc on
+          # purpose: in block 6 it would fire after the migration had already applied,
+          # which reports the problem exactly where nothing can be done about it.
+          df -P "$HOME" | awk 'NR==2 && $5+0 > 85 { print "disk " $5 " full"; exit 1 }'
           if [ -f ~/epaper-emulator/docker-compose.yml ]; then
             cd ~/epaper-emulator
             docker compose down || docker stop epaper-emulator || true
@@ -142,7 +147,14 @@ jobs:
           docker load -i /tmp/epaper-hub-image.tgz
           docker load -i /tmp/customer-order-image.tgz
           docker load -i /tmp/core-api-image-${{ github.sha }}.tgz
+          # Delete this run's tarballs the moment they are in the image store. Three
+          # images at ~100-200 MB each, and the core-api name carries the sha, so
+          # without this the box gains one tarball per deploy until the 85% gate above
+          # starts aborting deploys for a reason unrelated to the database. The glob
+          # sweeps earlier runs' leftovers too.
+          rm -f /tmp/core-api-image-*.tgz /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz
           docker volume create restaurant-order-system_epaper-data
+          docker volume create restaurant-order-system_core-db-data
           if docker volume inspect epaper-emulator_epaper-data >/dev/null 2>&1; then
             if ! docker run --rm -v restaurant-order-system_epaper-data:/to epaper-hub:${{ github.sha }} test -f /to/screens.json; then
               docker run --rm -v epaper-emulator_epaper-data:/from:ro -v restaurant-order-system_epaper-data:/to epaper-hub:${{ github.sha }} sh -c 'cp -a /from/. /to/'
@@ -150,7 +162,43 @@ jobs:
           fi
           find ~/restaurant-order-system -mindepth 1 -maxdepth 1 ! -name docker-compose.yml ! -name config -exec rm -rf {} +
           cd ~/restaurant-order-system
-          EPAPER_IMAGE=epaper-hub:${{ github.sha }} CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }} CORE_API_IMAGE=core-api:${{ github.sha }} EPAPER_ENV_FILE=../restaurant-order-system.env CORE_ENV_FILE=../core-api.env docker compose up -d --no-build
+          export EPAPER_ENV_FILE=../restaurant-order-system.env
+          export CORE_ENV_FILE=../core-api.env
+          export EPAPER_IMAGE=epaper-hub:${{ github.sha }}
+          export CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }}
+          export CORE_API_IMAGE=core-api:${{ github.sha }}
+
+          # ---- 1. PRE-DEPLOY DUMP. Gated on the VOLUME, not on a running container. ----
+          # `docker compose ps --quiet core-db` is true only when core-db is RUNNING, so
+          # it cannot distinguish "does not exist yet" (legitimate skip) from "exists and
+          # is down" (backup mandatory) -- and the deploy most likely to need the dump is
+          # the one that silently skips it.
+          # Every `exec -T` below carries </dev/null: this heredoc IS the remote shell's
+          # stdin, and an exec with stdin attached consumes the rest of the deploy script.
+          if docker volume inspect restaurant-order-system_core-db-data >/dev/null 2>&1; then
+            docker compose up -d core-db
+            for i in $(seq 1 30); do docker compose exec -T core-db pg_isready -U core_api_owner -d core -h 127.0.0.1 </dev/null && break; sleep 2; done
+            ts="$(date -u +%Y%m%dT%H%M%SZ)"
+            # `exec -T` IS LOAD-BEARING: without it docker allocates a TTY and CRLF
+            # translation silently corrupts the binary custom-format dump.
+            docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U core_api_owner -d core -Fc' </dev/null \
+              > ~/backups/pre-deploy-"$ts".dump
+            test -s ~/backups/pre-deploy-"$ts".dump
+            # Structural verification: an OOM kill or a full disk mid-dump produces a
+            # truncated file that pg_dump exits 0 on often enough to matter.
+            docker compose exec -T core-db pg_restore --list < ~/backups/pre-deploy-"$ts".dump > /dev/null
+            chmod 600 ~/backups/pre-deploy-"$ts".dump
+            # The sha, not the symlink, is what the artifact step trusts: ln -sfn alone
+            # leaves a STALE latest-pre-deploy.dump to be uploaded under this commit's
+            # artifact name.
+            printf '%s %s\n' "${{ github.sha }}" "pre-deploy-$ts.dump" > ~/backups/LAST_PRE_DEPLOY
+            ln -sfn ~/backups/pre-deploy-"$ts".dump ~/backups/latest-pre-deploy.dump
+            # Keep 14. This prune runs immediately after the dump it just wrote, so the
+            # glob always matches at least one file and `ls` cannot fail the pipeline
+            # under `set -o pipefail`.
+            ls -1t "$HOME"/backups/pre-deploy-*.dump 2>/dev/null | tail -n +15 | xargs -r rm -f
+          fi
+
+          docker compose up -d --no-build
           docker image prune -f
-          rm -f /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz /tmp/core-api-image-${{ github.sha }}.tgz
           EOF

@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 17 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 18 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -105,6 +105,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **PRODUCTION DEFECT found on the box, fixed: `core-api` had been `unhealthy` since its first deploy.** SSH recon (WSL, `ssh lightsail`) showed `core-api  Up 7 minutes (unhealthy)` with `FailingStreak 44`, while `curl http://127.0.0.1:3200/health` from the host answered `{"ok":true,"app":"core-api"}` the whole time. Cause, proven inside the container rather than reasoned about: `/etc/hosts` maps `localhost` to **`::1` only**, and `apps/core-api/Dockerfile:28` sets `HOST=0.0.0.0`, which is **IPv4-only** — so the shipped probe dialled `[::1]:3200` and was refused every 10s. `wget --spider http://127.0.0.1:3200/health` inside that same container returns `remote file exists`, exit 0. Fixed the probe to `127.0.0.1` — the form `core-db`'s healthcheck already uses one screen above, for the same class of reason. `epaper-hub` survives the identical hostname form only because it sets no `HOST` and binds dual-stack (`:::3000`, verified on the box) — **left unchanged on purpose**: its literal is pinned by `apps/epaper-hub/test/deploy-config.test.js:63`, which belongs to the hub area and not to Plan 5, per this plan's File ownership table. Both compose comments now record the trap. The new guard is scoped twice — to the line that executes, and to core-api's own `:3200` probe — and mutation-tested: restoring the hostname form turns it red. **Nothing in this repository would have caught it.** The compose assertion pinned the literal that was broken, and the deploy has no health gate yet; that gate is Task 21, which would have started failing on a service that was working. | — | (this commit) | Task 18 |
 | 2026-08-03 | **Healthcheck fix verified in production, and `api.yeyintlwin.com` now has a certificate.** Pushed `6ea3b63`; run 30789230264 green. On the box `core-api` went from `unhealthy / FailingStreak 44` to `Up 36 seconds (healthy)`, `streak=0`, with the probe now logging `Connecting to 127.0.0.1:3200 … remote file exists`. Then issued the certificate Task 10 has been blocked on since the plan was written: `certbot certonly --nginx -d api.yeyintlwin.com --non-interactive`, preceded by a `--dry-run` against Let's Encrypt staging so the challenge was proved end to end before any rate limit was spent. `nginx -t` was valid before the dry run, after the dry run, and after the real issuance — none of the thirteen `listen … 443` lines moved, which is the whole reason the plan specifies `certonly` and not `--nginx` as an installer. Certificate: `CN=api.yeyintlwin.com`, issuer `YE1`, valid to **2026-11-01**, renewal timer installed by certbot. **Task 10 is no longer blocked; it is now simply a cutover task**, because everything left in it needs the two conf files on the box — Task 18's scp and Task 20's install. | — | (this commit) | Task 18 |
 | 2026-08-03 | **Task 18.** The `Upload app` step now creates `config/` and `~/backups` at 0700, scp's `api.conf` and `core-api-proxy.conf` to **`/tmp`** — not alongside the compose file, where the deploy's own `find … -exec rm -rf {} +` would erase them before `docker compose up -d` with every text assertion still green — and scp's both host scripts into `config/`, the one directory that `find` preserves. `restore-drill.sh` in particular: spec §9.7 writes it as `scripts/`, superseded here, because it drives `docker compose`, which does not exist inside the image. **The legacy-config migration was fixed in the same commit, as the task insists:** the new `mkdir` runs in `Upload app`, which is *before* `Deploy on Lightsail`, so `[ ! -d ~/restaurant-order-system/config ]` becomes permanently false and `rm -rf ~/epaper-emulator` on the next line would have taken the legacy config with it, unmigrated. Now tests for EMPTY rather than absent and copies with `cp -a … /.` rather than `mv`, which would also have produced `config/config`. RED reproduced exactly as written. GREEN, 8 tests in the suite, YAML still parses to **14 steps**. Both load-bearing guards mutation-tested: scp'ing `api.conf` alongside the compose file goes red, and restoring the dead `[ ! -d … ]` guard goes red. Also asserts every tracked scp SOURCE exists on disk — the check that turns "a scp of a file no area ever wrote" from a red deploy into a red `node --test`. | **17/30** | (this commit) | Task 19 |
+| 2026-08-03 | **Task 19.** The 85% disk gate moved to the TOP of the heredoc — in block 6 it fires after the migration has applied, images have loaded and containers have restarted, which reports the problem at the one point where nothing can be done about it. Tarballs deleted the moment they are in the image store, with a `core-api-image-*.tgz` glob that also sweeps earlier runs' leftovers; the old trailing `rm -f` became dead code and was removed. Pre-deploy dump gated on `docker volume inspect`, never `docker compose ps --quiet core-db`, which is true only while core-db is RUNNING and so cannot tell "does not exist yet" from "exists and is down" — the deploy most likely to need the dump being exactly the one that would silently skip it. `exec -T` on every dump and `</dev/null` on every exec, because the heredoc IS the remote shell's stdin. **Two plan defects found and fixed first** — see the callout on Task 19: a duplicated `export EPAPER_ENV_FILE` (the same defect Task 3's row already records, one task after the lesson was written down), and a document-wide `doesNotMatch` for `docker compose ps --quiet core-db` that the task's own comment makes red on a correct file. Three mutations run after the fix, each turning it red: the `ps` gate, a dropped `</dev/null`, and a re-inserted duplicate export. 9 tests, `# fail 0`, YAML still 14 steps. | **18/30** | (this commit) | Task 20 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5102,11 +5103,31 @@ Spec §9.5 heredoc block 1, plus two placements the spec text gets wrong by omis
 
 One honest observation, recorded rather than worked around: `docker volume create restaurant-order-system_core-db-data` is idempotent and runs a few lines **above** the gate, so from the first deploy onward the gate is true and a dump is always taken. On the very first deploy that dumps a freshly initialised, empty `core`, which succeeds in a few seconds. The gate is kept as specified because inspecting *the volume* rather than *a running container* is the distinction that matters and is what still holds if the `create` ever moves. What it does **not** license is inferring "this run took a dump" from the volume's existence — see the final task.
 
+> **TWO DEFECTS FOUND ON EXECUTION 2026-08-03, fixed in the text below.**
+>
+> 1. **Step 3(c) wrote `export EPAPER_ENV_FILE=../restaurant-order-system.env` TWICE** — first
+>    line and third line of the same block. Step 1 asserted only that the export was
+>    *present*, so the duplicate would have shipped in silence. This is the **same defect
+>    Task 3's row already records** (`EPAPER_ENV_FILE=` twice on the `:86` line, "the earlier
+>    verifier checked only that it was PRESENT, never that it appeared once") — the lesson was
+>    written down and then not applied one task later. Step 1 now counts every export and
+>    requires exactly one; mutation-tested by re-inserting the duplicate.
+>
+> 2. **`assert.doesNotMatch(workflow, /docker compose ps --quiet core-db/)` is red against a
+>    CORRECT workflow**, because Step 3(c)'s own comment explains why `ps` is the wrong gate.
+>    Now scoped to lines that execute. **Seventh occurrence of this plan's signature shape**,
+>    and the second where a `doesNotMatch` forbids a string the task's own implementation puts
+>    in a comment two lines above the thing being asserted.
+>
+> The recurrence rate is itself the finding: this shape has now appeared in Tasks 1, 2, 12, 13
+> (twice), 14 (as literal spaces against hard-wrapped prose) and 19. Assume it is present in
+> every remaining task and check for it before running Step 2, not after.
+
 **Files:**
 - Modify: `.github/workflows/deploy.yml` (the `Deploy on Lightsail` heredoc)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -5200,13 +5221,13 @@ test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump"
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="gates on disk, prunes tarballs" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with ``AssertionError [ERR_ASSERTION]: The input did not match the regular expression /df -P "\$HOME" \| awk 'NR==2 && \$5\+0 > 85 \{ print "disk " \$5 " full"; exit 1 \}'/.``
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Three edits inside the `Deploy on Lightsail` heredoc.
 
@@ -5298,7 +5319,7 @@ with:
           docker compose up -d --no-build
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="gates on disk, prunes tarballs" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -5319,7 +5340,7 @@ Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0
 5. The restore drill: `~/restaurant-order-system/config/restore-drill.sh`
    Expected: it restores into `core_restore_check`, asserts `schema_migrations` matches the image, prints row counts, drops the scratch database, exit 0. Do it on the day everything worked — that is when it is cheap.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
