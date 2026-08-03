@@ -453,3 +453,42 @@ CI can check them for you.
 - [ ] Scenario A rehearsed against `core_scenario_a`, never against `core`, with a dated receipt
       at `~/backups/SCENARIO_A_REHEARSED`
 - [ ] `crontab -l | grep -q backup-core-db.sh` exits 0
+
+## The client-IP chain
+
+Nginx terminates TLS for `api.yeyintlwin.com` and proxies to `127.0.0.1:3200` with
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`, which appends the address
+Nginx actually saw to the **right** of whatever the client sent. `TRUSTED_PROXY_HOPS=1`
+therefore means **count one from the right**: a client forging
+`X-Forwarded-For: 1.2.3.4` produces `1.2.3.4, <real ip>` and still loses. That derived
+address keys the login rate-limit buckets and is what lands in `audit_events.source_ip`.
+
+**Live topology, updated whenever it changes:** browser → Nginx (same host) →
+`127.0.0.1:3200`. One hop. `TRUSTED_PROXY_HOPS=1`.
+
+The four ways this breaks with no error and no log line — `set_real_ip_from` or
+`real_ip_header` rewriting `$remote_addr`, a `location` proxying without including
+`core-api-proxy.conf`, a CDN in front without raising the number, and
+`proxy_set_header X-Forwarded-For $remote_addr` throwing the chain away — are set out
+with what checks each one under **`TRUSTED_PROXY_HOPS=1`, and the four ways it breaks
+silently** above. Not repeated here: this would be the copy that goes stale.
+
+**What the pipeline actually proves today.** The deploy and
+`apps/core-api/test/nginx-config.test.js` assert those directives at the **config
+layer** — `sudo nginx -T` over the loaded configuration, the include count, and the ban
+on a bare `proxy_pass`. That checks the files, not the behaviour. The behavioural probe
+of spec §9.5 step 4 — POST a login carrying `X-Forwarded-For: 203.0.113.99`, then read
+the `audit_events` row back by `detail->>'email'` — needs a row written by
+`POST /api/admin/auth/login`, and neither that route nor any writer for that table
+exists yet. It is the first thing **Plan 2** adds to the deploy heredoc. **Until it
+lands, nothing in the pipeline proves the derived address is unforgeable.** What ships
+today is a routing probe that proves core-api answered, plus a read of
+`TRUSTED_PROXY_HOPS` out of the running process.
+
+`core-db` publishes **no** host port — Docker's published ports install DNAT rules that
+**bypass ufw**, so `5432:5432` would put the database on the internet. Reasoning under
+**`core-db` publishes no host port** above.
+
+The three secrets — `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL` and `DATABASE_URL` —
+live in `~/core-api.env` and nowhere else; creation, mode and rationale are under
+**Core API runtime: two secrets files and core-net** above.

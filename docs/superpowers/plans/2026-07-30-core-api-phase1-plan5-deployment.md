@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 25 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 26 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -115,6 +115,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 24 — Part 4's most dangerous line, shipped safely.** Each stage of the crontab rewrite gets its own `\|\| true` in its own brace group and the crontab is installed from a **file**, because the obvious pipeline exits 1 under `set -e` on a box with no crontab — the listing exits 1, grep on empty input exits 1, `pipefail` propagates, and the deploy aborts with an **empty** error message before the service starts; on Vixie cron the empty stdin also wipes any crontab that did exist. The box is in exactly that state (`no crontab for ubuntu`, confirmed in this session's recon), so this is not hypothetical. The exact `PATH=` string is in the strip list because the `printf` re-appends it — leaving it out grows the crontab by one line every deploy, forever. `CRON_INSTALLED_AT` is written **once**: touching it every deploy would keep it permanently fresh on a repo that deploys daily and Task 23's 48-hour gate would never fire at all. **Two plan defects found and fixed first** — see the callout on Task 24 — and this time **the plan's own Step 1 and Step 3 blocks were edited, not just the shipped files**, which the pre-flight audit showed had been missed for Tasks 19 and 22. Proved by probe rather than by argument, since the failure is silent: with a stub for `crontab -l` on a bare box, the unguarded pipeline exits 1 and never reaches the next line; the shipped form reaches it with exit 0. 14 tests, `# fail 0`, YAML 14 steps. | **23/30** | (this commit) | Task 25 |
 | 2026-08-03 | **Task 25 — deploy.yml is complete.** The `if: always()` artifact steps: read `LAST_PRE_DEPLOY`, refuse a dump that does not belong to this commit, scp exactly that file, upload it with a 14-day window. The **marker is the only evidence, and the volume is not** — `docker volume create` runs unconditionally above block 1's gate, so the volume exists after the first *attempt* whether or not a dump was ever written. The sha mismatch hard-fails **only when the deploy itself succeeded**: on a failed run an older sha is the expected reading, and a second red X buries the real failure. Guarded on `~/.ssh/lightsail.pem` existing, because `if: always()` also runs for a job that died before `Install SSH key`. **Two plan defects found and fixed first** — see the callout on Task 25 — one of which the audit's own suggested fix would not have closed: `\s+` is enough for hard-wrapped markdown but **not** for a wrapped YAML comment, where the join is `"\n      # "` and `#` is not whitespace. Three mutations, all red: deleting `retention-days`, dropping the ssh-key guard, and hard-failing on a stale sha regardless of job status. **Area gate, run as the task demands — with a real Postgres and NOT `CORE_API_SKIP_DB_TESTS`, because the skip variable would turn the database-backed suites into a green no-op on the very run that ships the pipeline: 281 tests, 280 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 across the other three workspaces.** YAML now parses to **16 steps** and the ssh heredoc is still terminated — a `run: \|` block that swallowed its `EOF` is valid YAML and a dead deploy. | **24/30** | (this commit) | Task 26 |
 | 2026-08-03 | **Task 26 — the Plan 1 seam is closed.** `apps/core-api/testing/compose.js` reads the real repo-root `docker-compose.yml`; `config.test.js` no longer carries a copy of the `environment:` block. Plan 1 Task 8 marked this seam in the test itself — *"these two literals ARE the contract… when the compose file arrives, replace them with a parse of the real file; the assertions below do not change"* — and that is exactly what happened: the three untouched tests now compare against the file instead of against a copy, without a character changing. The closed-list test was rewritten to compare `Object.keys(DEFAULTS)` — config.js's own table — against the parsed keys, because comparing `COMPOSE_DEFAULTS` (derived from the exclusion list) with the exclusion list would agree with itself whatever either file said. A hand-written reader rather than a YAML dependency, because `apps/core-api` declares exactly `express` and `pg` and `source-structure.test.js` pins that list; it lives in `testing/`, not `test/`, because C13 allows only `*.test.js` there. **The DoD's BREAK now works for the first time.** Changing `SCRYPT_SLOTS: 2` to `3` in the real compose file turns **exactly two** tests red — `config.js defaults every knob to the value the Compose file sets` and `the defaults table is what config.js actually applies` — the two the DoD names verbatim. Against the old literal that break was unsatisfiable: a copy cannot react to the file it copies. Deleting a key instead turns three red, including the reader's own non-vacuity check. 27 tests, the count the task predicts. **Process slip, recorded:** the module was created before Step 2 ran, so the documented `MODULE_NOT_FOUND` red was not observed in order; it was reproduced afterwards by moving the file aside, which is weaker evidence than having done it first. | **25/30** | (this commit) | Task 27 |
+| 2026-08-03 | **Task 27 — PART 4 IS COMPLETE.** `## The client-IP chain` in `infra/README.md` plus `apps/core-api/test/operations-docs.test.js`. The section is a **summary and a pointer**, not the restatement Step 3 originally specified: the nginx area already documents all four breakers with a *Checked:* line each, and the ufw/DNAT reasoning already exists too. What is genuinely new is the honesty paragraph — **the pipeline checks the four directives at the config layer and nothing more; the behavioural forged-XFF probe needs a route and an audit writer that arrive in Plan 2, so until then nothing proves the derived address is unforgeable.** The secrets test bans the WRITE, not the word: `deploy.yml` names `~/core-api.env` three times legitimately, and what must never appear is a redirection into it — asserted with a positive control so the rule cannot pass because the regex is wrong. **Three plan defects found and fixed first** — see the callout on Task 27 — including one where the guard meant to prevent duplication banned an H2 nobody writes while the real duplicate went straight past it. Added a fourth test the task did not ask for: a standing rule over **every** `nginx -T` line in `infra/README.md`, forbidding both the single-space pattern against a column-aligned conf and the `\| grep -q` SIGPIPE form, since this repository has now shipped each of those twice. Three mutations, all red: dropping the secrets link, reintroducing the single-space recipe, duplicating the detailed heading. **Area gate with a real Postgres and no skip variable: 287 tests, 286 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 elsewhere.** | **26/30** | (this commit) | Task 28 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -6667,12 +6668,39 @@ attacker locks out every account on the platform, too high and every request col
 into one shared bucket. That is why the four ways to break it are written down rather
 than remembered.
 
+> **THREE DEFECTS FOUND ON EXECUTION 2026-08-03, fixed in the Step 1 and Step 3 blocks below.**
+> All three were surfaced by a read-only pre-flight audit and then reproduced by running the task.
+>
+> 1. **Step 3 would have shipped a genuine duplicate.** `infra/README.md` already carries
+>    `### \`TRUSTED_PROXY_HOPS=1\`, and the four ways it breaks silently` — all four breakers, in
+>    more detail, each with a *Checked:* line naming the test that enforces it — and
+>    `### \`core-db\` publishes no host port` already carries the ufw/DNAT reasoning. Step 3
+>    restated both. Step 1's only guard against that was
+>    `doesNotMatch(readme, /^## core-api: the second secrets file$/m)`, **an H2 nothing writes**,
+>    so the real duplication would have sailed through the exact test meant to catch it — while
+>    the section's own closing sentence says a second copy is a second thing to edit. Step 3 is
+>    now a summary plus explicit pointers, and Step 1 asserts a cross-reference to the detailed
+>    heading, requires that heading to exist **exactly once**, and caps the section's length.
+> 2. **Step 1's "links to the secrets file" half was unenforced.** The two assertions backing
+>    that phrase ran against the whole README, so they were satisfied by the compose area's
+>    heading — true before this task ran at all. Both now run against the `chain` slice.
+> 3. **Step 3's `nginx -T` recipe could never match on a healthy box**, twice over: single
+>    spaces against a column-aligned conf, and the `\| grep -q` form that takes SIGPIPE once the
+>    dump exceeds the 64 KB pipe buffer. Both are shapes this plan has already shipped and
+>    fixed elsewhere — must-fix 10 and Task 20 — recurring in a third place. Step 1 now carries
+>    a standing rule over **every** `nginx -T` line in `infra/README.md`, so the next one cannot
+>    reintroduce either.
+>
+> A fourth, found while writing: the cross-reference added by fix 1 straddles the file's hard
+> wrap, and the assertion for it went red written with a literal space. `\s+`. That is the same
+> shape in a fourth file, inside the very task that documents it.
+
 **Files:**
 - Create: `apps/core-api/test/operations-docs.test.js`
 - Modify: `infra/README.md` (append one section)
 - Test: `apps/core-api/test/operations-docs.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/operations-docs.test.js`:
 
@@ -6780,7 +6808,7 @@ test("the three secrets live only in ~/core-api.env, never in a file the reposit
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 First prove the two preconditions this area depends on. Both are satisfied already if
 the areas ran in order; the guard exists so that an out-of-order run says so instead of
@@ -6805,7 +6833,7 @@ Expected: FAIL, `# fail 2`, with these exact messages:
    an assertion: `Error: ENOENT: no such file or directory, open '…\docker-compose.yml'`
    thrown out of `composeText()` in `testing/compose.js`.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Append to the end of `infra/README.md`:
 
@@ -6862,7 +6890,7 @@ Creating it, its mode, and why it is a second file rather than a shared one are 
 the recipe, because a second copy is a second thing to edit.
 ````
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/operations-docs.test.js`  Expected: PASS (3 tests)
 
@@ -6871,7 +6899,7 @@ line naming `CORE_ENV_FILE` must also name `EPAPER_ENV_FILE`:
 
 Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/README.md apps/core-api/test/operations-docs.test.js
