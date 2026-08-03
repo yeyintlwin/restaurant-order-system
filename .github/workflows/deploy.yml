@@ -111,7 +111,15 @@ jobs:
       - name: Deploy on Lightsail
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" <<'EOF'
+          # `bash -s`, NOT the login shell. The deploy user's shell on this box is zsh,
+          # and zsh's default NOMATCH makes an unmatched glob a FATAL ERROR instead of
+          # passing the pattern through -- `rm -f "$HOME"/backups/*.part` on a box with
+          # no leftovers killed a deploy here on 2026-08-03, after the migration had
+          # applied and the containers had restarted. Two other globs in this script
+          # survive only because they happen to always match. This also makes
+          # `set -o pipefail` honest: it is not POSIX, so this script never could have
+          # run under dash, and the interpreter was an unstated assumption either way.
+          ssh -i ~/.ssh/lightsail.pem "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" 'bash -s' <<'EOF'
           set -euo pipefail
           # A full disk is the most common cause of a truncated dump, and 85% on a
           # Lightsail instance is already late. This is at the TOP of the heredoc on
@@ -193,10 +201,13 @@ jobs:
             # artifact name.
             printf '%s %s\n' "${{ github.sha }}" "pre-deploy-$ts.dump" > ~/backups/LAST_PRE_DEPLOY
             ln -sfn ~/backups/pre-deploy-"$ts".dump ~/backups/latest-pre-deploy.dump
-            # Keep 14. This prune runs immediately after the dump it just wrote, so the
-            # glob always matches at least one file and `ls` cannot fail the pipeline
-            # under `set -o pipefail`.
-            ls -1t "$HOME"/backups/pre-deploy-*.dump 2>/dev/null | tail -n +15 | xargs -r rm -f
+            # Keep 14. The brace group is not decoration: with nothing matching, `ls`
+            # exits non-zero and `pipefail` fails the whole pipeline -- under bash as
+            # well as zsh. It survives today only because the prune runs immediately
+            # after the dump it just wrote, so the glob always matches at least one
+            # file, and "survives because it always matches" is the same accident that
+            # killed the deploy on 2026-08-03 one block further down.
+            { ls -1t "$HOME"/backups/pre-deploy-*.dump 2>/dev/null || true; } | tail -n +15 | xargs -r rm -f
           fi
 
           # ---- 2. NGINX: snapshot, install, validate, ROLL BACK on failure, then reload ----
@@ -319,7 +330,10 @@ jobs:
           # instead of LAST_OK would be satisfied by exactly that truncated file. The 85%
           # disk gate spec 9.5 puts in this block is at the TOP of the heredoc instead, so
           # a full disk aborts before anything on the box changes.
-          rm -f "$HOME"/backups/*.part
+          # find, not a glob: correct under any shell, and this is the one pattern here
+          # that legitimately matches nothing on a healthy box -- which is exactly why it
+          # was the one that fired.
+          find "$HOME/backups" -maxdepth 1 -name '*.part' -delete
           # Gated on the BOOTSTRAP MARKER, never on the existence of LAST_OK. A missing
           # LAST_OK is precisely the failure worth catching -- the nightly has never once
           # succeeded -- and gating on its existence makes that case skip the check and

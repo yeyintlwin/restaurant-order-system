@@ -441,6 +441,24 @@ test("deploy workflow uploads the nginx configs and both infra scripts", () => {
   }
 });
 
+test("the deploy heredoc names its interpreter instead of inheriting the login shell", () => {
+  const workflow = workflowText();
+
+  // The deploy user's login shell on this box is zsh. zsh's default NOMATCH makes an
+  // unmatched glob a FATAL error instead of passing the pattern through, so
+  // `rm -f "$HOME"/backups/*.part` on a box with no leftovers aborted the deploy --
+  // after the migration had applied and the containers had restarted. Two other globs
+  // in this script survive only because they happen to always match, which is luck.
+  // Pinning bash also makes `set -o pipefail` honest: it is not POSIX, so this script
+  // could never have run under dash, and the interpreter was an unstated assumption
+  // in either direction.
+  assert.match(workflow, /ssh -i ~\/\.ssh\/lightsail\.pem "[^"]+" 'bash -s' <<'EOF'/);
+
+  // And the heredoc must still be quoted, so the RUNNER does not expand anything in it.
+  assert.match(workflow, /<<'EOF'/);
+  assert.doesNotMatch(workflow, /<<EOF\b/);
+});
+
 test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump", () => {
   const workflow = workflowText();
 
@@ -523,9 +541,13 @@ test("deploy heredoc gates on disk, prunes tarballs and takes a pre-deploy dump"
   assert.match(workflow, /ln -sfn ~\/backups\/pre-deploy-"\$ts"\.dump ~\/backups\/latest-pre-deploy\.dump/);
 
   // Retention: one pre-deploy dump per deploy, forever, is the other new disk consumer.
+  // The brace group is load-bearing -- with nothing matching, `ls` exits non-zero and
+  // pipefail fails the pipeline, under bash as well as zsh. It survives today only
+  // because the prune runs straight after the dump it just wrote, which is the same
+  // accident that killed the 2026-08-03 deploy one block further down.
   assert.match(
     workflow,
-    /ls -1t "\$HOME"\/backups\/pre-deploy-\*\.dump 2>\/dev\/null \| tail -n \+15 \| xargs -r rm -f/,
+    /\{ ls -1t "\$HOME"\/backups\/pre-deploy-\*\.dump 2>\/dev\/null \|\| true; \} \| tail -n \+15 \| xargs -r rm -f/,
   );
 
   // The volume literal in deploy.yml must not drift from docker-compose.yml's
@@ -723,8 +745,12 @@ test("deploy heredoc makes a silent backup failure a red build", () => {
   const workflow = workflowText();
 
   // A truncated dump never replaces a good one and never counts toward retention; the
-  // leftovers are swept here so they cannot accumulate.
-  assert.match(workflow, /rm -f "\$HOME"\/backups\/\*\.part/);
+  // leftovers are swept here so they cannot accumulate. `find`, not a shell glob: the
+  // deploy user's login shell is zsh, whose default NOMATCH makes an unmatched glob a
+  // FATAL error rather than passing the pattern through, and "no .part files" is the
+  // healthy state. This exact line killed a deploy on 2026-08-03, after the migration
+  // had applied.
+  assert.match(workflow, /find "\$HOME\/backups" -maxdepth 1 -name '\*\.part' -delete/);
 
   // LAST_OK means "a dump completed AND WAS READ END TO END": the nightly touches it
   // only after `pg_restore --data-only -f /dev/null`, never after `--list` alone --
@@ -748,7 +774,7 @@ test("deploy heredoc makes a silent backup failure a red build", () => {
   // The disk gate lives at the TOP of the heredoc, not here: in this position it fires
   // after the migration has already applied.
   const dfAt = workflow.indexOf('df -P "$HOME"');
-  const sweepAt = workflow.indexOf('rm -f "$HOME"/backups/*.part');
+  const sweepAt = workflow.indexOf(`find "$HOME/backups" -maxdepth 1 -name '*.part' -delete`);
   assert.ok(dfAt > -1 && sweepAt > dfAt, "the disk gate must stay above the backup-health block");
 });
 
@@ -874,7 +900,7 @@ test("deploy uploads the pre-deploy dump, and never a stale one", () => {
   const registered = (suite.match(/^test\(/gm) || []).length;
   assert.equal(
     registered,
-    15,
-    `apps/core-api/test/deploy-config.test.js registers ${registered} top-level tests, expected 15 (compose's six plus nine deploy.yml tasks)`,
+    16,
+    `apps/core-api/test/deploy-config.test.js registers ${registered} top-level tests, expected 16 (compose's six, nine deploy.yml tasks, and the interpreter pin added after zsh's NOMATCH killed a deploy)`,
   );
 });
