@@ -257,5 +257,56 @@ jobs:
           #   cd ~/restaurant-order-system && export CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env
           #   CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api
 
+          # ---- 4. LOGIN-PATH ROUTING PROBE (the XFF assertion arrives in Plan 2) ----
+          # THIS MUST RUN BEFORE THE limit_req BURST IN BLOCK 5. Run after it and the
+          # burst has already exhausted the core_login bucket for this source address,
+          # so nginx sheds the probe, it never reaches core-api, and every assertion
+          # below passes vacuously.
+          #
+          # What this proves TODAY: the login path resolves through the real TLS chain,
+          # nginx's `location = /api/admin/auth/login` includes the proxy snippet, and
+          # CORE-API ITSELF answered -- its 404 tail returns application/json
+          # {"error":{"code":"not_found",...}}, where an nginx-level 404 returns
+          # text/html and a dead upstream returns nginx's own 502 page.
+          #
+          # What it CANNOT prove: that a client-sent X-Forwarded-For is not honoured.
+          # Nothing here exercises the client-IP derivation -- Plan 1 ships no login
+          # route, no lib/client-ip.js and no audit writer -- so NOTHING IN THIS BLOCK
+          # CAN FAIL BECAUSE THE HOP COUNT PRODUCES THE WRONG ADDRESS. It can only fail
+          # because the variable itself is not 1. The behavioural assertion is Plan 2's.
+          probe_status=$(curl -s -o /tmp/xff-probe.body -w '%{http_code}' -m 5 \
+            --resolve api.yeyintlwin.com:443:127.0.0.1 \
+            -X POST https://api.yeyintlwin.com/api/admin/auth/login \
+            -H 'Origin: https://api.yeyintlwin.com' -H 'Content-Type: application/json' \
+            -H 'X-Forwarded-For: 203.0.113.99' \
+            --data-binary '{"email":"xff-probe@invalid.test","password":"x"}' </dev/null)
+          test "$probe_status" = "404" || { echo "login probe: expected 404 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
+          grep -q '"code":"not_found"' /tmp/xff-probe.body || { echo 'login probe: that 404 did not come from core-api'; cat /tmp/xff-probe.body; exit 1; }
+          rm -f /tmp/xff-probe.body
+          # Read the RUNNING PROCESS, not the project files. Asking the container to print
+          # the variable through an `exec` session reports the environment compose builds
+          # NOW, from the compose file this same deploy just uploaded, so it agrees with
+          # itself even when PID 1 is still carrying an older environment.
+          hops=$(docker compose exec -T core-api sh -c 'tr "\0" "\n" < /proc/1/environ' </dev/null | sed -n 's/^TRUSTED_PROXY_HOPS=//p' | tr -d '\r')
+          test "$hops" = "1" || { echo "core-api PID 1 has TRUSTED_PROXY_HOPS='$hops', expected 1"; exit 1; }
+          # PLAN 2: restore the full forgeability assertion here, in THIS position, the
+          # moment POST /api/admin/auth/login and the audit writer exist. Change the 404
+          # expectation above to 401, delete this marker, and run through the container:
+          #   SELECT coalesce(host(source_ip), 'null') FROM audit_events
+          #    WHERE detail->>'email' = 'xff-probe@invalid.test' ORDER BY id DESC LIMIT 1
+          # Select THIS probe's row by its address, never by recency -- a shed request
+          # writes nothing and the burst's own row would satisfy both tests. Assert all
+          # three: the row EXISTS, source_ip is not 203.0.113.99 (forgeable), and it is
+          # not null (derivation collapsed to the shared bucket). Spec 9.5 block 4
+          # carries the exact psql invocation with its shell quoting.
+
+          # ---- 5. limit_req PROBE. Deliberately exhausts the core_login bucket, so
+          # nothing that depends on reaching core-api from this address may run after it.
+          codes=$(for n in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code} ' -m 3 \
+            --resolve api.yeyintlwin.com:443:127.0.0.1 -X POST https://api.yeyintlwin.com/api/admin/auth/login \
+            -H 'Origin: https://api.yeyintlwin.com' -H 'Content-Type: application/json' \
+            --data-binary '{"email":"deploy-probe@invalid.test","password":"x"}' </dev/null; done)
+          echo "$codes" | grep -q 429 || { echo 'nginx limit_req is not firing on the login route'; exit 1; }
+
           docker image prune -f
           EOF

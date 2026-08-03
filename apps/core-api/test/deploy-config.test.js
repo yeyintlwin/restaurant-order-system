@@ -658,3 +658,63 @@ test("deploy heredoc gates on /health/ready and then on the real TLS chain", () 
     }
   }
 });
+
+test("deploy heredoc probes the login path before it exhausts the limit_req bucket", () => {
+  const workflow = workflowText();
+
+  const probeAt = workflow.indexOf("xff-probe@invalid.test");
+  const burstAt = workflow.indexOf("deploy-probe@invalid.test");
+  assert.ok(probeAt > -1, "the login-path probe is missing");
+  assert.ok(burstAt > -1, "the limit_req burst probe is missing");
+  // Run the burst first and it exhausts the core_login bucket for this source address:
+  // nginx then sheds the probe, it never reaches core-api, and every assertion below is
+  // vacuous.
+  assert.ok(probeAt < burstAt, "the login-path probe must run BEFORE the limit_req burst");
+
+  // The probe asserts on the RESPONSE. A `curl -fsS … || true` proves nothing at all.
+  assert.match(workflow, /-H 'X-Forwarded-For: 203\.0\.113\.99'/);
+  assert.match(workflow, /test "\$probe_status" = "404"/);
+  assert.match(workflow, /grep -q '"code":"not_found"' \/tmp\/xff-probe\.body/);
+  assert.doesNotMatch(workflow, /xff-probe@invalid\.test[^\n]*\|\| true/);
+
+  // Read the RUNNING PROCESS, not the project files. The `exec … printenv` form echoes
+  // back the compose file this same deploy uploaded, so it agrees with itself while
+  // PID 1 still carries an older environment.
+  assert.match(workflow, /tr "\\0" "\\n" < \/proc\/1\/environ/);
+  assert.match(workflow, /sed -n 's\/\^TRUSTED_PROXY_HOPS=\/\/p'/);
+  assert.match(workflow, /test "\$hops" = "1" \|\| \{ echo "core-api PID 1 has TRUSTED_PROXY_HOPS/);
+  // Scoped to the lines that EXECUTE: the heredoc names the `printenv` form in a comment
+  // to explain why it is forbidden, so a document-wide doesNotMatch is red against a
+  // CORRECT workflow. Ninth occurrence of this plan's signature shape.
+  for (const line of workflow.split("\n").filter((l) => !l.trim().startsWith("#"))) {
+    assert.doesNotMatch(
+      line,
+      /printenv TRUSTED_PROXY_HOPS/,
+      `printenv reports the environment compose builds now, not PID 1's: ${line.trim()}`,
+    );
+  }
+
+  // The forgeability half needs Plan 2's auth route and audit writer. The marker is what
+  // stops it from being forgotten, and it has a defined removal trigger.
+  assert.match(workflow, /PLAN 2: restore the full forgeability assertion here/);
+  assert.match(workflow, /detail->>'email' = 'xff-probe@invalid\.test'/);
+
+  // The burst itself ships in full today: nginx applies limit_req before proxying, so
+  // the 429s appear whether or not the route exists.
+  assert.match(workflow, /for n in \$\(seq 1 20\)/);
+  assert.match(workflow, /echo "\$codes" \| grep -q 429/);
+
+  // The 404 expectation must break HERE, in CI, and not at 22:00 on the box after the
+  // migration has already applied.
+  const routesDir = path.join(__dirname, "..", "http", "routes");
+  for (const entry of fs.readdirSync(routesDir)) {
+    if (!entry.endsWith(".js")) continue;
+    const source = fs
+      .readFileSync(path.join(routesDir, entry), "utf8")
+      .replace(/\r\n/g, "\n");
+    assert.ok(
+      !source.includes('"/api/admin/auth/login"'),
+      `http/routes/${entry} registers /api/admin/auth/login, so the deploy's block 4 probe now gets 401 and aborts the deploy AFTER the migration applied. In the same commit that registers the route: change block 4's expected status from 404 to 401, restore the audit_events forgeability assertion, delete the PLAN 2 marker.`,
+    );
+  }
+});

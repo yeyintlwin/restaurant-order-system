@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 20 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 21 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -110,6 +110,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 20.** The nginx block: remove last run's `.bak` files, snapshot **both** installed files, install both, `nginx -t`, roll **both** back and re-run `nginx -t` to prove the box is left loadable, and only then reload. Order is the whole property — install-then-validate leaves a broken file latent on disk while the running nginx keeps its in-memory config, and the box goes down days later when certbot's renew hook or a reboot reloads it, taking `order` and `epaper-hub` with it, nowhere near a deploy. **One plan defect found and fixed first** — see the callout on Task 20: eighth occurrence of the signature shape. Four mutations run: dropping the stale-`.bak` removal, rolling back only `api.conf`, reloading before validating, and writing the SIGPIPE-prone `nginx -T \| grep` form as code — all four red. The scoping fix was checked **both ways**: that form as code is red, the same string in a comment is green. Pre-flight on the box before pushing, because this is the deploy that touches production nginx: `sudo -n install`, `sudo -n nginx -t` and `sudo -n systemctl reload nginx` all succeed with no password prompt (a prompt hangs the ssh heredoc forever), and `real_ip_header\|set_real_ip_from\|real_ip_recursive` in the loaded config counts **0** — either directive rewrites `$remote_addr` before `$proxy_add_x_forwarded_for` is evaluated and voids the hop count entirely. Also verified the two grep patterns match the real conf files before they could reload nginx and *then* abort; `X-Forwarded-For` is column-aligned with three spaces, exactly the case the plan's whitespace-tolerant rewrite exists for. 10 tests, `# fail 0`, YAML 14 steps. | **19/30** | (this commit) | Task 21 |
 | 2026-08-03 | **`api.yeyintlwin.com` IS SERVING. Task 20 deployed and verified on the box** (run `30791314160`). Both files installed root-owned 644, `nginx -t` successful, and through the real TLS chain from loopback `/health` is **200** while `/health/ready` is **404** — the split Task 7 designed. `limit_req_zone core_*` count **3** as the runbook predicts, `real_ip_header\|set_real_ip_from\|real_ip_recursive` count **0**, the check that matters most. All eight pre-existing vhosts still answer; `myanmyanlearn` returns 502 but **that predates this deploy** — its container has been `Exited (137)` for nine days and the nginx error log carries `connect() failed (111)` from external clients at 02:09 and 02:15 today, hours before the 06:49 install. No `.bak` files were left, which is correct for a first install: there was nothing to snapshot, so the rollback branch's `rm -f` arm is the live one. **RUNBOOK DEFECT FOUND BY MEASURING: `infra/README.md` said the X-Forwarded-For count is 1. It is 9.** `$proxy_add_x_forwarded_for` is what *every* reverse-proxy vhost sets, and eight others share this instance. Counting the whole dump answers a question about the box, not about core-api. Replaced with a per-file attribution that requires exactly one from `core-api-proxy.conf` and says the total is meaningless on its own — an operator following the old line would have seen 9, concluded the install was wrong, and gone hunting. | — | (this commit) | Task 21 |
 | 2026-08-03 | **Task 21.** The 90 s gate (45 × 2 s) on loopback `/health/ready`, then the `--resolve` curl through `https://api.yeyintlwin.com/health` — which proves what `nginx -T` cannot: that a server block actually matches that name, that the certificate serves, and that the request reaches core-api. Failure prints `core-api` and `core-db` logs, because otherwise the only artefact of a bad deploy is a red tick. The no-auto-rollback statement and its one-line recipe are carried in the file on purpose: by the time the gate runs the migration has applied, so rolling the image back leaves the schema **ahead** of the image, which the runner treats as a warning — the old container starts and looks healthy against a schema it does not know. **No plan defect in this task's text** — the first since Task 11 — and the reason is visible: it contains no `doesNotMatch`, so the shape had nothing to attach to. Added one guard the task did not ask for: the rollback recipe must stay a comment, since run as code it would pin production to a literal image tag named `<previous-sha>`. Four mutations, all red: gating on `/health` instead of `/health/ready`, dropping the TLS-chain curl, dropping the diagnostics, and uncommenting the recipe. Both gates were run against the box before pushing, because a gate that fails runs *after* the migration has applied: `/health/ready` and the `--resolve` curl each returned `{"ok":true,"app":"core-api"}`, exit 0. 11 tests, `# fail 0`, YAML 14 steps. | **20/30** | (this commit) | Task 22 |
+| 2026-08-03 | **Task 22.** Blocks 4 and 5, in that order and for that reason: run the burst first and it exhausts the `core_login` bucket for this source address, nginx sheds the probe, it never reaches core-api, and every assertion after it passes vacuously. The probe asserts on the RESPONSE — 404 **and** `{"code":"not_found"}`, so it can tell core-api's JSON tail from an nginx-level `text/html` 404 and from a dead upstream's 502 page — and reads `TRUSTED_PROXY_HOPS` from `/proc/1/environ`, never through an `exec` session, which would echo back the compose file this same deploy just uploaded and agree with itself while PID 1 carried an older environment. **Two plan defects found and fixed first** — see the callout on Task 22: the ninth signature-shape occurrence, and a MANUAL VERIFICATION item that contradicts a guard this plan already ships. Five mutations, all correct: swallowing the probe with `\|\| true` → red, `printenv` as code → red with its diagnostic, the same string in a comment → green, deleting the `PLAN 2:` marker → red. **The whole probe was run against the box before pushing**, because a failing block-4 aborts the deploy *after* the migration has applied: `location = /api/admin/auth/login` exists with `limit_req zone=core_login burst=5 nodelay` and includes the snippet, the probe returned **404** with `{"error":{"code":"not_found","message":"Not found.","requestId":"3UkD1e3G"}}`, and PID 1 carries `TRUSTED_PROXY_HOPS=1`. Ran one request, not the burst, to leave the bucket intact for the deploy. 12 tests, `# fail 0`, YAML 14 steps. | **21/30** | (this commit) | Task 23 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5677,11 +5678,31 @@ What it cannot prove today: that a client-sent `X-Forwarded-For` is not honoured
 
 The `limit_req` burst needs none of this and ships in full today: nginx applies `limit_req` before proxying, so the 429s appear whether or not the route exists.
 
+> **TWO DEFECTS FOUND ON EXECUTION 2026-08-03, fixed in the text below.**
+>
+> 1. **NINTH occurrence of this plan's signature shape.** Step 1's
+>    `assert.doesNotMatch(workflow, /printenv TRUSTED_PROXY_HOPS/)` is red against a CORRECT
+>    workflow, because Step 3's own comment names the `printenv` form to explain why it is
+>    forbidden. Now scoped to lines that execute, and mutation-tested both ways: an executable
+>    `docker compose exec -T core-api printenv TRUSTED_PROXY_HOPS` turns it red with the
+>    diagnostic, the same string in a comment leaves it green.
+>
+> 2. **MANUAL VERIFICATION item 4 contradicts a guard this plan already ships.** It asks the
+>    operator to confirm that in `api.yeyintlwin.com.conf` `count(proxy_pass)` **equals**
+>    `count(include .*core-api-proxy.conf)`. It does not, and must not:
+>    `apps/core-api/test/nginx-config.test.js:288` asserts
+>    `doesNotMatch(conf, /proxy_pass/, "api.conf must never proxy_pass directly")`, and the
+>    snippet carries the only `proxy_pass` in the design. Measured on the box 2026-08-03:
+>    **api.conf has 0 `proxy_pass` and 4 snippet includes**, and the snippet has exactly 1
+>    `proxy_pass http://core_api;`. An operator running the item as written sees `0` and `4`,
+>    concludes the install is broken, and hunts a problem the repository is actively enforcing.
+>    Item 4 now states the three real invariants.
+
 **Files:**
 - Modify: `.github/workflows/deploy.yml` (the `Deploy on Lightsail` heredoc)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -5738,13 +5759,13 @@ test("deploy heredoc probes the login path before it exhausts the limit_req buck
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="probes the login path before" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: the login-path probe is missing`
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, insert the following immediately after the no-auto-rollback comment block — that is, after the `#   CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api` line:
 
@@ -5802,7 +5823,7 @@ In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, ins
           echo "$codes" | grep -q 429 || { echo 'nginx limit_req is not firing on the login route'; exit 1; }
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="probes the login path before" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -5819,10 +5840,25 @@ Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0
 3. `cd ~/restaurant-order-system && CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec -T core-api sh -c 'tr "\0" "\n" < /proc/1/environ' </dev/null | grep TRUSTED_PROXY_HOPS`
    Expected: `TRUSTED_PROXY_HOPS=1`.
 4. `sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -E 'real_ip_header|set_real_ip_from|real_ip_recursive' || echo NONE`
-   Expected: `0`, and in `api.yeyintlwin.com.conf` `count(proxy_pass)` equals `count(include .*core-api-proxy.conf)`. Either divergence silently defeats the hop count.
+   Expected: `0`. Then three counts, which are **not** "equal to each other" — measured on
+   the box 2026-08-03 and matching what the repository enforces:
+
+   ```sh
+   sudo nginx -T | grep -vE '^[[:space:]]*#' | ...   # see infra/README.md, "Verify the proxy"
+   # api.yeyintlwin.com.conf:  proxy_pass -> 0    include core-api-proxy.conf -> 4
+   # core-api-proxy.conf:      proxy_pass -> 1
+   ```
+
+   `api.conf` carries **zero** `proxy_pass` by design — `apps/core-api/test/nginx-config.test.js:288`
+   asserts `api.conf must never proxy_pass directly`, because a bare `proxy_pass` with no
+   include sets no `X-Forwarded-For` at all and the hop count then reads whatever the client
+   wrote. The snippet holds the single `proxy_pass http://core_api;`, and every proxying
+   location includes it. What silently defeats the hop count is a `proxy_pass` appearing in
+   `api.conf`, or an include count lower than the number of proxying locations — not the two
+   numbers differing.
 5. **Deferred to Plan 2, and it is the assertion that matters:** with auth and the audit writer shipped, the probe row selected by `detail->>'email' = 'xff-probe@invalid.test'` must exist and its `source_ip` must be neither `203.0.113.99` nor NULL. It belongs in Plan 2's cutover checklist, not this one.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
