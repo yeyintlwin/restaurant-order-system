@@ -241,3 +241,186 @@ curl -s -o /dev/null -w '%{http_code}\n' -m 5 \
 `nginx -T` proves the directives are **loaded**. It does not prove a server block
 matches `api.yeyintlwin.com`, that the certificate serves, or that `limit_req`
 fires — which is what the `--resolve` curl and the deploy's burst probe are for.
+
+## core-db backups
+
+`config/backup-core-db.sh` runs at **03:17 UTC** from the deploy user's crontab, installed by
+`deploy.yml`. It writes `~/backups/nightly-<ts>.dump` (custom format, mode 600), keeps **14**,
+and touches `~/backups/LAST_OK` only after the dump has been read end to end.
+
+Verification is two-stage, and the second stage is the one that matters. `pg_dump -Fc` writes
+the table of contents **first**, so `pg_restore --list` is satisfied by the first few kilobytes:
+a dump truncated at 80% by a full disk passes it. `pg_restore --data-only -f /dev/null`
+decompresses every data block and writes the SQL nowhere, so it is the only check that actually
+reaches the end of the file.
+
+`LAST_OK` is the nightly's **only** failure signal — `set -eu` exits the script early, its
+output goes to `~/backups/backup.log` which nobody reads, and cron's `MAILTO` goes to a local
+mailbox on a box with no MTA. The deploy therefore checks it, but not from day one: when it
+first installs the crontab line it writes a bootstrap marker `~/backups/CRON_INSTALLED_AT`, and
+only once **that** marker is more than 48 hours old does a missing or stale `LAST_OK` fail the
+build. Before then the gate is deliberately quiet, because the nightly has legitimately had no
+chance to run. If a deploy prints `no successful core-db nightly in 48h`, read `backup.log` from
+the bottom; the usual causes are a full disk and an OOM-killed `pg_dump`.
+
+The deploy also takes a **pre-deploy dump** (`~/backups/pre-deploy-<ts>.dump`) before every
+migration, gated on the *volume* rather than on a running container, and uploads it as a GitHub
+Actions artifact with 14-day retention. **Deploy #1's pre-deploy dump is a dump of an empty
+`core`** — the volume is created moments earlier and the dump is taken before the service has
+ever migrated — so it is not a useful drill target and `migrate.js --check` will correctly
+reject it. From deploy #2 onward it is the dump Scenario A restores.
+
+**What this protects, and what it does not:**
+
+| Failure | Covered? |
+| --- | --- |
+| Bad migration, bad `DELETE`, logical corruption | **Yes** — the pre-deploy dump plus up to 14 nightlies |
+| Volume deleted, filesystem corruption | **Yes**, back to the last nightly: up to 24 hours of loss |
+| Instance lost | **Only back to the last deploy.** The nightlies live on the instance they protect; the pre-deploy artifact is the sole off-box copy |
+| Point-in-time recovery | **No.** There is no WAL archive. The recovery point is the last nightly, not the last transaction. Deferred to Phase 3 by decision |
+
+Said out loud: the uploaded artifact contains **email addresses, IP addresses and scrypt
+hashes**, readable by anyone with access to this repository. For a private personal repo that
+is an acceptable trade against having no off-box copy at all; the upgrade path is a write-only
+bucket.
+
+The cheapest complement is a checkbox, not code: enable **Lightsail automatic instance
+snapshots**, understanding that a snapshot is crash-consistent, not logical. The cluster is
+initialised with `--data-checksums`, which is what makes a corrupt restored page loud instead of
+silent.
+
+`AUDIT_RETENTION_DAYS` configures nothing until `scripts/sweep-expired.js` ships in **Plan 2**;
+`audit_events` grows without trimming until then, and the deploy installs only the backup
+crontab line.
+
+### The restore drill
+
+```sh
+cd ~/restaurant-order-system
+./config/restore-drill.sh                                 # newest nightly -- the normal case
+./config/restore-drill.sh ~/backups/pre-deploy-<ts>.dump  # a specific dump, deploy #2 onward
+```
+
+It restores into `core_restore_check`, refuses to start without headroom, proves the dump is not
+an empty or wrong one, asserts the migration ledger against the running image using the
+production runner in `--check` mode, mirrors the schema invariants, prints a row count per table
+and drops the scratch database. On failure it leaves the scratch database in place and prints
+the commands to inspect and drop it. **It never touches `core`.**
+
+It restores into the **same cluster production is serving from** — there is one instance — so it
+doubles the data footprint plus WAL alongside live traffic. Run it **outside service hours**,
+for the same reason the deploy window exists. It refuses outright unless at least three times
+the dump size is free on `/` and the disk is under 70% used, printing
+`restore-drill: refusing, need <n> bytes free, have <m>`.
+
+Run it **once by hand before the first core-api deploy is trusted**, then monthly. A backup
+nobody has restored is not a recovery plan.
+
+### Scenario A — roll back a bad migration
+
+Every quote below is a real `'`. Paste it as written.
+
+> **Never rehearse Scenario A verbatim on the box — step 3 drops the production database.**
+> To rehearse, substitute `core_scenario_a` for `core` in steps 3–5 and leave a dated receipt
+> at `~/backups/SCENARIO_A_REHEARSED`. `config/restore-drill.sh` already rehearses steps 1, 3,
+> 4, 5 and 6 against a scratch database, which is why running it costs no downtime.
+
+```sh
+cd ~/restaurant-order-system
+export CORE_ENV_FILE=../core-api.env
+export EPAPER_ENV_FILE=../restaurant-order-system.env
+
+# 0. STOP THE WRITER FIRST, or you get a database half old and half new.
+docker compose stop core-api
+
+# 1. Prove the dump is READABLE before destroying anything.
+ls -la ~/backups
+docker compose exec -T core-db pg_restore --list < ~/backups/pre-deploy-<ts>.dump | head -30
+
+# 2. Dump the CURRENT (broken) state anyway. Step 3 is irreversible.
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U core_api_owner -d core -Fc' \
+  > ~/backups/before-restore-$(date -u +%Y%m%dT%H%M%SZ).dump
+
+# 3. Lock out reconnects, terminate, then drop. THREE separate -c invocations: chaining a
+#    terminate ahead of a DROP in one psql call means ON_ERROR_STOP aborts halfway, leaving
+#    the app stopped and the restore not started. ALLOW_CONNECTIONS goes FIRST so nothing --
+#    including a `restart: unless-stopped` container -- can reconnect between the terminate
+#    and the drop.
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1 \
+  -c "ALTER DATABASE core WITH ALLOW_CONNECTIONS false;"'
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1 \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '"'"'core'"'"' AND pid <> pg_backend_pid();"'
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1 \
+  -c "DROP DATABASE IF EXISTS core;" -c "CREATE DATABASE core OWNER core_api_owner;"'
+
+# 4. Restore, all-or-nothing. Do NOT pass --no-owner: the owner/app split is the point of
+#    this schema and --no-owner collapses it.
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -U core_api_owner -d core \
+  --exit-on-error --single-transaction' < ~/backups/pre-deploy-<ts>.dump
+
+# 5. VERIFY BEFORE STARTING THE APP.
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d core \
+  -c "SELECT filename, applied_at FROM schema_migrations ORDER BY filename;" \
+  -c "SELECT role, status, count(*) FROM users GROUP BY 1,2 ORDER BY 1,2;"'
+```
+
+The freshly created `core` allows connections by default, so nothing needs undoing from step 3.
+
+**Step 6 is the one everybody gets wrong.** Read that ledger against the migrations in the
+running image:
+
+- Dump **older** than the image (a file on disk with no row): the runner will **re-apply** it on
+  the next start. If that migration is what broke you, you have restored nothing — roll the
+  image back in the same operation with
+  `CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api`.
+- Dump **newer** than the image (a row with no file): the runner logs a WARNING and starts. That
+  is deliberate, and this is the moment the decision earns its keep.
+
+Then `docker compose up -d core-api`, `docker compose logs -f --tail 100 core-api`, and
+`curl -fsS http://127.0.0.1:3200/health/ready`.
+
+### Scenario B — a fresh instance
+
+The dump contains grants referencing `core_api_app` but **not the role itself**. Skipping this
+step yields a wall of *"role core_api_app does not exist"* and, with `--single-transaction`, a
+full rollback — loud, which is correct.
+
+```sh
+docker compose up -d core-db     # initdb creates core_api_owner from POSTGRES_PASSWORD
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1 \
+  -c "CREATE ROLE core_api_app LOGIN NOINHERIT PASSWORD '"'"'<the password inside DATABASE_URL>'"'"';"'
+```
+
+Then run Scenario A from step 4.
+
+If there is **no dump at all** — a genuinely new deployment — the database is empty and the first
+platform administrator is created with `apps/core-api/scripts/create-platform-admin.js`. **That
+script ships in Plan 2.** Until it does, a fresh instance has no way to create the first user,
+which is one more reason the pre-deploy artifact matters.
+
+### Rotating database passwords
+
+The *why* is in `apps/core-api/README.md`, "Rotating database passwords". The order below is not
+negotiable, because **`POSTGRES_PASSWORD` is read by the image only when it creates the data
+directory** — editing it afterwards changes nothing, and an operator who does only that will
+believe the credential rotated for months.
+
+```sh
+# 1. Change the role in the RUNNING cluster first.
+docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1 \
+  -c "ALTER ROLE core_api_owner PASSWORD '"'"'<new>'"'"';"'
+
+# 2. Then edit ~/core-api.env in BOTH places, in one edit: POSTGRES_PASSWORD and the password
+#    inside DATABASE_MIGRATION_URL. core-api refuses to listen if they disagree -- that check
+#    exists precisely to catch "somebody edited one line and not the other".
+chmod 600 ~/core-api.env
+
+# 3. Restart.
+cd ~/restaurant-order-system && CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose up -d
+```
+
+The **app** password needs none of this: edit `DATABASE_URL` and redeploy, because the migration
+runner issues `ALTER ROLE core_api_app … PASSWORD` on every boot.
+
+If startup dies with `DATABASE_MIGRATION_URL was rejected by the server (28P01)`, the secrets
+file was rotated and the cluster was not. Go back to step 1.

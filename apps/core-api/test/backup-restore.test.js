@@ -310,3 +310,127 @@ test("the drill declares what it does not mirror, and asserts the grants the nod
   // every DO block becomes a syntax error.
   assert.match(script, /<<'SQL'/);
 });
+
+const infraReadme = () => readText(repoRoot, "infra", "README.md");
+
+// infra/README.md is append-only and shared by four areas of this plan. Counting a psql
+// invocation across the WHOLE document sees five, not three: Scenario B's CREATE ROLE and
+// the rotation recipe's ALTER ROLE use the same invocation. Anchor to the slice.
+function section(document, startHeading, endHeading) {
+  const start = document.indexOf(startHeading);
+  assert.notEqual(start, -1, `missing heading: ${startHeading}`);
+  const end = document.indexOf(endHeading, start + startHeading.length);
+  assert.notEqual(end, -1, `missing heading: ${endHeading}`);
+  return document.slice(start, end);
+}
+
+function countOccurrences(source, needle) {
+  let count = 0;
+  let at = source.indexOf(needle);
+  while (at !== -1) {
+    count += 1;
+    at = source.indexOf(needle, at + needle.length);
+  }
+  return count;
+}
+
+test("the restore runbook stops the writer, proves the dump, and drops in three psql calls", () => {
+  const doc = infraReadme();
+  const scenarioA = section(doc, "### Scenario A", "### Scenario B");
+
+  // Step 0. Restore into a live writer and you get a database half old and half new.
+  assert.match(scenarioA, /docker compose stop core-api/);
+  // Step 1. Prove the dump is readable BEFORE destroying anything.
+  assert.match(scenarioA, /pg_restore --list < ~\/backups\/pre-deploy-<ts>\.dump/);
+  // Step 2. Step 3 is irreversible, so dump the broken state too.
+  assert.match(scenarioA, /before-restore-\$\(date -u \+%Y%m%dT%H%M%SZ\)\.dump/);
+
+  // Step 3. THREE separate -c invocations, in this order. Chaining a terminate ahead of a
+  // DROP in one psql call means ON_ERROR_STOP aborts halfway, leaving the app stopped and
+  // the restore not started. ALLOW_CONNECTIONS goes FIRST so nothing can reconnect between
+  // the terminate and the drop.
+  assert.equal(
+    countOccurrences(scenarioA, "psql -U core_api_owner -d postgres -v ON_ERROR_STOP=1"),
+    3,
+    "the drop sequence must be three separate psql invocations"
+  );
+  assertAscending(scenarioA, [
+    "ALTER DATABASE core WITH ALLOW_CONNECTIONS false;",
+    "SELECT pg_terminate_backend(pid)",
+    "DROP DATABASE IF EXISTS core;"
+  ]);
+  const invocations = scenarioA.split("docker compose exec -T").slice(1);
+  for (const statement of [
+    "ALTER DATABASE core WITH ALLOW_CONNECTIONS false;",
+    "SELECT pg_terminate_backend(pid)",
+    "DROP DATABASE IF EXISTS core;"
+  ]) {
+    assert.equal(
+      invocations.filter((chunk) => chunk.includes(statement)).length,
+      1,
+      `"${statement}" must appear in exactly one docker compose exec -T invocation`
+    );
+  }
+
+  // Step 4. All-or-nothing, and NOT --no-owner.
+  assert.match(scenarioA, /pg_restore -U core_api_owner -d core [\s\S]{0,80}--exit-on-error --single-transaction/);
+  assert.doesNotMatch(doc, /pg_restore[^\n]*--no-owner/);
+
+  // Step 5/6. Verify before starting the app, and read the ledger against the image.
+  assert.match(scenarioA, /SELECT filename, applied_at FROM schema_migrations ORDER BY filename;/);
+  assert.match(doc, /curl -fsS http:\/\/127\.0\.0\.1:3200\/health\/ready/);
+
+  // Spec 12 forbids rehearsing this verbatim: step 3 drops the production database.
+  assert.match(scenarioA, /Never rehearse Scenario A verbatim/);
+  assert.match(scenarioA, /core_scenario_a/);
+});
+
+test("the runbook covers a fresh instance and the password-rotation ordering", () => {
+  const doc = infraReadme();
+
+  // Scenario B: the dump carries grants referencing core_api_app but not the role itself.
+  assert.match(doc, /CREATE ROLE core_api_app LOGIN NOINHERIT PASSWORD/);
+  assert.match(doc, /role core_api_app does not exist/);
+  // create-platform-admin.js is Plan 2 and the runbook must not pretend otherwise.
+  assert.match(doc, /create-platform-admin\.js[\s\S]{0,200}Plan 2/);
+
+  // POSTGRES_PASSWORD is read by initdb ONLY, so editing it changes nothing on an existing
+  // cluster. ALTER ROLE first, env file second. Spec 12's last checklist line greps for it.
+  assert.match(doc, /ALTER ROLE core_api_owner PASSWORD/);
+  // \s+, not a literal space: this file is hard-wrapped prose and the phrase straddles the
+  // wrap. A literal space here is must-fix 10's shape in a markdown file instead of a
+  // column-aligned conf -- an assertion that reports a correct runbook as broken. It still
+  // has teeth: deleting the sentence turns it red.
+  assert.match(doc, /only when it creates the data\s+directory/i);
+  assert.match(doc, /DATABASE_MIGRATION_URL/);
+  assert.match(doc, /apps\/core-api\/README\.md/);
+});
+
+test("the docs state what the backup does and does not protect, and how the gate behaves", () => {
+  const doc = infraReadme();
+
+  assert.match(doc, /bad migration/i);
+  // The nightlies live on the instance they protect.
+  assert.match(doc, /instance[\s\S]{0,120}last deploy/i);
+  // No WAL archive: the recovery point is the last nightly, not the last transaction.
+  assert.match(doc, /point-in-time|PITR/i);
+  assert.match(doc, /Phase 3/);
+  // The artifact is the only off-box copy, and it is readable by anyone with repo access.
+  // \s+ for the same wrap reason as the rotation assertion above.
+  assert.match(doc, /scrypt\s+hashes/);
+  assert.match(doc, /data-checksums/);
+
+  // The gate is NOT "every deploy fails on a 48-hour-old marker": before CRON_INSTALLED_AT
+  // is itself 48 hours old the nightly has legitimately had no chance to run.
+  assert.match(doc, /CRON_INSTALLED_AT/);
+  assert.doesNotMatch(doc, /Every deploy fails the build if that marker is more than 48 hours\s*\n?\s*old/);
+
+  // The drill runs inside the production cluster, so it is a service-hours decision.
+  assert.match(doc, /same cluster production is serving from/i);
+  assert.match(doc, /outside service hours/);
+
+  // Deploy #1's pre-deploy dump is a dump of an empty core and cannot be drilled.
+  assert.match(doc, /deploy #1[\s\S]{0,240}empty/i);
+
+  assert.match(doc, /AUDIT_RETENTION_DAYS[\s\S]{0,120}Plan 2/);
+});
