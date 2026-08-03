@@ -143,7 +143,154 @@ docker compose exec -T -e DRILL_DB="$DRILL_DB" core-api sh -c \
   'export DATABASE_MIGRATION_URL="$(node -e "$0")"; exec node apps/core-api/db/migrate.js --check' \
   'const u = new URL(process.env.DATABASE_MIGRATION_URL); u.pathname = "/" + process.env.DRILL_DB; process.stdout.write(u.toString());'
 
-# 7. (schema-invariant assertions are inserted here by the next task)
+# 7. The schema-invariant assertions, MIRRORED. apps/core-api/test/schema-invariants.test.js
+#    cannot be aimed at this database: it takes its connection from cloneTemplate(__filename),
+#    which builds a template by RUNNING the migrations -- that tests migrations/, not a
+#    restored dump. So the rules are restated here as SQL that raises on violation, and
+#    apps/core-api/test/backup-restore.test.js fails if the two exception lists ever drift.
+#
+# NOT MIRRORED: S2, S2b, S6. S6 is what step 6 above already did, with the runner's own
+#    digests. S2/S2b's composite-FK rule carries a thirteen-entry exception list that would
+#    become a second source of truth and rot. Mirrored here: S1, S3, S4, S5, S7 -- plus the
+#    owner/app GRANT split, which the node suite deliberately does NOT assert because
+#    0001_init.sql's grant block is guarded on pg_roles so a single-role dev database applies
+#    it unchanged. Both roles exist here, so this is the only place that split is ever proved.
+docker compose exec -T core-db sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U core_api_owner -d "$1" -f -' \
+  sh "$DRILL_DB" <<'SQL'
+-- S1. Every base table carries company_id uuid NOT NULL, or is one of the five named
+-- exceptions -- each of which has its own positive assertion in the node suite.
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND c.relname NOT IN ('audit_events', 'companies', 'schema_migrations', 'user_sessions', 'users')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid AND a.attname = 'company_id' AND NOT a.attisdropped
+          AND a.attnotnull AND format_type(a.atttypid, a.atttypmod) = 'uuid');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'S1: tables without company_id uuid NOT NULL: %', bad;
+  END IF;
+END $$;
+
+-- S3. The four composite anchors, by name, with exact ordered column lists. Postgres
+-- refuses a composite FK without a matching UNIQUE, so the assertion with teeth is the
+-- reverse one: a dropped anchor leaves the next table unable to declare one.
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(x.name, ', ' ORDER BY x.name) INTO bad
+    FROM (VALUES
+      ('users_id_company_key',            'id,company_id'),
+      ('shops_id_company_key',            'id,company_id'),
+      ('shop_tables_id_shop_company_key', 'id,shop_id,company_id'),
+      ('terminals_id_shop_company_key',   'id,shop_id,company_id')
+    ) AS x(name, cols)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_constraint con
+      WHERE con.conname = x.name AND con.contype = 'u'
+        AND (SELECT string_agg(att.attname::text, ',' ORDER BY u.ord)
+               FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+               JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = u.attnum) = x.cols);
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'S3: missing or reshaped anchors: %', bad;
+  END IF;
+END $$;
+
+-- S4. Every %_hash column is bytea with an octet_length = 32 CHECK, except
+-- users.password_hash, which stores a PHC-style scrypt string by design.
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(t.tbl || '.' || t.col, ', ' ORDER BY t.tbl || '.' || t.col) INTO bad
+    FROM (
+      SELECT c.relname AS tbl, a.attname AS col,
+             format_type(a.atttypid, a.atttypmod) AS typ,
+             COALESCE(string_agg(pg_get_constraintdef(con.oid), ' '), '') AS checks
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+        LEFT JOIN pg_constraint con
+          ON con.conrelid = c.oid AND con.contype = 'c' AND a.attnum = ANY (con.conkey)
+       WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attname LIKE '%\_hash'
+       GROUP BY c.relname, a.attname, a.atttypid, a.atttypmod) t
+   WHERE CASE WHEN t.tbl || '.' || t.col = 'users.password_hash'
+              THEN t.typ <> 'text' OR position('''scrypt$%''' in t.checks) = 0
+              ELSE t.typ <> 'bytea' OR position('octet_length(' || t.col || ') = 32' in t.checks) = 0
+         END;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'S4: hash columns with the wrong shape: %', bad;
+  END IF;
+END $$;
+
+-- S5. Every table with updated_at has a non-internal BEFORE UPDATE set_updated_at() trigger.
+-- Conditional on the column, so the rule self-maintains. The function is matched without
+-- the EXECUTE FUNCTION prefix because pg_get_triggerdef schema-qualifies the name whenever
+-- public is not in the connection's search_path.
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND EXISTS (SELECT 1 FROM pg_attribute a
+                  WHERE a.attrelid = c.oid AND a.attname = 'updated_at' AND NOT a.attisdropped)
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_trigger t
+        WHERE t.tgrelid = c.oid AND NOT t.tgisinternal
+          AND pg_get_triggerdef(t.oid) LIKE '%BEFORE UPDATE ON %'
+          AND pg_get_triggerdef(t.oid) LIKE '%set_updated_at()%');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'S5: tables with updated_at but no set_updated_at() trigger: %', bad;
+  END IF;
+END $$;
+
+-- S7. Exact names only: password_hash and token_hash are the shapes this schema wants, and
+-- a substring rule would forbid them.
+DO $$
+DECLARE bad text;
+BEGIN
+  SELECT string_agg(c.relname || '.' || a.attname, ', ' ORDER BY c.relname || '.' || a.attname) INTO bad
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND a.attname IN ('password', 'token', 'code', 'secret', 'session_id');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'S7: plaintext-shaped columns: %', bad;
+  END IF;
+END $$;
+
+-- GRANTS. Not in the node suite by design, and therefore only ever checked here.
+DO $$
+DECLARE bad text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'core_api_app') THEN
+    RAISE EXCEPTION 'GRANTS: role core_api_app does not exist - see infra/README.md, Scenario B';
+  END IF;
+
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND NOT has_table_privilege('core_api_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE');
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'GRANTS: core_api_app is missing DML on: %', bad;
+  END IF;
+
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND pg_get_userbyid(c.relowner) <> 'core_api_owner';
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'GRANTS: tables not owned by core_api_owner (a --no-owner restore looks exactly like this): %', bad;
+  END IF;
+END $$;
+SQL
 
 # 8. Row counts. query_to_xml runs a real count(*) per table, so this self-maintains as
 #    Plan 2 adds tables. n_live_tup would read 0 everywhere on a freshly restored database

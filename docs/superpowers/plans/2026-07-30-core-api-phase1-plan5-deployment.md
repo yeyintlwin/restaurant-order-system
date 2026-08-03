@@ -21,9 +21,10 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 9 of 30 tasks done. Parts 1 and 2 are code-complete.** The next thing to do is
-**Task 10** (MANUAL VERIFICATION on the box) — but it is blocked on certbot, so **Task 11**
-(`infra/backup-core-db.sh`) is the next thing that can actually be executed.
+**Status: 13 of 30 tasks done. Parts 1 and 2 are code-complete; Part 3 is under way.** The
+oldest open item is **Task 10** (MANUAL VERIFICATION on the box), still blocked on DNS +
+certbot for `api.yeyintlwin.com`. The next thing that can actually be executed is **Task 14**
+(`infra/README.md`, the restore runbook).
 
 > ⛔ **DO NOT PUSH past Task 3 until `~/core-api.env` exists on the Lightsail box.** Task 3's
 > MANUAL VERIFICATION block is spec §9.11 step 4 and it is a **precondition, not a follow-up**.
@@ -47,6 +48,8 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | 2026-07-31 | **DECISION: no HTTP/2.** Box recon showed nginx 1.24.0 (so `http2 on;` was never viable) but also that **seven** other vhosts share `0.0.0.0:443`, not the two the plan named — and three of them (airpaste-api, n8n, myanmyanlearn) proxy WebSocket upgrades, which nginx cannot serve over HTTP/2 (no RFC 8441). Dropped the token, added an assertion forbidding it, rewrote the runbook section. | — | `016b04a` | Task 10 |
 | 2026-07-31 | **FIRST PRODUCTION DEPLOY of core-db + core-api.** Pushed `be5ed90..016b04a`; run 30611337180 green in 2m07s. Verified on the box: four containers up, core-db healthy, `/health` 200, `0001_init.sql` applied in 256 ms with checksum `432e3249…c00385` matching the authored value, 11 base tables, and the role split intact (`core_api_app` is not superuser). nginx untouched — the install steps are Tasks 18/20 — so `api.yeyintlwin.com` is not serving yet and core-api is reachable only on 127.0.0.1:3200. | — | — | Task 11 |
 | | **FINDING for Plan 2, deliberately NOT fixed here:** `core_api_app` can INSERT into `schema_migrations`, because `0001_init.sql:512` grants DML on ALL tables in `public`. A compromised app role could forge or delete a ledger row and make the next deploy skip or re-apply a migration. **Do not edit `0001_init.sql`** — it is applied in production with its checksum recorded, so editing it yields `checksum_mismatch` and a 503 readiness. Fix in a `0002_` migration that REVOKEs on the ledger. | — | — | — |
+| 2026-07-31 | **Tasks 11 and 12** — `infra/backup-core-db.sh` (the nightly, `.part` discipline, `LAST_OK` written only after a full decompressing read) and `infra/restore-drill.sh` (scratch restore, free-space gate, table-count check ahead of the ledger check, ledger verified by the production runner in `--check` mode). Row recorded retroactively on 2026-08-03: these two sessions ticked their checkboxes and committed, but never appended here, so the status header read `9 of 30` for three days while the work was on `main`. | **12/30** | `408849c`, `93adc95` | Task 13 |
+| 2026-08-03 | **Task 13.** The schema invariants mirrored into the drill as raising SQL — S1, S3, S4, S5, S7 plus the owner/app GRANT split the node suite deliberately cannot assert — with a source-text cross-check that goes red when the two exception lists drift. RED reproduced exactly as written (`S1 exception audit_events is missing from the drill`); GREEN at 8 tests; `sh -n` parses; 0 CR bytes. **Defect found first, in Task 12's OUTPUT rather than its text:** `git ls-files -s` reported `infra/restore-drill.sh` at **100644**, though `93adc95`'s own message claims "Committed 100755" — Task 12 Steps 3 and 5 both say `git add --chmod=+x` and neither ran. Nothing caught it because the mode assertion in `backup-restore.test.js` names only `backup-core-db.sh`. Fixed with `git add --chmod=+x`; the missing assertion is Task 14's to add. | **13/30** | (this commit) | Task 14 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -3684,7 +3687,7 @@ that would become a second source of truth and rot.
 - Modify: `infra/restore-drill.sh` (replace the step-7 placeholder)
 - Test: `apps/core-api/test/backup-restore.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/backup-restore.test.js`:
 
@@ -3769,13 +3772,13 @@ test("the drill declares what it does not mirror, and asserts the grants the nod
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: S1 exception audit_events is missing from the drill`, and the third new test failing on `The input did not match the regular expression /^# NOT MIRRORED: S2, S2b, S6\./m`. The first new test (the extractor self-check) passes immediately; the five earlier tests still pass.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `infra/restore-drill.sh`, replace the line
 `# 7. (schema-invariant assertions are inserted here by the next task)` with:
@@ -3934,11 +3937,11 @@ SQL
 The heredoc delimiter is quoted (`<<'SQL'`), so the shell expands nothing inside it — which is
 what lets `$$` stay dollar-quoting rather than becoming the shell's PID.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/backup-restore.test.js`  Expected: PASS (8 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add infra/restore-drill.sh apps/core-api/test/backup-restore.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

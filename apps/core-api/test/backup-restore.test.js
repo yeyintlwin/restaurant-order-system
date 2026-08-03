@@ -231,3 +231,82 @@ test("the drill refuses without headroom, rejects the wrong dump, then checks th
     .join("\n");
   assert.doesNotMatch(drillCode, /n_live_tup/);
 });
+
+// The exception lists in schema-invariants.test.js are the source of truth. Extracting them
+// by regex is the same technique source-structure.test.js uses (pure fs + regex, no parser),
+// and every extractor asserts it MATCHED, because an extractor that silently returns [] makes
+// every loop below pass vacuously.
+function arrayLiteral(source, name) {
+  const match = source.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`));
+  assert.ok(match, `${name} is no longer a plain array literal in schema-invariants.test.js`);
+  return match[1]
+    .split(",")
+    .map((entry) => entry.trim().replace(/^"|"$/g, ""))
+    .filter((entry) => entry.length > 0);
+}
+
+function objectKeys(source, name) {
+  const match = source.match(new RegExp(`const ${name} = \\{([\\s\\S]*?)\\n\\};`));
+  assert.ok(match, `${name} is no longer a plain object literal in schema-invariants.test.js`);
+  return (match[1].match(/^\s*([a-z0-9_]+):/gm) || []).map((line) => line.trim().replace(":", ""));
+}
+
+test("the exception-list extractors fail loudly rather than vacuously", () => {
+  assert.deepEqual(arrayLiteral('const X = ["a", "b"];', "X"), ["a", "b"]);
+  assert.deepEqual(objectKeys("const Y = {\n  a_b: [1],\n  c_d: [2]\n};", "Y"), ["a_b", "c_d"]);
+  assert.throws(() => arrayLiteral('const X = ["a"];', "MISSING"), /MISSING/);
+  assert.throws(() => objectKeys("const Y = {};", "MISSING"), /MISSING/);
+});
+
+test("the drill mirrors S1, S3, S4, S5 and S7 with the same exception lists", () => {
+  const invariants = readText(appRoot, "test", "schema-invariants.test.js");
+  const script = drill();
+
+  const tenantExceptions = arrayLiteral(invariants, "TENANT_COLUMN_EXCEPTIONS");
+  assert.equal(tenantExceptions.length, 5, "S1's exception list changed shape");
+  for (const table of tenantExceptions) {
+    assert.ok(script.includes(`'${table}'`), `S1 exception ${table} is missing from the drill`);
+  }
+
+  const anchors = objectKeys(invariants, "ANCHORS");
+  assert.equal(anchors.length, 4, "S3's anchor list changed shape");
+  for (const anchor of anchors) {
+    assert.ok(script.includes(`'${anchor}'`), `S3 anchor ${anchor} is missing from the drill`);
+  }
+
+  const textHashes = arrayLiteral(invariants, "TEXT_HASH_EXCEPTIONS");
+  assert.equal(textHashes.length, 1, "S4's exception list changed shape");
+  for (const column of textHashes) {
+    assert.ok(script.includes(column), `S4 exception ${column} is missing from the drill`);
+  }
+
+  const plaintext = arrayLiteral(invariants, "PLAINTEXT_COLUMN_NAMES");
+  assert.equal(plaintext.length, 5, "S7's column list changed shape");
+  for (const column of plaintext) {
+    assert.ok(script.includes(`'${column}'`), `S7 name ${column} is missing from the drill`);
+  }
+
+  assert.match(script, /set_updated_at\(\)/);
+  for (const invariant of ["S1:", "S3:", "S4:", "S5:", "S7:"]) {
+    assert.ok(script.includes(invariant), `the drill raises no ${invariant} message`);
+  }
+});
+
+test("the drill declares what it does not mirror, and asserts the grants the node suite cannot", () => {
+  const script = drill();
+
+  // An omission that is written down is a decision; an omission that is not is a hole.
+  assert.match(script, /^# NOT MIRRORED: S2, S2b, S6\./m);
+
+  // 0001's grant block is guarded on pg_roles so a single-role dev database applies it
+  // unchanged, which is why schema-invariants.test.js cannot assert grants at all. Both
+  // roles exist on the production cluster, so this is the only place the owner/app split
+  // is ever verified -- and it is precisely what --no-owner would collapse.
+  assert.match(script, /has_table_privilege\('core_api_app'/);
+  assert.match(script, /pg_get_userbyid\(c\.relowner\) <> 'core_api_owner'/);
+  assert.match(script, /a --no-owner restore looks exactly like this/);
+
+  // The heredoc delimiter must stay QUOTED, or the shell expands $$ to its own PID and
+  // every DO block becomes a syntax error.
+  assert.match(script, /<<'SQL'/);
+});
