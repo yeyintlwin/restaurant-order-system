@@ -235,5 +235,27 @@ jobs:
           printf '%s\n' "$nginx_dump" | grep -Eq 'proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for' || { echo 'nginx: X-Forwarded-For is not set from $proxy_add_x_forwarded_for - the hop count is meaningless'; exit 1; }
 
           docker compose up -d --no-build
+
+          # ---- 3. HEALTH GATE, 90 s, THROUGH THE REAL CHAIN ----
+          ok=0; i=0
+          while [ "$i" -lt 45 ]; do
+            if curl -fsS -m 3 http://127.0.0.1:3200/health/ready >/dev/null 2>&1; then ok=1; break; fi
+            i=$((i+1)); sleep 2
+          done
+          [ "$ok" -eq 1 ] || { docker compose logs --tail 200 core-api || true; docker compose logs --tail 50 core-db || true; exit 1; }
+
+          # nginx -T proves the DIRECTIVES are loaded. It does not prove a server block
+          # matches api.yeyintlwin.com, that the certificate serves, or that the request
+          # reaches core-api at all.
+          curl -fsS -m 5 --resolve api.yeyintlwin.com:443:127.0.0.1 https://api.yeyintlwin.com/health >/dev/null
+
+          # THIS GATE DOES NOT AUTO-ROLL-BACK. By the time it runs the migration has
+          # applied, so rolling the image back leaves the schema AHEAD of the image --
+          # which the runner treats as a WARNING, not an error, so the old container
+          # starts and looks healthy against a schema it does not know. That is a real
+          # recovery path and a human decision:
+          #   cd ~/restaurant-order-system && export CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env
+          #   CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api
+
           docker image prune -f
           EOF

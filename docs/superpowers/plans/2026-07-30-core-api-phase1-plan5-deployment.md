@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 19 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 20 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -109,6 +109,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Tasks 18 and 19 verified on the box, and TASK 15's GATE IS CLOSED — the restore drill has been run.** Deploy `30790217047` green. Task 18: both host scripts landed in `config/` **executable** (`-rwxr-xr-x`) — which is where this morning's `git add --chmod=+x` fix paid off, since scp copies the source mode and a 644 `restore-drill.sh` is an unrunnable drill; `api.conf` and `core-api-proxy.conf` in `/tmp`. Task 19: `~/backups` 700, `pre-deploy-*.dump` 600, `LAST_PRE_DEPLOY` naming sha `f0171bd` (matches the push), `/tmp/*-image*.tgz` gone, and the dump structurally readable — `dbname: core`, **112 TOC entries**. Then `config/backup-core-db.sh` by hand, then `config/restore-drill.sh` with no argument: **PASS, exit 0**, `0001_init.sql sha256:432e324975c3 already applied`, **six `DO` blocks** — Task 13's S1/S3/S4/S5/S7 and GRANTS assertions executing against a real restored dump for the first time, none raising — 11 base tables, `schema_migrations` 1, scratch database dropped. **Proved non-vacuous** per Task 15 item 4: an empty dump through the same drill gives `only 0 base tables restored; expected at least 11` and exit 1, leaving the scratch database in place with its inspect/drop hints. That is the message that had to fire — **not** `pending migration(s) never applied` — which is the whole reason the table count runs ahead of the ledger check. Cleaned up; only `core` remains; `/health/ready` 200 throughout. Ticked four of the six pre-cutover boxes in `infra/README.md`; the two left open are Scenario A's rehearsal and the crontab, which is Task 24's. **Found by doing:** feeding the drill script over ssh stdin truncated it silently at the first `docker compose exec -T` — the exact trap Task 19 documents, met from the operator's side rather than the deploy's. | — | (this commit) | Task 20 |
 | 2026-08-03 | **Task 20.** The nginx block: remove last run's `.bak` files, snapshot **both** installed files, install both, `nginx -t`, roll **both** back and re-run `nginx -t` to prove the box is left loadable, and only then reload. Order is the whole property — install-then-validate leaves a broken file latent on disk while the running nginx keeps its in-memory config, and the box goes down days later when certbot's renew hook or a reboot reloads it, taking `order` and `epaper-hub` with it, nowhere near a deploy. **One plan defect found and fixed first** — see the callout on Task 20: eighth occurrence of the signature shape. Four mutations run: dropping the stale-`.bak` removal, rolling back only `api.conf`, reloading before validating, and writing the SIGPIPE-prone `nginx -T \| grep` form as code — all four red. The scoping fix was checked **both ways**: that form as code is red, the same string in a comment is green. Pre-flight on the box before pushing, because this is the deploy that touches production nginx: `sudo -n install`, `sudo -n nginx -t` and `sudo -n systemctl reload nginx` all succeed with no password prompt (a prompt hangs the ssh heredoc forever), and `real_ip_header\|set_real_ip_from\|real_ip_recursive` in the loaded config counts **0** — either directive rewrites `$remote_addr` before `$proxy_add_x_forwarded_for` is evaluated and voids the hop count entirely. Also verified the two grep patterns match the real conf files before they could reload nginx and *then* abort; `X-Forwarded-For` is column-aligned with three spaces, exactly the case the plan's whitespace-tolerant rewrite exists for. 10 tests, `# fail 0`, YAML 14 steps. | **19/30** | (this commit) | Task 21 |
 | 2026-08-03 | **`api.yeyintlwin.com` IS SERVING. Task 20 deployed and verified on the box** (run `30791314160`). Both files installed root-owned 644, `nginx -t` successful, and through the real TLS chain from loopback `/health` is **200** while `/health/ready` is **404** — the split Task 7 designed. `limit_req_zone core_*` count **3** as the runbook predicts, `real_ip_header\|set_real_ip_from\|real_ip_recursive` count **0**, the check that matters most. All eight pre-existing vhosts still answer; `myanmyanlearn` returns 502 but **that predates this deploy** — its container has been `Exited (137)` for nine days and the nginx error log carries `connect() failed (111)` from external clients at 02:09 and 02:15 today, hours before the 06:49 install. No `.bak` files were left, which is correct for a first install: there was nothing to snapshot, so the rollback branch's `rm -f` arm is the live one. **RUNBOOK DEFECT FOUND BY MEASURING: `infra/README.md` said the X-Forwarded-For count is 1. It is 9.** `$proxy_add_x_forwarded_for` is what *every* reverse-proxy vhost sets, and eight others share this instance. Counting the whole dump answers a question about the box, not about core-api. Replaced with a per-file attribution that requires exactly one from `core-api-proxy.conf` and says the total is meaningless on its own — an operator following the old line would have seen 9, concluded the install was wrong, and gone hunting. | — | (this commit) | Task 21 |
+| 2026-08-03 | **Task 21.** The 90 s gate (45 × 2 s) on loopback `/health/ready`, then the `--resolve` curl through `https://api.yeyintlwin.com/health` — which proves what `nginx -T` cannot: that a server block actually matches that name, that the certificate serves, and that the request reaches core-api. Failure prints `core-api` and `core-db` logs, because otherwise the only artefact of a bad deploy is a red tick. The no-auto-rollback statement and its one-line recipe are carried in the file on purpose: by the time the gate runs the migration has applied, so rolling the image back leaves the schema **ahead** of the image, which the runner treats as a warning — the old container starts and looks healthy against a schema it does not know. **No plan defect in this task's text** — the first since Task 11 — and the reason is visible: it contains no `doesNotMatch`, so the shape had nothing to attach to. Added one guard the task did not ask for: the rollback recipe must stay a comment, since run as code it would pin production to a literal image tag named `<previous-sha>`. Four mutations, all red: gating on `/health` instead of `/health/ready`, dropping the TLS-chain curl, dropping the diagnostics, and uncommenting the recipe. Both gates were run against the box before pushing, because a gate that fails runs *after* the migration has applied: `/health/ready` and the `--resolve` curl each returned `{"ok":true,"app":"core-api"}`, exit 0. 11 tests, `# fail 0`, YAML 14 steps. | **20/30** | (this commit) | Task 22 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5552,7 +5553,7 @@ The gate carries the no-auto-rollback statement as a comment, because by the tim
 - Modify: `.github/workflows/deploy.yml` (the `Deploy on Lightsail` heredoc)
 - Test: `apps/core-api/test/deploy-config.test.js` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the end of `apps/core-api/test/deploy-config.test.js`:
 
@@ -5591,13 +5592,13 @@ test("deploy heredoc gates on /health/ready and then on the real TLS chain", () 
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test --test-name-pattern="gates on /health/ready" apps/core-api/test/deploy-config.test.js`
 
 Expected: FAIL with ``AssertionError [ERR_ASSERTION]: The input did not match the regular expression /while \[ "\$i" -lt 45 \]; do/.``
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, replace the single line that currently reads:
 
@@ -5632,7 +5633,7 @@ with:
           #   CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test --test-name-pattern="gates on /health/ready" apps/core-api/test/deploy-config.test.js`  Expected: PASS (1 test)
 
@@ -5649,7 +5650,7 @@ Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0
 3. Prove the 60 s bounded lock retry recovers an orphaned migration: while core-api holds the advisory lock, `docker kill core-api`, then re-run the deploy.
    Expected: the deploy succeeds inside the 90 s gate with no manual `pg_terminate_backend` — which is what `tcp_keepalives_idle=20` on core-db buys.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

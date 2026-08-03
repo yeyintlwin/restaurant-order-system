@@ -617,3 +617,44 @@ test("deploy heredoc installs nginx with a two-file snapshot, validate and rollb
   assert.match(apiConf, /limit_req_zone +[^;]*zone=core_login/);
   assert.match(proxyConf, /proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for/);
 });
+
+test("deploy heredoc gates on /health/ready and then on the real TLS chain", () => {
+  const workflow = workflowText();
+
+  // 45 iterations x 2 s = the 90 s the spec settles on.
+  assert.match(workflow, /while \[ "\$i" -lt 45 \]; do/);
+
+  // The DEPLOY gate reads /health/ready; the container healthcheck deliberately reads
+  // /health, because nothing depends on core-api and an unhealthy mark would restart
+  // nothing.
+  assert.match(workflow, /curl -fsS -m 3 http:\/\/127\.0\.0\.1:3200\/health\/ready/);
+
+  // A failed gate must print why, or the only artefact of a bad deploy is a red tick.
+  assert.match(workflow, /docker compose logs --tail 200 core-api/);
+  assert.match(workflow, /docker compose logs --tail 50 core-db/);
+
+  // nginx -T proves the DIRECTIVES are loaded. It does not prove a server block matches
+  // api.yeyintlwin.com, that the certificate serves, or that the request reaches
+  // core-api.
+  assert.match(
+    workflow,
+    /curl -fsS -m 5 --resolve api\.yeyintlwin\.com:443:127\.0\.0\.1 https:\/\/api\.yeyintlwin\.com\/health >/,
+  );
+
+  const upAt = workflow.indexOf("docker compose up -d --no-build");
+  const gateAt = workflow.indexOf("http://127.0.0.1:3200/health/ready");
+  assert.ok(upAt > -1 && gateAt > upAt, "the health gate must run after docker compose up");
+
+  // The gate does not roll back, and the runbook line is carried in the file on purpose
+  // so nobody has to find it under pressure.
+  assert.match(workflow, /THIS GATE DOES NOT AUTO-ROLL-BACK/);
+  assert.match(workflow, /CORE_API_IMAGE=core-api:<previous-sha> docker compose up -d core-api/);
+
+  // The rollback recipe is a COMMENT, and must stay one: run as code it would pin
+  // production to a literal image tag named "<previous-sha>".
+  for (const line of workflow.split("\n")) {
+    if (line.includes("core-api:<previous-sha>")) {
+      assert.match(line.trim(), /^#/, `the rollback recipe must stay commented: ${line.trim()}`);
+    }
+  }
+});
