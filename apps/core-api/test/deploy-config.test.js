@@ -177,9 +177,29 @@ test("core-api joins both networks, publishes only on loopback, and health-check
   // /health, NOT /health/ready. Nothing depends_on core-api, so an unhealthy mark
   // would restart nothing, and a transient DB blip should not produce a misleading
   // container status. The DEPLOY GATE is what calls /health/ready.
-  assert.match(text, /wget --no-verbose --tries=1 --spider http:\/\/localhost:3200\/health \|\| exit 1/);
-  assert.doesNotMatch(text, /localhost:3200\/health\/ready/);
+  assert.match(text, /wget --no-verbose --tries=1 --spider http:\/\/127\.0\.0\.1:3200\/health \|\| exit 1/);
+  assert.doesNotMatch(text, /127\.0\.0\.1:3200\/health\/ready/);
   assert.match(text, /^      start_period: 60s$/m);
+
+  // The probe must dial 127.0.0.1, never the hostname form: /etc/hosts in this image
+  // maps that name to ::1 ONLY, and core-api sets HOST=0.0.0.0, which is IPv4-only.
+  // Shipped as the hostname form, this probe dialled [::1]:3200 and was refused on
+  // every run -- unhealthy from the first deploy while /health answered 200 throughout.
+  //
+  // Scoped twice over. To the line that EXECUTES, because the compose file explains
+  // this trap in a comment directly above the directive and a document-wide
+  // doesNotMatch would be red against a CORRECT file -- this plan's signature defect.
+  // And to core-api's own probe (:3200), because epaper-hub's keeps the hostname form
+  // on purpose: it binds dual-stack, and its literal is pinned by the hub area's suite.
+  const coreApiProbe = text
+    .split("\n")
+    .filter((line) => line.includes("--spider") && line.includes(":3200") && !line.trim().startsWith("#"));
+  assert.equal(coreApiProbe.length, 1, "expected exactly one core-api wget --spider probe");
+  assert.doesNotMatch(
+    coreApiProbe[0],
+    /:\/\/localhost:/,
+    `core-api's healthcheck dials ::1, which HOST=0.0.0.0 never answers: ${coreApiProbe[0].trim()}`
+  );
 
   assert.match(text, /^    mem_limit: 512m$/m);
 });

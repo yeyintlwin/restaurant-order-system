@@ -113,7 +113,15 @@ services:
       # /health, NOT /health/ready. Nothing depends_on core-api, so an unhealthy mark
       # would restart nothing, and a transient database blip should not produce a
       # misleading container status. The DEPLOY GATE is what calls /health/ready.
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3200/health || exit 1"]
+      #
+      # 127.0.0.1, NEVER the hostname form: /etc/hosts in this image maps that name to
+      # ::1 ONLY, and this service sets HOST=0.0.0.0, which is IPv4-only. The probe
+      # therefore dialled [::1]:3200 and was refused on every run -- the container sat
+      # unhealthy from its first deploy while /health answered 200 the whole time.
+      # epaper-hub survives the same form only because it sets no HOST and Node binds
+      # dual-stack; that is luck, not a pattern to copy. Same class as core-db's
+      # `-h 127.0.0.1` above.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3200/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -144,6 +152,13 @@ services:
     volumes:
       - epaper-data:/data
     healthcheck:
+      # LEFT AS THE HOSTNAME FORM DELIBERATELY, and it is not the same as core-api's.
+      # This service binds dual-stack (`:::3000`), so ::1 answers and the probe passes --
+      # verified on the box, along with 127.0.0.1 answering on the same socket. It works
+      # because this service sets no HOST; set one to 0.0.0.0 and it breaks exactly the
+      # way core-api's did, silently. Not changed here because
+      # apps/epaper-hub/test/deploy-config.test.js:63 pins this literal and that suite
+      # belongs to the hub area, not to Plan 5 (see this plan's File ownership table).
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
