@@ -21,9 +21,13 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 16 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
-way.** The next thing that can actually be executed is **Task 17** (the CI Postgres service
-container).
+**Status: 17 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
+both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
+MANUAL VERIFICATION.
+
+**CI now runs the core-api suite for real.** From Task 17 onward a push runs 273 tests against a
+`postgres:16-alpine` service container before anything is built or deployed.
 
 **Two MANUAL VERIFICATION blocks are open and neither can be closed from the repository:**
 
@@ -62,7 +66,8 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | 2026-08-03 | **Task 14.** `infra/README.md`'s `## core-db backups` section: what the backup does and does **not** protect as a four-row table, the drill's service-hours warning, Scenario A (stop the writer, prove the dump, dump the broken state, three separate psql invocations, restore without `--no-owner`, verify before starting), Scenario B, and the password-rotation ordering. RED reproduced exactly as written; 11 tests green, plus 14 in the hub's `deploy-config.test.js` and 6 in core-api's = 31, `# fail 0`. **Two plan defects found and fixed first** — see the callout on Task 14: prose assertions written with a literal space against a hard-wrapped markdown file. Both mutation-tested after the fix. Verified before appending that the new `docker compose` lines satisfy Task 4's live per-line `CORE_ENV_FILE`/`EPAPER_ENV_FILE` rule, and that no line carries both `pg_restore` and `--no-owner`. | **14/30** | `1da334a` | Task 15 |
 | 2026-08-03 | **Task 15 — Part 3's repository work complete.** The pre-cutover checklist in `infra/README.md`, six host-state boxes in the order that matters: the drill needs a nightly, and deploy #1's pre-deploy dump is a dump of an empty `core` that `migrate.js --check` correctly rejects. 12 + 14 + 6 = 32 tests, `# fail 0`, exactly the count the task predicted. **The checklist ships UNTICKED and that is the point** — Task 15's MANUAL VERIFICATION has NOT been performed: it needs `config/backup-core-db.sh` and `config/restore-drill.sh` to be on the box, which is Task 18's scp. Part 3 is not finished until those boxes are ticked in a commit. | **15/30** | `f644f6e` | Task 16 |
 | 2026-08-03 | **Task 13 hardening, found by mutation-testing the work already committed.** Two of Task 13's assertions were satisfied by the drill's own comments rather than its SQL — killing the S4 `users.password_hash` branch and the S5 trigger predicate both left the suite green. Fifth and sixth occurrence of this plan's signature shape, and the first two in the `includes`/`match` direction rather than `doesNotMatch`; see the callout on Task 13. Both now pinned to the executing SQL and both mutations re-run: each turns exactly one test red. **Method note:** the earlier occurrences were all caught by reading; these two were only caught by deliberately breaking the drill and watching the suite. A green suite is evidence about the assertions, not about the file. | — | `cffdb73` | Task 16 |
-| 2026-08-03 | **Task 16 — Part 4 opens.** The workflow-level `concurrency: deploy-production` with `cancel-in-progress: false`, `*.yml text eol=lf` in `.gitattributes`, and the C12 assertion that pins it. Both REDs reproduced exactly as written. GREEN, and the YAML parses to **12 steps** — the count the task predicted — with `concurrency.group` and `cancel-in-progress is False` asserted through the parser rather than only by regex, because a regex cannot see an indentation slip and an invalid workflow makes GitHub run nothing at all: no tests, no deploy, no red X. `git status` shows exactly the four files the task touched, so the new attribute renormalised nothing (this clone is `core.autocrlf=false` and already LF). 52 tests across the four affected suites, `# fail 0`. | **16/30** | (this commit) | Task 17 |
+| 2026-08-03 | **Task 16 — Part 4 opens.** The workflow-level `concurrency: deploy-production` with `cancel-in-progress: false`, `*.yml text eol=lf` in `.gitattributes`, and the C12 assertion that pins it. Both REDs reproduced exactly as written. GREEN, and the YAML parses to **12 steps** — the count the task predicted — with `concurrency.group` and `cancel-in-progress is False` asserted through the parser rather than only by regex, because a regex cannot see an indentation slip and an invalid workflow makes GitHub run nothing at all: no tests, no deploy, no red X. `git status` shows exactly the four files the task touched, so the new attribute renormalised nothing (this clone is `core.autocrlf=false` and already LF). 52 tests across the four affected suites, `# fail 0`. | **16/30** | `f4e8195` | Task 17 |
+| 2026-08-03 | **Task 17.** The `postgres:16-alpine` service container in the existing `deploy` job, the two core-api steps, and the new `apps/core-api/test/ci-contract.test.js`. RED at `# fail 2` (tests 1 and 3) exactly as the task predicted. YAML parses in its full standing form: `concurrency`, `services.postgres`, **14 steps**. **Step 4 executed for real, not deferred** — a `postgres:16-alpine` container on 127.0.0.1:5432 and the whole suite run as the superuser maintenance role: **273 tests, 272 pass, 0 fail, 1 skip**, the first time these have ever run as `postgres` on 5432 rather than `core_api_owner` on 5433. Confirmed the pass condition rather than the skip path, per suite: schema-invariants 13, migrate 22, db-index 29, db-health 13, fixtures-two-tenant 13, testing-database-clone 8, scripts 7 — all `skipped 0`. Hatch still works: `CORE_API_SKIP_DB_TESTS=1` gives `# fail 0` with 17 skips, and `ci-contract` is reported RUN, not skipped. **Spec §12 BREAK 7 verified verbatim:** deleting the `services: postgres:` block turns ONLY `ci-contract.test.js` red — deploy-config, source-structure, backup-restore and config all stay `# fail 0`. | **17/30** | (this commit) | Task 18 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -4692,7 +4697,7 @@ Step 4 reproduces the CI database **locally, before the first push**. This is th
 - Create: `apps/core-api/test/ci-contract.test.js`
 - Test: `apps/core-api/test/ci-contract.test.js` (the file is both)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/ci-contract.test.js`:
 
@@ -4763,13 +4768,13 @@ test("the core-api test step runs after the other suites and before the image bu
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `node --test apps/core-api/test/ci-contract.test.js`
 
 Expected: FAIL with `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^    services:$/m.` and `# fail 3` — all three fail, because there is no `services:` block, no `CORE_API_SKIP_DB_TESTS` string either way is irrelevant to test 2 (it passes) … in practice `# fail 2`, tests 1 and 3, since `npm --prefix apps/core-api test` is absent so `indexOf` returns `-1`. Either way the run is red and test 1 is the first failure.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 In `.github/workflows/deploy.yml`, replace the two lines that currently read:
 
@@ -4827,7 +4832,7 @@ with:
           CORE_API_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 ```
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `node --test apps/core-api/test/ci-contract.test.js`  Expected: PASS (3 tests — `# pass 3`, `# fail 0`)
 
@@ -4855,7 +4860,7 @@ Then prove the skip hatch still works and this new file is unaffected by it:
 
 Run: `CORE_API_SKIP_DB_TESTS=1 npm --prefix apps/core-api test` (PowerShell: `$env:CORE_API_SKIP_DB_TESTS="1"; npm --prefix apps/core-api test`)  Expected: `# fail 0` with a nonzero skip count, and `ci-contract` reported as **run**, not skipped
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml apps/core-api/test/ci-contract.test.js docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md

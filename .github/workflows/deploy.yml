@@ -16,6 +16,26 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # apps/core-api's suite clones a template database per test file, so it cannot run
+    # at all without a real Postgres in the job. This goes in the EXISTING deploy job,
+    # not a separate test.yml: deploy.yml is both the test gate and the deployer, and
+    # splitting them lets a push deploy without tests unless a needs: edge is wired
+    # (spec 8.9).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # -h 127.0.0.1 for the same reason as production: during initdb the entrypoint
+        # runs a temporary server on the unix socket only, so a socket pg_isready
+        # reports healthy while TCP is still refused.
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +54,16 @@ jobs:
       - run: npm --prefix apps/customer-order ci
 
       - run: npm --prefix apps/customer-order test
+
+      - run: npm --prefix apps/core-api ci
+
+      - run: npm --prefix apps/core-api test
+        env:
+          # The MAINTENANCE database the harness connects to in order to create the
+          # template and the per-file clones -- never the database under test. CI runs
+          # as `postgres`, which config.js permits because the core_api_owner username
+          # rule is production-only.
+          CORE_API_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 
       - name: Build images
         run: |
