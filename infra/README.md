@@ -430,12 +430,12 @@ file was rotated and the cluster was not. Go back to step 1.
 Tick these on the box, in this order. They are host state, not repository state, so nothing in
 CI can check them for you.
 
-- [ ] `~/core-api.env` exists at mode 600 with `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL` and
+- [x] `~/core-api.env` exists at mode 600 with `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL` and
       `DATABASE_URL`, and `~/restaurant-order-system.env` is untouched
-- [ ] `~/backups` exists at mode 700
-- [ ] `config/backup-core-db.sh` has been run by hand once and left one `nightly-*.dump` at mode
+- [x] `~/backups` exists at mode 700
+- [x] `config/backup-core-db.sh` has been run by hand once and left one `nightly-*.dump` at mode
       600, a `LAST_OK`, and no `*.part`
-- [ ] **`config/restore-drill.sh` has been run by hand once, with NO argument — against that
+- [x] **`config/restore-drill.sh` has been run by hand once, with NO argument — against that
       nightly — and exited 0.** Not against deploy #1's `pre-deploy-*.dump`: that is a dump of an
       empty `core` taken before the service had ever migrated, and the drill will correctly
       reject it. This work is not finished until this box is ticked. Do not skip it because it
