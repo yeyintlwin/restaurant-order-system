@@ -31,9 +31,26 @@ MANUAL VERIFICATION.
 
 **Two MANUAL VERIFICATION blocks are open and neither can be closed from the repository:**
 
-- **Task 10** — install and prove the nginx proxy. Blocked on the DNS A record for
-  `api.yeyintlwin.com` and `sudo certbot certonly --nginx -d api.yeyintlwin.com`; `nginx -t`
-  fails without the certificate.
+- **Task 10** — install and prove the nginx proxy. **DNS is DONE as of 2026-08-03** and verified
+  from off the box: `api.yeyintlwin.com → 57.180.62.148`, the same address
+  `order.yeyintlwin.com` and `epaper-hub.yeyintlwin.com` already resolve to. **The only
+  remaining blocker is the certificate** — `sudo certbot certonly --nginx -d
+  api.yeyintlwin.com` on the box; `nginx -t` fails without it. Preconditions for the HTTP-01
+  challenge were probed from outside and all hold:
+  - `http://api.yeyintlwin.com/` answers **404**, not a refusal or a timeout — port 80 is open
+    and nginx is reachable; 404 is the default vhost, because no server block matches this name
+    yet. That block is Task 20's.
+  - `http://api.yeyintlwin.com/.well-known/acme-challenge/<token>` answers 404 the same way, so
+    the challenge path reaches nginx.
+  - TLS on :443 for this SNI currently serves `CN=airpaste-api.yeyintlwin.com` — the default
+    certificate answering an unknown SNI. Independent confirmation of the 2026-07-31 recon that
+    seven vhosts share `0.0.0.0:443`, and confirmation that no certificate exists for
+    `api.yeyintlwin.com` yet.
+
+  Note for whoever runs it: `certonly` is deliberate — it obtains the certificate and does
+  **not** write it into any vhost. The `--nginx` authenticator edits the configuration only for
+  the duration of the challenge and reverts it, which is what keeps the other seven vhosts out
+  of the blast radius.
 - **Task 15** — run `config/backup-core-db.sh` and then `config/restore-drill.sh` by hand on the
   box. Blocked on Task 18 (`workflow` handoff (a)), which is what scp's both scripts into
   `config/`. **Part 3 is not finished until that box in `infra/README.md` is ticked in a
