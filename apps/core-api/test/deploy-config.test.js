@@ -718,3 +718,31 @@ test("deploy heredoc probes the login path before it exhausts the limit_req buck
     );
   }
 });
+
+test("deploy heredoc makes a silent backup failure a red build", () => {
+  const workflow = workflowText();
+
+  // A truncated dump never replaces a good one and never counts toward retention; the
+  // leftovers are swept here so they cannot accumulate.
+  assert.match(workflow, /rm -f "\$HOME"\/backups\/\*\.part/);
+
+  // LAST_OK means "a dump completed AND passed pg_restore --list" -- checking the
+  // newest nightly-*.dump instead would be satisfied by a truncated file.
+  assert.match(workflow, /find "\$HOME\/backups\/LAST_OK" -mtime -2 2>\/dev\/null \| grep -q \./);
+  assert.match(workflow, /no successful core-db nightly in 48h/);
+
+  // Gated on the BOOTSTRAP MARKER, not on LAST_OK's existence. `&& [ -f LAST_OK ]`
+  // makes the one failure this gate exists to catch -- the nightly never having
+  // succeeded even once -- silent forever, because a missing LAST_OK simply skips the
+  // check. CRON_INSTALLED_AT is written once, when the deploy first installs the
+  // crontab, so the gate stays quiet only while the nightly has legitimately had no
+  // chance to run.
+  assert.match(workflow, /find "\$HOME\/backups\/CRON_INSTALLED_AT" -mtime -2/);
+  assert.doesNotMatch(workflow, /&& \[ -f "\$HOME\/backups\/LAST_OK" \]/);
+
+  // The disk gate lives at the TOP of the heredoc, not here: in this position it fires
+  // after the migration has already applied.
+  const dfAt = workflow.indexOf('df -P "$HOME"');
+  const sweepAt = workflow.indexOf('rm -f "$HOME"/backups/*.part');
+  assert.ok(dfAt > -1 && sweepAt > dfAt, "the disk gate must stay above the backup-health block");
+});

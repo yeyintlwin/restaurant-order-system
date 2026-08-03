@@ -308,5 +308,26 @@ jobs:
             --data-binary '{"email":"deploy-probe@invalid.test","password":"x"}' </dev/null; done)
           echo "$codes" | grep -q 429 || { echo 'nginx limit_req is not firing on the login route'; exit 1; }
 
+          # ---- 6. BACKUP HEALTH: make silence a red build ----
+          # The nightly's ONLY failure signal is LAST_OK. `set -eu` exits it early, its
+          # output goes to a log nobody reads, and cron's MAILTO goes to a local mailbox
+          # on a box with no MTA -- so the deploy is where that silence is converted into
+          # a red build. LAST_OK means "a dump completed AND passed pg_restore --list";
+          # checking the newest nightly-*.dump instead would be satisfied by a truncated
+          # file. The 85% disk gate that spec 9.5 puts in this block is at the TOP of the
+          # heredoc instead, so a full disk aborts before anything on the box changes.
+          rm -f "$HOME"/backups/*.part
+          # Gated on the BOOTSTRAP MARKER, never on the existence of LAST_OK. A missing
+          # LAST_OK is precisely the failure worth catching -- the nightly has never once
+          # succeeded -- and gating on its existence makes that case skip the check and
+          # stay green forever. CRON_INSTALLED_AT is written once, by the cron block
+          # below, so this gate is quiet only for the first 48 hours after cron was
+          # first installed, when the nightly has legitimately had no chance to run.
+          if [ -f "$HOME/backups/CRON_INSTALLED_AT" ] \
+             && ! find "$HOME/backups/CRON_INSTALLED_AT" -mtime -2 2>/dev/null | grep -q .; then
+            find "$HOME/backups/LAST_OK" -mtime -2 2>/dev/null | grep -q . \
+              || { echo 'no successful core-db nightly in 48h'; exit 1; }
+          fi
+
           docker image prune -f
           EOF
