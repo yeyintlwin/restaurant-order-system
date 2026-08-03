@@ -277,7 +277,11 @@ test("the drill mirrors S1, S3, S4, S5 and S7 with the same exception lists", ()
   const textHashes = arrayLiteral(invariants, "TEXT_HASH_EXCEPTIONS");
   assert.equal(textHashes.length, 1, "S4's exception list changed shape");
   for (const column of textHashes) {
-    assert.ok(script.includes(column), `S4 exception ${column} is missing from the drill`);
+    // QUOTED, like the S1, S3 and S7 loops around it. The drill names users.password_hash
+    // in a comment as well as in the SQL, so a bare includes() is satisfied by the
+    // comment: replacing the whole executable branch with `CASE WHEN false` left this
+    // green. The comment writes the name unquoted; only the SQL literal is the rule.
+    assert.ok(script.includes(`'${column}'`), `S4 exception ${column} is missing from the drill`);
   }
 
   const plaintext = arrayLiteral(invariants, "PLAINTEXT_COLUMN_NAMES");
@@ -286,7 +290,11 @@ test("the drill mirrors S1, S3, S4, S5 and S7 with the same exception lists", ()
     assert.ok(script.includes(`'${column}'`), `S7 name ${column} is missing from the drill`);
   }
 
-  assert.match(script, /set_updated_at\(\)/);
+  // The WHOLE executable predicate, not the bare function name. S5's comment says
+  // "BEFORE UPDATE set_updated_at() trigger", so /set_updated_at\(\)/ matched the
+  // comment: replacing the executable line with `AND true` left this green, and S5 is
+  // the invariant that catches a restore whose triggers did not come back.
+  assert.match(script, /pg_get_triggerdef\(t\.oid\) LIKE '%set_updated_at\(\)%'/);
   for (const invariant of ["S1:", "S3:", "S4:", "S5:", "S7:"]) {
     assert.ok(script.includes(invariant), `the drill raises no ${invariant} message`);
   }

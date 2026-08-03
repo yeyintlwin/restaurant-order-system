@@ -60,7 +60,8 @@ ticked and its commit exists — a half-applied task recorded as done is worse t
 | 2026-07-31 | **Tasks 11 and 12** — `infra/backup-core-db.sh` (the nightly, `.part` discipline, `LAST_OK` written only after a full decompressing read) and `infra/restore-drill.sh` (scratch restore, free-space gate, table-count check ahead of the ledger check, ledger verified by the production runner in `--check` mode). Row recorded retroactively on 2026-08-03: these two sessions ticked their checkboxes and committed, but never appended here, so the status header read `9 of 30` for three days while the work was on `main`. | **12/30** | `408849c`, `93adc95` | Task 13 |
 | 2026-08-03 | **Task 13.** The schema invariants mirrored into the drill as raising SQL — S1, S3, S4, S5, S7 plus the owner/app GRANT split the node suite deliberately cannot assert — with a source-text cross-check that goes red when the two exception lists drift. RED reproduced exactly as written (`S1 exception audit_events is missing from the drill`); GREEN at 8 tests; `sh -n` parses; 0 CR bytes. **Defect found first, in Task 12's OUTPUT rather than its text:** `git ls-files -s` reported `infra/restore-drill.sh` at **100644**, though `93adc95`'s own message claims "Committed 100755" — Task 12 Steps 3 and 5 both say `git add --chmod=+x` and neither ran. Nothing caught it because the mode assertion in `backup-restore.test.js` names only `backup-core-db.sh`. Fixed with `git add --chmod=+x`; the missing assertion is Task 14's to add. | **13/30** | `5fadf3e` | Task 14 |
 | 2026-08-03 | **Task 14.** `infra/README.md`'s `## core-db backups` section: what the backup does and does **not** protect as a four-row table, the drill's service-hours warning, Scenario A (stop the writer, prove the dump, dump the broken state, three separate psql invocations, restore without `--no-owner`, verify before starting), Scenario B, and the password-rotation ordering. RED reproduced exactly as written; 11 tests green, plus 14 in the hub's `deploy-config.test.js` and 6 in core-api's = 31, `# fail 0`. **Two plan defects found and fixed first** — see the callout on Task 14: prose assertions written with a literal space against a hard-wrapped markdown file. Both mutation-tested after the fix. Verified before appending that the new `docker compose` lines satisfy Task 4's live per-line `CORE_ENV_FILE`/`EPAPER_ENV_FILE` rule, and that no line carries both `pg_restore` and `--no-owner`. | **14/30** | `1da334a` | Task 15 |
-| 2026-08-03 | **Task 15 — Part 3's repository work complete.** The pre-cutover checklist in `infra/README.md`, six host-state boxes in the order that matters: the drill needs a nightly, and deploy #1's pre-deploy dump is a dump of an empty `core` that `migrate.js --check` correctly rejects. 12 + 14 + 6 = 32 tests, `# fail 0`, exactly the count the task predicted. **The checklist ships UNTICKED and that is the point** — Task 15's MANUAL VERIFICATION has NOT been performed: it needs `config/backup-core-db.sh` and `config/restore-drill.sh` to be on the box, which is Task 18's scp. Part 3 is not finished until those boxes are ticked in a commit. | **15/30** | (this commit) | Task 16 |
+| 2026-08-03 | **Task 15 — Part 3's repository work complete.** The pre-cutover checklist in `infra/README.md`, six host-state boxes in the order that matters: the drill needs a nightly, and deploy #1's pre-deploy dump is a dump of an empty `core` that `migrate.js --check` correctly rejects. 12 + 14 + 6 = 32 tests, `# fail 0`, exactly the count the task predicted. **The checklist ships UNTICKED and that is the point** — Task 15's MANUAL VERIFICATION has NOT been performed: it needs `config/backup-core-db.sh` and `config/restore-drill.sh` to be on the box, which is Task 18's scp. Part 3 is not finished until those boxes are ticked in a commit. | **15/30** | `f644f6e` | Task 16 |
+| 2026-08-03 | **Task 13 hardening, found by mutation-testing the work already committed.** Two of Task 13's assertions were satisfied by the drill's own comments rather than its SQL — killing the S4 `users.password_hash` branch and the S5 trigger predicate both left the suite green. Fifth and sixth occurrence of this plan's signature shape, and the first two in the `includes`/`match` direction rather than `doesNotMatch`; see the callout on Task 13. Both now pinned to the executing SQL and both mutations re-run: each turns exactly one test red. **Method note:** the earlier occurrences were all caught by reading; these two were only caught by deliberately breaking the drill and watching the suite. A green suite is evidence about the assertions, not about the file. | — | (this commit) | Task 16 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -3693,6 +3694,31 @@ what a `--no-owner` restore silently collapses.
 Not mirrored, on purpose: **S6** is what `migrate.js --check` already did in step 6 with the
 runner's own digests, and **S2/S2b**'s composite-FK rule carries a thirteen-entry exception list
 that would become a second source of truth and rot.
+
+> **DEFECT FOUND AFTER EXECUTION 2026-08-03, fixed in the text below — and it is this plan's
+> signature shape for the FIFTH and SIXTH time.** Two of Step 1's assertions were satisfied by
+> the drill's own EXPLANATORY COMMENTS rather than by its SQL, so they protected nothing:
+>
+> - `assert.ok(script.includes(column))` for S4 — `column` is `users.password_hash`, and the
+>   drill names it in a comment (`-- users.password_hash, which stores a PHC-style scrypt
+>   string by design`) as well as in the SQL. Replacing the entire executable branch with
+>   `WHERE CASE WHEN false` left the suite **green**.
+> - `assert.match(script, /set_updated_at\(\)/)` for S5 — the drill's comment reads
+>   "BEFORE UPDATE `set_updated_at()` trigger". Replacing the executable predicate with
+>   `AND true` left the suite **green**.
+>
+> Both are now pinned to the SQL: `` script.includes(`'${column}'`) `` (quoted literal — the
+> comment writes the name unquoted) and the whole
+> `pg_get_triggerdef(t.oid) LIKE '%set_updated_at()%'` predicate. Both mutations were re-run
+> after the fix and each turns exactly one test red.
+>
+> The earlier four occurrences were all `doesNotMatch` assertions forbidding a string the
+> implementation then explained in a comment. **These two are the mirror image — `includes`/
+> `match` assertions REQUIRING a string the comment already supplies — and the existing rule
+> did not cover them.** The rule generalises: over a self-documenting file, an assertion in
+> EITHER direction must be pinned to the lines that execute. Every assertion in this task was
+> written to a drill that documents itself in thirty lines of comments; four of the six loops
+> already used the quoted form, and the two that did not were the two that broke.
 
 **Files:**
 - Modify: `infra/restore-drill.sh` (replace the step-7 placeholder)
