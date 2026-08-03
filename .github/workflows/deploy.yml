@@ -312,10 +312,13 @@ jobs:
           # The nightly's ONLY failure signal is LAST_OK. `set -eu` exits it early, its
           # output goes to a log nobody reads, and cron's MAILTO goes to a local mailbox
           # on a box with no MTA -- so the deploy is where that silence is converted into
-          # a red build. LAST_OK means "a dump completed AND passed pg_restore --list";
-          # checking the newest nightly-*.dump instead would be satisfied by a truncated
-          # file. The 85% disk gate that spec 9.5 puts in this block is at the TOP of the
-          # heredoc instead, so a full disk aborts before anything on the box changes.
+          # a red build. LAST_OK means "a dump completed AND WAS READ END TO END" -- the
+          # nightly touches it only after `pg_restore --data-only -f /dev/null`, not after
+          # `--list`, because -Fc writes the table of contents first and a dump truncated
+          # at 80% by a full disk passes --list. Checking the newest nightly-*.dump
+          # instead of LAST_OK would be satisfied by exactly that truncated file. The 85%
+          # disk gate spec 9.5 puts in this block is at the TOP of the heredoc instead, so
+          # a full disk aborts before anything on the box changes.
           rm -f "$HOME"/backups/*.part
           # Gated on the BOOTSTRAP MARKER, never on the existence of LAST_OK. A missing
           # LAST_OK is precisely the failure worth catching -- the nightly has never once

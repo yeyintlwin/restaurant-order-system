@@ -116,6 +116,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **Task 25 — deploy.yml is complete.** The `if: always()` artifact steps: read `LAST_PRE_DEPLOY`, refuse a dump that does not belong to this commit, scp exactly that file, upload it with a 14-day window. The **marker is the only evidence, and the volume is not** — `docker volume create` runs unconditionally above block 1's gate, so the volume exists after the first *attempt* whether or not a dump was ever written. The sha mismatch hard-fails **only when the deploy itself succeeded**: on a failed run an older sha is the expected reading, and a second red X buries the real failure. Guarded on `~/.ssh/lightsail.pem` existing, because `if: always()` also runs for a job that died before `Install SSH key`. **Two plan defects found and fixed first** — see the callout on Task 25 — one of which the audit's own suggested fix would not have closed: `\s+` is enough for hard-wrapped markdown but **not** for a wrapped YAML comment, where the join is `"\n      # "` and `#` is not whitespace. Three mutations, all red: deleting `retention-days`, dropping the ssh-key guard, and hard-failing on a stale sha regardless of job status. **Area gate, run as the task demands — with a real Postgres and NOT `CORE_API_SKIP_DB_TESTS`, because the skip variable would turn the database-backed suites into a green no-op on the very run that ships the pipeline: 281 tests, 280 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 across the other three workspaces.** YAML now parses to **16 steps** and the ssh heredoc is still terminated — a `run: \|` block that swallowed its `EOF` is valid YAML and a dead deploy. | **24/30** | (this commit) | Task 26 |
 | 2026-08-03 | **Task 26 — the Plan 1 seam is closed.** `apps/core-api/testing/compose.js` reads the real repo-root `docker-compose.yml`; `config.test.js` no longer carries a copy of the `environment:` block. Plan 1 Task 8 marked this seam in the test itself — *"these two literals ARE the contract… when the compose file arrives, replace them with a parse of the real file; the assertions below do not change"* — and that is exactly what happened: the three untouched tests now compare against the file instead of against a copy, without a character changing. The closed-list test was rewritten to compare `Object.keys(DEFAULTS)` — config.js's own table — against the parsed keys, because comparing `COMPOSE_DEFAULTS` (derived from the exclusion list) with the exclusion list would agree with itself whatever either file said. A hand-written reader rather than a YAML dependency, because `apps/core-api` declares exactly `express` and `pg` and `source-structure.test.js` pins that list; it lives in `testing/`, not `test/`, because C13 allows only `*.test.js` there. **The DoD's BREAK now works for the first time.** Changing `SCRYPT_SLOTS: 2` to `3` in the real compose file turns **exactly two** tests red — `config.js defaults every knob to the value the Compose file sets` and `the defaults table is what config.js actually applies` — the two the DoD names verbatim. Against the old literal that break was unsatisfiable: a copy cannot react to the file it copies. Deleting a key instead turns three red, including the reader's own non-vacuity check. 27 tests, the count the task predicts. **Process slip, recorded:** the module was created before Step 2 ran, so the documented `MODULE_NOT_FOUND` red was not observed in order; it was reproduced afterwards by moving the file aside, which is weaker evidence than having done it first. | **25/30** | (this commit) | Task 27 |
 | 2026-08-03 | **Task 27 — PART 4 IS COMPLETE.** `## The client-IP chain` in `infra/README.md` plus `apps/core-api/test/operations-docs.test.js`. The section is a **summary and a pointer**, not the restatement Step 3 originally specified: the nginx area already documents all four breakers with a *Checked:* line each, and the ufw/DNAT reasoning already exists too. What is genuinely new is the honesty paragraph — **the pipeline checks the four directives at the config layer and nothing more; the behavioural forged-XFF probe needs a route and an audit writer that arrive in Plan 2, so until then nothing proves the derived address is unforgeable.** The secrets test bans the WRITE, not the word: `deploy.yml` names `~/core-api.env` three times legitimately, and what must never appear is a redirection into it — asserted with a positive control so the rule cannot pass because the regex is wrong. **Three plan defects found and fixed first** — see the callout on Task 27 — including one where the guard meant to prevent duplication banned an H2 nobody writes while the real duplicate went straight past it. Added a fourth test the task did not ask for: a standing rule over **every** `nginx -T` line in `infra/README.md`, forbidding both the single-space pattern against a column-aligned conf and the `\| grep -q` SIGPIPE form, since this repository has now shipped each of those twice. Three mutations, all red: dropping the secrets link, reintroducing the single-space recipe, duplicating the detailed heading. **Area gate with a real Postgres and no skip variable: 287 tests, 286 pass, 0 fail, 1 skip in core-api, plus 11 / 33 / 66 elsewhere.** | **26/30** | (this commit) | Task 28 |
+| 2026-08-03 | **Task 23 corrected after the fact — two defects the pre-flight audit found in text I had already committed.** (1) **`LAST_OK` was defined wrongly, in three places, and the wrong definition is the weaker one.** The plan, the Step 1 comment and the shipped `deploy.yml` comment all said it means *"a dump completed and passed `pg_restore --list`"*. `infra/backup-core-db.sh:47` says *"completed AND was read end to end"*, and touches it only after `pg_restore --data-only -f /dev/null` — and `infra/README.md` explains why `--list` alone is worthless here: `-Fc` writes the table of contents first, so a dump truncated at 80% by a full disk passes it. My comment named the check the runbook exists to warn against. Corrected everywhere, and the workflow now carries an assertion forbidding the weaker phrasing from coming back. (2) **MANUAL VERIFICATION step 2 was inert at cutover.** `touch -d '3 days ago' ~/backups/LAST_OK` then pushing leaves the deploy **green**, because the gate is skipped while `CRON_INSTALLED_AT` is newer than 48 hours — which it always is at cutover, since the deploy that created it is the deploy under test. The step's escape hatch ("step 1 closes that window early") was simply false: nothing in the deploy backdates the marker. The recipe now ages **both** files, and says plainly that the obvious version does not work. **Both defects were in prose I wrote and tested, and neither test could have caught them: one was a comment, the other an instruction to a human.** | — | (this commit) | Task 28 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -5886,7 +5887,7 @@ git commit -m "ci: probe the login path before the limit_req burst, reduced unti
 
 Spec §9.5 heredoc block 6. The nightly's only failure signal is `LAST_OK`: `set -eu` exits the script early, its output goes to a log nobody reads, and cron's `MAILTO` goes to a local mailbox on a box with no MTA. So the deploy is where silence gets converted into a red build.
 
-`LAST_OK` means specifically *"a dump completed **and** passed `pg_restore --list`"*, which is why the check is `-mtime -2` on that file rather than on the newest `nightly-*.dump` — a truncated dump left behind by an OOM kill would satisfy the latter.
+`LAST_OK` means specifically *"a dump completed **and was read end to end**"* — the nightly touches it only after `pg_restore --data-only -f /dev/null`, **never after `--list` alone**, because `-Fc` writes the table of contents first and a dump truncated at 80% by a full disk passes `--list`. That is why the check is `-mtime -2` on that file rather than on the newest `nightly-*.dump`: the truncated dump an OOM kill leaves behind satisfies the latter, and it satisfies `--list` too.
 
 The `.part` sweep belongs here: a truncated dump never replaces a good one and never counts toward retention, and the leftovers should not accumulate. The 85% disk gate that spec §9.5 puts in this block is **not** here — it moved to the top of the heredoc, in the pre-deploy dump task, so a full disk aborts before anything changes rather than after the migration applied. This task asserts that it stayed there.
 
@@ -5906,8 +5907,10 @@ test("deploy heredoc makes a silent backup failure a red build", () => {
   // leftovers are swept here so they cannot accumulate.
   assert.match(workflow, /rm -f "\$HOME"\/backups\/\*\.part/);
 
-  // LAST_OK means "a dump completed AND passed pg_restore --list" -- checking the
-  // newest nightly-*.dump instead would be satisfied by a truncated file.
+  // LAST_OK means "a dump completed AND WAS READ END TO END": the nightly touches it
+  // only after `pg_restore --data-only -f /dev/null`, never after `--list` alone --
+  // -Fc writes the TOC first, so a dump truncated at 80% by a full disk passes --list.
+  // Checking the newest nightly-*.dump instead would be satisfied by that same file.
   assert.match(workflow, /find "\$HOME\/backups\/LAST_OK" -mtime -2 2>\/dev\/null \| grep -q \./);
   assert.match(workflow, /no successful core-db nightly in 48h/);
 
@@ -5944,10 +5947,13 @@ In `.github/workflows/deploy.yml`, inside the `Deploy on Lightsail` heredoc, ins
           # The nightly's ONLY failure signal is LAST_OK. `set -eu` exits it early, its
           # output goes to a log nobody reads, and cron's MAILTO goes to a local mailbox
           # on a box with no MTA -- so the deploy is where that silence is converted into
-          # a red build. LAST_OK means "a dump completed AND passed pg_restore --list";
-          # checking the newest nightly-*.dump instead would be satisfied by a truncated
-          # file. The 85% disk gate that spec 9.5 puts in this block is at the TOP of the
-          # heredoc instead, so a full disk aborts before anything on the box changes.
+          # a red build. LAST_OK means "a dump completed AND WAS READ END TO END" -- the
+          # nightly touches it only after `pg_restore --data-only -f /dev/null`, not after
+          # `--list`, because -Fc writes the table of contents first and a dump truncated
+          # at 80% by a full disk passes --list. Checking the newest nightly-*.dump
+          # instead of LAST_OK would be satisfied by exactly that truncated file. The 85%
+          # disk gate spec 9.5 puts in this block is at the TOP of the heredoc instead, so
+          # a full disk aborts before anything on the box changes.
           rm -f "$HOME"/backups/*.part
           # Gated on the BOOTSTRAP MARKER, never on `[ -f LAST_OK ]`. A missing LAST_OK
           # is precisely the failure worth catching -- the nightly has never once
@@ -5974,8 +5980,23 @@ Run: `node --test apps/core-api/test/deploy-config.test.js`  Expected: `# fail 0
 
 1. Run the nightly by hand once so `LAST_OK` exists before the 48-hour window can ever be evaluated: `~/restaurant-order-system/config/backup-core-db.sh; echo "exit=$?"; ls -la ~/backups`
    Expected: `exit=0`, a `nightly-<ts>.dump` at mode `-rw-------`, no `*.part` left behind, and a fresh `LAST_OK`.
-2. Prove the check bites: `touch -d '3 days ago' ~/backups/LAST_OK`, then push a no-op commit.
-   Expected: the deploy fails with `no successful core-db nightly in 48h`. Then `touch ~/backups/LAST_OK` and push again. **Until `CRON_INSTALLED_AT` is 48 hours old this check is inert by design** — the nightly has not yet had a chance to run, and step 1 is what closes that window early. Note this fires whether or not `LAST_OK` exists: a nightly that has never once succeeded is the case the marker exists to catch.
+2. Prove the check bites. **The obvious recipe does not work, and an earlier version of this
+   step got it wrong:** `touch -d '3 days ago' ~/backups/LAST_OK` then pushing leaves the
+   deploy **green**, because the gate is skipped entirely while `CRON_INSTALLED_AT` is newer
+   than 48 hours — which it is at cutover, since the deploy that just created it is the deploy
+   you are testing. Step 1 does **not** close that window: nothing in the deploy ever
+   backdates the marker. Age **both** files, then push a no-op commit:
+
+   ```sh
+   touch -d '3 days ago' ~/backups/CRON_INSTALLED_AT ~/backups/LAST_OK
+   ```
+
+   Expected: the deploy fails with `no successful core-db nightly in 48h`. Then
+   `touch ~/backups/LAST_OK` and push again to clear it — leave `CRON_INSTALLED_AT` aged,
+   which is the state a box reaches naturally two days after its first deploy and the state
+   in which the gate is actually armed. Note the gate fires whether or not `LAST_OK` exists:
+   a nightly that has never once succeeded is precisely the case the marker exists to catch,
+   which is why it is gated on the marker and not on `[ -f LAST_OK ]`.
 3. `df -P "$HOME" | awk 'NR==2 {print $5}'`
    Expected: comfortably under 85%. Record the figure in `infra/README.md` alongside `free -m`.
 

@@ -726,9 +726,14 @@ test("deploy heredoc makes a silent backup failure a red build", () => {
   // leftovers are swept here so they cannot accumulate.
   assert.match(workflow, /rm -f "\$HOME"\/backups\/\*\.part/);
 
-  // LAST_OK means "a dump completed AND passed pg_restore --list" -- checking the
-  // newest nightly-*.dump instead would be satisfied by a truncated file.
+  // LAST_OK means "a dump completed AND WAS READ END TO END": the nightly touches it
+  // only after `pg_restore --data-only -f /dev/null`, never after `--list` alone --
+  // -Fc writes the TOC first, so a dump truncated at 80% by a full disk passes --list.
+  // Checking the newest nightly-*.dump instead would be satisfied by that same file.
   assert.match(workflow, /find "\$HOME\/backups\/LAST_OK" -mtime -2 2>\/dev\/null \| grep -q \./);
+  // And the workflow must not restate the weaker definition, which is the one an
+  // operator would act on at 02:00.
+  assert.doesNotMatch(workflow, /LAST_OK means[^\n]*passed pg_restore --list/);
   assert.match(workflow, /no successful core-db nightly in 48h/);
 
   // Gated on the BOOTSTRAP MARKER, not on LAST_OK's existence. `&& [ -f LAST_OK ]`
