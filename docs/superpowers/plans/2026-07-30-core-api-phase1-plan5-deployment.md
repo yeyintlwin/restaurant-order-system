@@ -21,7 +21,7 @@ Auth, CRUD and terminal pairing are Plans 2, 3 and 4, none of which is written.
 
 ## Execution log
 
-**Status: 28 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
+**Status: 29 of 30 tasks done. Parts 1, 2 and 3's repository work are complete; Part 4 is under
 way.** The next thing that can actually be executed is **Task 18** (upload the nginx configs and
 both infra scripts, and create `config/` and `~/backups`) — which is also what unblocks Task 15's
 MANUAL VERIFICATION.
@@ -120,6 +120,7 @@ node -e 'const l=require("fs").readFileSync("docs/superpowers/plans/2026-07-30-c
 | 2026-08-03 | **PRODUCTION FAILURE, diagnosed and fixed: the deploy heredoc had been inheriting the login shell, and the login shell is zsh.** Run `30794872094` died at block 6 with `zsh: no matches found: /home/***/backups/*.part`. zsh's default `NOMATCH` makes an **unmatched glob a fatal error** instead of passing the pattern through, and "no `.part` leftovers" is the *healthy* state — so `rm -f "$HOME"/backups/*.part` would have failed **every** deploy from Task 23 onward, after the migration had applied and the containers had restarted. The gate before it passed, so production was left running the new images with **no crontab**: block 7 never ran. Fixed at the class, not the line: the heredoc now names its interpreter, `ssh … 'bash -s' <<'EOF'`. That also makes `set -o pipefail` honest — it is not POSIX, so this script could never have run under dash and the interpreter was an unstated assumption in both directions. **A probe of the other two globs found a second latent failure:** `ls -1t …/pre-deploy-*.dump \| tail \| xargs` fails under **bash too**, because `ls` exits non-zero on a missing path and `pipefail` propagates — it survives only because the prune runs immediately after the dump it just wrote. Wrapped in the same `{ … \|\| true; }` brace group Task 24 established. The `.part` sweep became `find … -delete`, which is correct under any shell. Verified by running the **exact** deploy shape against the box — `ssh host 'bash -s' < heredoc`, `set -euo pipefail` first line — with all three patterns matching nothing: all survive, `END REACHED`, exit 0; and `bash -n` parses the real 256-line heredoc on the box. **The signal was there and I read past it:** this session's own recon printed `zsh: no matches found` twice, and I treated it as noise from my command rather than as the box telling me its shell. | — | (this commit) | Task 28 |
 | 2026-08-03 | **Task 28.** `## Deploy window` and `## Cutover checklist` in `infra/README.md`. The window sentence is the one spec §9.5 asks for literally: every push already resets all twelve displays to `Welcome` and drops every in-memory order session — Phase 1 does not introduce that, it **lengthens** the window by putting a migration and a 90-second gate in front of it. The section also states what a push destroys **on disk** and what it spares, because "empties that folder" is exactly how the two host scripts end up somewhere the `find` deletes with every text assertion still green — and it is the real reason `~/core-api.env` lives one directory up. The cutover list pins the order that matters: DNS → certbot → secrets file → push → drill, with `certbot` before the first push because `nginx -t` fails without the certificate **after** the migration has applied. **Two wrap defects caught before writing** — `/resets all twelve e-paper displays/` and `/outside service hours/` both straddle this file's hard wrap — written with `\s+`. **A mutation of mine was wrong, not the assertion:** removing the `find`'s flags appeared not to bite, and the reason was that the string occurs **twice** in `infra/README.md` and `String.replace` hit the other one. Re-run against the copy inside the section, it bites. That turned into a real guard: both quoted copies are now **pinned byte-for-byte to the line `deploy.yml` actually runs**, so a quoted command cannot outlive the command. Verified by changing the workflow's `find` and watching the README copies go red. 6 tests here, 16 in `deploy-config`, 14 in the hub's. | **27/30** | (this commit) | Task 29 |
 | 2026-08-03 | **Task 29 — PART 5's repository work is complete, and the plan is code-complete.** `### What this pipeline proves, and what it does not`: a three-row table stating, once and correctly, the three claims four different pieces of work make it easy to over-state — the XFF check is at the **config layer** and the behavioural probe arrives with Plan 2; a missing nightly turns the deploy red **only once `CRON_INSTALLED_AT` is itself older than 48 hours**; the `find` spares `docker-compose.yml` and `config/`. Plus the two-credentials-two-mechanisms paragraph, because the app password rotates itself on every boot and the owner password does not, and confusing them is what the startup equality check exists to catch. **Three plan defects found before writing, by checking each assertion against the prose it would run on:** `/only once .../` is lowercase while the sentence opens a markdown table cell and is naturally capitalised — it could never have matched; the `find` guard insisted on a bare path where this file writes it as inline code, so it guarded a phrasing nobody would write; and `/outside service hours/` looked like a fourth until measurement showed the literal already exists elsewhere in the file, so it was left alone rather than "fixed". Both over-statement mutations bite: claiming the gate fails on any missing nightly, and claiming the deploy runs a forged-XFF probe as a gate. Spec §12's six documentation greps are now a named test rather than a shell one-liner nobody runs. 9 tests here, 16 in `deploy-config`. | **28/30** | (this commit) | Task 10 and Task 30, both MANUAL |
+| 2026-08-03 | **Task 10 — MANUAL VERIFICATION performed, all eleven items, with output.** 1 `CERT-OK`. 2 both files `-rw-r--r-- root root`. 3 `nginx -t` successful, **no** `protocol options redefined`, and **0 executable `http2` tokens** — the four the file contains are all comments explaining the 2026-07-31 decision, which my first probe miscounted by grepping without stripping comments, *the exact mistake this plan has documented ten times*. 4 `nginx/1.24.0 (Ubuntu)`, the evidence behind that decision. 5 `limit_req_zone core_*` = **3**, and the XFF header attributed to `core-api-proxy.conf` **exactly once**. 6 `real_ip_header\|set_real_ip_from\|real_ip_recursive` → **NONE**. 7 loopback `/health` through the real TLS chain → **200**. 8 **from this laptop, off the box**: `/health` → **403**, `/health/ready` → **404**. 9 `http://…/anything` → **301** to the https URL, and `/.well-known/acme-challenge/probe` → **404 rather than 301**, so the ACME exception survives the redirect. 10 twenty rapid POSTs → **6 × 404 then 14 × 429**, which is `rate=10r/m burst=5 nodelay` exactly: one immediate plus five burst, the rest shed. 11 **not applicable as written, and deliberately so** — item 10 was run from the laptop, so it drained the bucket for *this* address, not for `127.0.0.1`, which is the address the deploy's own probe uses. No wait is needed, and running it this way also proves the limiter fires for a real internet client rather than only for loopback. | — | (this commit) | Task 30 |
 
 **The ten must-fix defects are already fixed in the text below.** They are listed here because
 each one is a thing that looked fine while being written and would have failed on contact, and
@@ -2726,7 +2727,7 @@ config it cannot load.
 **Files:**
 - No source files. This task ticks its own boxes and commits the plan file.
 
-- [ ] **1. The certificate exists before anything else.**
+- [x] **1. The certificate exists before anything else.**
 
 ```sh
 sudo test -f /etc/letsencrypt/live/api.yeyintlwin.com/fullchain.pem && echo CERT-OK
@@ -2737,7 +2738,7 @@ Expected output: `CERT-OK`. If it prints nothing, stop: run
 A record resolves to this instance before that. `nginx -t` cannot pass without
 the certificate, and the deploy will restore both files and exit 1.
 
-- [ ] **2. Both files are installed, with the right modes.**
+- [x] **2. Both files are installed, with the right modes.**
 
 ```sh
 ls -l /etc/nginx/conf.d/api.yeyintlwin.com.conf /etc/nginx/snippets/core-api-proxy.conf
@@ -2745,7 +2746,7 @@ ls -l /etc/nginx/conf.d/api.yeyintlwin.com.conf /etc/nginx/snippets/core-api-pro
 
 Expected: both listed, both `-rw-r--r--` (mode 0644), owned by `root`.
 
-- [ ] **3. The configuration is valid — and this file has not silently changed HTTP/2 for the other two vhosts.**
+- [x] **3. The configuration is valid — and this file has not silently changed HTTP/2 for the other two vhosts.**
 
 ```sh
 sudo nginx -t 2>&1 | tee /tmp/nginx-t.out
@@ -2773,7 +2774,7 @@ accept HTTP/2 on all three, or drop the `http2` token from both listen lines in
 `infra/nginx/api.conf` and from the two matching assertions in
 `apps/core-api/test/nginx-config.test.js`. Nothing in Phase 1 needs HTTP/2.
 
-- [ ] **4. Record the nginx version**, so the `http2` choice has evidence behind it.
+- [x] **4. Record the nginx version**, so the `http2` choice has evidence behind it.
 
 ```sh
 nginx -v
@@ -2782,7 +2783,7 @@ nginx -v
 Expected: `nginx version: nginx/1.18.0 (Ubuntu)` or `nginx/1.24.0 (Ubuntu)`.
 Anything >= 1.25.1 is fine too; the listen-line form still loads.
 
-- [ ] **5. The zones and the header are actually in the loaded config.**
+- [x] **5. The zones and the header are actually in the loaded config.**
 
 Every grep strips comment lines first: `nginx -T` prints comments verbatim and
 `api.conf` deliberately names the directives it forbids, so an unfiltered grep
@@ -2798,7 +2799,7 @@ file exactly once however many times it is included. A `0` on the second means
 the snippet did not install and **every** derived client IP is about to be
 attacker-controlled.
 
-- [ ] **6. No `real_ip` directive reached the loaded config** — including from
+- [x] **6. No `real_ip` directive reached the loaded config** — including from
       any other file already in `conf.d/`.
 
 ```sh
@@ -2810,7 +2811,7 @@ Expected output: `NONE`. Without the comment filter this check can never print
 `# NO real_ip_header AND NO set_real_ip_from ANYWHERE IN THIS FILE.` and the
 grep matches its own warning.
 
-- [ ] **7. `/health` answers 200 from loopback, through the real TLS chain.**
+- [x] **7. `/health` answers 200 from loopback, through the real TLS chain.**
       This is the exact call the deploy gate makes.
 
 ```sh
@@ -2822,7 +2823,7 @@ Expected output: `200`. A `404` here means the health split was inverted, and
 every future deploy will abort at `curl -fsS` with exit 22 **after** the
 migration has applied.
 
-- [ ] **8. From a laptop, off the box: `/health` is 403 and `/health/ready` is 404.**
+- [x] **8. From a laptop, off the box: `/health` is 403 and `/health/ready` is 404.**
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' https://api.yeyintlwin.com/health
@@ -2832,7 +2833,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.yeyintlwin.com/health/ready
 Expected output: `403`, then `404`. A `200` on either means `allow`/`deny` is
 matching a forged address — go back to step 6.
 
-- [ ] **9. From a laptop: port 80 redirects and keeps its ACME exception.**
+- [x] **9. From a laptop: port 80 redirects and keeps its ACME exception.**
 
 ```sh
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://api.yeyintlwin.com/anything
@@ -2844,7 +2845,7 @@ served by `root /var/www/html` for a challenge file that does not exist, which i
 what proves the location is **not** being swallowed by the redirect. A `301` on
 the second line breaks certificate renewal sixty days from now.
 
-- [ ] **10. LAST: `limit_req` fires on the login route.** This exhausts the
+- [x] **10. LAST: `limit_req` fires on the login route.** This exhausts the
       `core_login` bucket for the source address, so nothing that needs to reach
       core-api from here may run after it.
 
@@ -2869,7 +2870,7 @@ the request reached core-api, 429 means Nginx shed it. If **all twenty** are
 not installed. If any code is `503`, the request was matched by the catch-all
 rather than the exact-match login location — check the `location =` prefix.
 
-- [ ] **11. Wait one minute before the next push.** The deploy's XFF probe posts
+- [x] **11. Wait one minute before the next push.** The deploy's XFF probe posts
       to the same login route from this same address, and while the `core_login`
       bucket is empty Nginx sheds it. That is not a silent failure — the probe
       writes no audit row, spec §9.5's `test -n "$probe"` fires and the deploy
@@ -2878,7 +2879,7 @@ rather than the exact-match login location — check the `location =` prefix.
       red deploy caused by this verification block rather than by the code, and
       one minute of waiting avoids diagnosing it twice.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md
