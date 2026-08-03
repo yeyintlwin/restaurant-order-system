@@ -226,13 +226,23 @@ those lines means the topology and the number disagree.
 `api.conf` deliberately **names the directives it forbids** — so every grep
 below strips comment lines first, or it matches the warning instead of the
 directive and can never report a clean result. `nginx -T` dumps each file
-exactly once no matter how many times it is included, which is why the second
-count is 1 and not 4.
+exactly once no matter how many times it is included, which is why the
+`limit_req_zone` count is 3 and not 12.
+
+**The X-Forwarded-For count is NOT 1, and an earlier version of this section said
+it was.** Measured on the box 2026-08-03: it is **9**, because
+`$proxy_add_x_forwarded_for` is what every reverse-proxy vhost sets, and eight
+others share this instance — `airpaste-api`, `default`, `epaper-hub`, `inkwire`,
+`lopaka`, `myanmyanlearn`, `n8n`, `order`. Counting the whole dump answers a
+question about the box, not about core-api. **Attribute it to files instead**, and
+require exactly one from the snippet:
 
 ```sh
 sudo nginx -t
 sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -c 'limit_req_zone .*zone=core_'                    # expect 3
-sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -cE 'proxy_set_header +X-Forwarded-For +\$proxy_add_x_forwarded_for'    # expect 1
+# One per file, and core-api-proxy.conf must be in the list exactly once. The total
+# grows with every other proxying vhost on the box and means nothing on its own.
+sudo nginx -T | awk '/^# configuration file/ {f=$4} /proxy_set_header/ && /X-Forwarded-For/ && /proxy_add_x_forwarded_for/ && !/^[[:space:]]*#/ {print f}' | sort | uniq -c   # core-api-proxy.conf: exactly 1
 sudo nginx -T | grep -vE '^[[:space:]]*#' | grep -E 'real_ip_header|set_real_ip_from|real_ip_recursive' || echo NONE
 curl -s -o /dev/null -w '%{http_code}\n' -m 5 \
   --resolve api.yeyintlwin.com:443:127.0.0.1 https://api.yeyintlwin.com/health   # expect 200
