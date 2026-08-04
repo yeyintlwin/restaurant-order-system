@@ -1866,24 +1866,80 @@ test("writing a password bumps sessions_valid_from, which is what kills every se
   assert.equal(await verifyPassword("a-brand-new-password", after.rows[0].password_hash), true);
 });
 
-test("the bootstrap insert is monotonic and returns null on the second run", { skip }, async () => {
+test("the bootstrap is MONOTONIC: the guard is an audit row, not the current state", { skip }, async () => {
+  // Spec 12's acceptance checkbox, verbatim: "a second run with a different address
+  // exits NON-ZERO; DELETE the platform_admin row and re-run -- still non-zero (the
+  // audit_events guard is monotonic, not current-state)".
+  //
+  // THIS IS NOT A TIDY-UP. design.md:714 and :855 make "create-platform-admin.js is
+  // monotonic" the load-bearing justification for POST /api/platform/admins being the
+  // ONE route in the system permitted to create a peer. A current-state guard --
+  // "does a platform_admin row exist" -- would let anyone who can delete a row mint an
+  // unlimited number of them, and Plan 2c would inherit an escalation exception whose
+  // premise had quietly been removed.
   const hash = await hashPassword("bootstrap-password-1");
-  const first = await users.insertPlatformAdmin({
-    email: "boot@example.test",
-    displayName: "Boot",
-    passwordHash: hash
-  });
-  assert.ok(first && first.id);
 
-  // Same address: users_email_key is UNCONDITIONAL (email is identity), so this is
-  // a 23505 and the repository turns it into null rather than letting a raw
-  // driver error reach a CLI that would print a constraint name.
-  const second = await users.insertPlatformAdmin({
+  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+
+  const first = await users.bootstrapPlatformAdmin({
     email: "boot@example.test",
     displayName: "Boot",
     passwordHash: hash
   });
-  assert.equal(second, null);
+  assert.equal(first.reason, null);
+  assert.ok(first.created && first.created.id);
+
+  // The audit row is written INSIDE the same transaction as the user row. If it were
+  // written afterwards by appendAuditEvent -- which opens its own connection -- a
+  // crash between the two would leave the guard disarmed forever.
+  const audited = await db.unscoped(
+    "SELECT actor_kind, target_id, detail FROM audit_events WHERE action = 'platform.admin_created'"
+  );
+  assert.equal(audited.rows.length, 1);
+  assert.equal(audited.rows[0].actor_kind, "system");
+  assert.equal(audited.rows[0].target_id, first.created.id);
+  assert.deepEqual(audited.rows[0].detail, { email: "boot@example.test" });
+
+  // A DIFFERENT address. A current-state guard would happily create a second admin.
+  const second = await users.bootstrapPlatformAdmin({
+    email: "second@example.test",
+    displayName: "Second",
+    passwordHash: hash
+  });
+  assert.equal(second.created, null);
+  assert.equal(second.reason, "already_bootstrapped");
+
+  // And the monotonic half: deleting the row does not re-open the door.
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+  const third = await users.bootstrapPlatformAdmin({
+    email: "third@example.test",
+    displayName: "Third",
+    passwordHash: hash
+  });
+  assert.equal(third.created, null);
+  assert.equal(third.reason, "already_bootstrapped");
+
+  // Restore the fixture for the tests below, which expect one active platform admin.
+  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+  await users.bootstrapPlatformAdmin({ email: "boot@example.test", displayName: "Boot", passwordHash: hash });
+});
+
+test("a repeated address inside the same bootstrap is email_taken, not already_bootstrapped", { skip }, async () => {
+  // Two distinguishable refusals, because the operator's next move differs: one says
+  // "the platform is already bootstrapped, use set-password.js", the other says "that
+  // address is taken". Collapsing them into one null was the earlier draft's mistake.
+  const hash = await hashPassword("bootstrap-password-2");
+  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+
+  const again = await users.bootstrapPlatformAdmin({
+    email: "boot@example.test",
+    displayName: "Boot",
+    passwordHash: hash
+  });
+  assert.equal(again.created, null);
+  assert.equal(again.reason, "email_taken");
 });
 
 test("countActivePlatformAdmins sees only active ones", { skip }, async () => {
@@ -1923,6 +1979,11 @@ const PRE_TENANT_REASON =
   "the login lookup and the bootstrap insert run before any tenant scope exists";
 
 const { withUnscopedConnection } = require("../../db");
+// The bootstrap writes its own audit row INSIDE its transaction (see
+// bootstrapPlatformAdmin below), so it needs the vocabulary check without needing
+// repositories/auth/audit.js's writer, which would open a second connection.
+// lib/ is Tier 1 and this require is legal from anywhere.
+const { assertAuditEvent } = require("../../lib/audit-vocabulary");
 
 // One read, and it returns the two SUSPENSION facts alongside the hash. Splitting
 // them into a second query would make "unknown email" and "suspended company"
@@ -2068,17 +2129,49 @@ async function writePasswordHash(userId, passwordHash, { mustChangePassword } = 
   });
 }
 
-// ON CONFLICT DO NOTHING, so a second run of scripts/create-platform-admin.js is a
-// null rather than a 23505 the CLI would have to translate. users_email_key is
-// UNCONDITIONAL (spec: email is identity, and freeing a suspended user's address
-// would let a second row shadow the first in the login lookup), so this is the
-// only conflict reachable.
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP. One transaction, an advisory lock, and a MONOTONIC guard.
+// ---------------------------------------------------------------------------
 //
-// NAMED insertPlatformAdmin, not createPlatformAdmin, and the difference is
+// Spec 5.6, 9.10 and -- most precisely -- 12's acceptance checkbox: "a second run
+// with a different address exits NON-ZERO; DELETE the platform_admin row and re-run
+// -- still non-zero (the audit_events guard is monotonic, not current-state)".
+//
+// WHY MONOTONIC RATHER THAN "does a platform_admin already exist". design.md:714 and
+// :855 make this function's monotonicity the load-bearing justification for
+// POST /api/platform/admins being the ONE route in the system permitted to create a
+// peer. A current-state guard is defeated by a DELETE, so anyone who can remove a row
+// could mint platform admins without limit -- and Plan 2c would inherit an escalation
+// exception whose premise had quietly gone.
+//
+// WHY ONE TRANSACTION. pg_advisory_xact_lock is transaction-scoped, so the lock, the
+// guard read, the INSERT and the audit write must share a transaction or the lock
+// bounds nothing. It also means the guard cannot be left disarmed by a crash between
+// the user row and its audit row -- which is exactly what calling appendAuditEvent()
+// afterwards would risk, because that function opens its OWN connection.
+//
+// WHY THE AUDIT INSERT IS WRITTEN OUT HERE rather than delegated: same reason. The
+// VOCABULARY check is not skipped -- assertAuditEvent() is called first, so an
+// undeclared action still fails as a programming error rather than as a 23514.
+//
+// NAMED bootstrapPlatformAdmin, not createPlatformAdmin, and the difference is
 // load-bearing: source-structure.test.js rule C6 budgets repositories/platform/ at
 // exactly ten exported functions and `createPlatformAdmin` is one of them, arriving
 // in Plan 2c with POST /api/platform/admins. Two functions with one name in two
 // exempt zones is the kind of collision that gets "fixed" by widening C6.
+
+// A fixed, arbitrary key. It only has to be distinct from db/migrate.js's
+// 4264071001; nothing else in the service takes an advisory lock.
+const BOOTSTRAP_LOCK_KEY = 4264071002;
+
+const BOOTSTRAP_ALREADY_RUN = `
+  SELECT 1 FROM audit_events WHERE action = 'platform.admin_created' LIMIT 1
+`;
+
+// ON CONFLICT DO NOTHING, so a repeated address is zero rows rather than a 23505 the
+// CLI would have to translate. users_email_key is UNCONDITIONAL (email is identity,
+// and freeing a suspended user's address would let a second row shadow the first in
+// the login lookup), so it is the only conflict reachable.
 const INSERT_PLATFORM_ADMIN = `
   INSERT INTO users (company_id, role, email, display_name, password_hash, must_change_password)
   VALUES (NULL, 'platform_admin', lower(btrim($1)), $2, $3, false)
@@ -2086,10 +2179,65 @@ const INSERT_PLATFORM_ADMIN = `
   RETURNING id, email, display_name AS "displayName"
 `;
 
-async function insertPlatformAdmin({ email, displayName, passwordHash }) {
+const INSERT_BOOTSTRAP_AUDIT = `
+  INSERT INTO audit_events (actor_kind, actor_label, action, outcome, target_kind, target_id, detail)
+  VALUES ('system', 'create-platform-admin', 'platform.admin_created', 'success', 'user', $1, $2::jsonb)
+`;
+
+// Returns { created, reason }. Two distinguishable refusals, because the operator's
+// next move differs: "already_bootstrapped" means use scripts/set-password.js,
+// "email_taken" means pick another address.
+async function bootstrapPlatformAdmin({ email, displayName, passwordHash }) {
+  if (typeof passwordHash !== "string" || !passwordHash.startsWith("scrypt$")) {
+    throw new Error("bootstrapPlatformAdmin requires a PHC string from lib/password.js");
+  }
+  // The vocabulary check, run BEFORE the transaction opens so an undeclared action is
+  // a programming error at the call site rather than a 23514 inside a rollback.
+  assertAuditEvent({
+    actorKind: "system",
+    actorLabel: "create-platform-admin",
+    action: "platform.admin_created",
+    outcome: "success",
+    targetKind: "user",
+    // A stand-in: the real id is not known until the INSERT returns, and
+    // assertAuditEvent only checks that the pair is set together.
+    targetId: "pending",
+    detail: { email }
+  });
+
+  // `connection`, never `client` -- see the note at the top of this file.
   return withUnscopedConnection(async (connection) => {
-    const { rows } = await connection.query(INSERT_PLATFORM_ADMIN, [email, displayName, passwordHash]);
-    return rows.length === 0 ? null : rows[0];
+    await connection.query("BEGIN");
+    try {
+      // Transaction-scoped, so it is released by the COMMIT or the ROLLBACK below and
+      // cannot be orphaned by a killed CLI the way a session lock can.
+      await connection.query("SELECT pg_advisory_xact_lock($1)", [BOOTSTRAP_LOCK_KEY]);
+
+      const guard = await connection.query(BOOTSTRAP_ALREADY_RUN, []);
+      if (guard.rows.length > 0) {
+        await connection.query("ROLLBACK");
+        return { created: null, reason: "already_bootstrapped" };
+      }
+
+      const inserted = await connection.query(INSERT_PLATFORM_ADMIN, [email, displayName, passwordHash]);
+      if (inserted.rows.length === 0) {
+        await connection.query("ROLLBACK");
+        return { created: null, reason: "email_taken" };
+      }
+
+      const created = inserted.rows[0];
+      await connection.query(INSERT_BOOTSTRAP_AUDIT, [created.id, JSON.stringify({ email: created.email })]);
+      await connection.query("COMMIT");
+      return { created, reason: null };
+    } catch (error) {
+      try {
+        await connection.query("ROLLBACK");
+      } catch {
+        // The connection is already gone; releasing it is all that is left, and
+        // withUnscopedConnection's own finally does that.
+      }
+      throw error;
+    }
   });
 }
 
@@ -2115,7 +2263,7 @@ module.exports = {
   recordFailedLogin,
   recordSuccessfulLogin,
   writePasswordHash,
-  insertPlatformAdmin,
+  bootstrapPlatformAdmin,
   countActivePlatformAdmins
 };
 ```
@@ -3625,10 +3773,53 @@ the same file. The table at the top of this plan is amended in Task 17.
 
 **(b) `runPipeline` stops at step 7 today, so `options.roles` is decorative.**
 Task 11's comment says *"steps 3 through 7"* and it is accurate. Nothing enforces
-`roles`. That is harmless for five of this plan's six routes — they declare
-`anyUser`, which admits every tenant role — and it is **not** harmless for
-`POST /api/admin/scope`, nor for the twenty-odd routes Plan 2c registers against a
-gate that was never wired. Task 15 lands it.
+`roles`. Task 15 lands it — and landing it is what surfaces departure (d), below.
+
+**(d) SETTLED: the four identity routes declare `["platform", "anyUser"]`, not
+`["anyUser"]`.** This is the most important paragraph in Part 5. Read it before
+Task 13.
+
+An earlier draft gave `me`, `logout`, `logout-all` and `password` the plain
+`anyUser` that §6.2's route table gives them. **That combination bricks the only
+account this plan creates.** §5.4's alias table admits a *scoped* `platform_admin`
+to `anyUser` and deliberately excludes an *unscoped* one — an unscoped platform
+scope carries no `companyId`, so a tenant route reached by it would have nothing to
+bind. Login always materialises `actingCompanyId: null`, so the administrator
+`scripts/create-platform-admin.js` creates is unscoped from the moment they sign in.
+Under `["anyUser"]` they can reach exactly one route, `POST /api/admin/scope`, and
+in Plan 2b no company exists for them to select. They cannot read `me`, cannot sign
+out, and cannot change the password the CLI just set.
+
+**No test in the plan could have caught it**, which is why it is written down here
+rather than left to be found: `signedIn()` resolves a `company_admin` and
+`platformAdmin()` is pointed only at `/api/admin/scope`. The suite stays green while
+the product is unusable. Task 15 Step 1 adds the case that would have failed.
+
+Two repairs were considered and **both are wrong**:
+
+- **Widening `anyUser` in `permits()` to admit `scope.kind === "platform"`** — this
+  contradicts the pinned alias table at parent §5.4, and it is the actual security
+  hole. Plan 2c registers roughly twenty *tenant* routes at `anyUser`; an unscoped
+  platform scope has no `companyId`, and §6.3.3 promises those routes answer
+  **409 `scope_required`**, not admission.
+- **Adding a fifth alias** — `ROLE_ALIASES` is frozen at four and asserted twice,
+  in `router-registration.test.js` and in the `deepEqual` this plan itself writes in
+  Task 15.
+
+Declaring **both** aliases is the same construction the plan already uses for
+`POST /api/admin/scope`, it touches no frozen list, and it is safe precisely because
+these four routes **bind no company**: they read the session, delete a session, or
+write a password hash. There is no tenant query for a missing `companyId` to widen.
+
+**The residual, recorded rather than hidden.** §6.2 gives those four rows `anyUser`
+and "Errors: none beyond the baseline", while §5.4's table excludes the unscoped
+platform admin — the two sections disagree, and Plan 2b is simply the first plan to
+execute the disagreement. Task 17 amends §6.2's Roles column. What Task 17 does
+**not** do is invent a producer for **409 `scope_required`**: §6.3.3 promises that
+code for a tenant route reached by an unscoped platform admin, no route in Plan 2b
+is a tenant route, and nothing in this plan produces it. **That is Plan 2c's first
+problem, and it must not be discovered there.** Task 17 records it in the slice spec
+as §11.11.
 
 **(c) The role gate runs at step 7.5, not at step 10, and the split is deliberate.**
 §6.3.5 step 10 reads *"AUTHORIZATION: route roles → 403; then each path resource
@@ -4696,7 +4887,11 @@ Then the three routes:
 route(
   "GET",
   "/api/admin/auth/me",
-  { auth: "user", roles: ["anyUser"], sample: {} },
+  // BOTH aliases -- Part 5 departure (d). `anyUser` admits a SCOPED platform admin
+  // and deliberately excludes an unscoped one, and the account the bootstrap CLI
+  // creates is unscoped from the moment it signs in. This route binds no company, so
+  // admitting it here widens no tenant query.
+  { auth: "user", roles: ["platform", "anyUser"], sample: {} },
   async (req, res) => {
     sendJson(
       res,
@@ -4719,7 +4914,9 @@ route(
   "/api/admin/auth/logout",
   {
     auth: "user",
-    roles: ["anyUser"],
+    // Part 5 departure (d). Signing out is the one thing every actor must be able to
+    // do, and an unscoped platform admin is an actor.
+    roles: ["platform", "anyUser"],
     body: null,
     audit: "auth.logout",
     // One of exactly two exemptions (spec 8.5 rule 3). A user who must change their
@@ -4760,7 +4957,8 @@ route(
 route(
   "POST",
   "/api/admin/auth/logout-all",
-  { auth: "user", roles: ["anyUser"], body: null, audit: "auth.logout_all", sample: {} },
+  // Part 5 departure (d).
+  { auth: "user", roles: ["platform", "anyUser"], body: null, audit: "auth.logout_all", sample: {} },
   async (req, res) => {
     const deps = req.core.deps;
     const session = req.core.session;
@@ -5071,7 +5269,10 @@ route(
   "/api/admin/auth/password",
   {
     auth: "user",
-    roles: ["anyUser"],
+    // Part 5 departure (d), and this is the route where it bites hardest: the
+    // bootstrap admin's FIRST action is usually to change the password the CLI set,
+    // and under a plain `anyUser` they would get 403 for it.
+    roles: ["platform", "anyUser"],
     body: { currentPassword: "string", newPassword: "string" },
     audit: "auth.password_changed",
     // The second of exactly two exemptions (spec 8.5 rule 3). Without it, the only
@@ -5487,6 +5688,63 @@ test("a real company_admin is refused even though `companyAdmin` admits them", a
     assert.equal((await response.json()).error.code, "forbidden");
   });
 });
+
+test("THE BOOTSTRAP ADMIN CAN STILL USE THE FOUR IDENTITY ROUTES", async () => {
+  // Part 5 departure (d), and the regression that no other test in this file can see.
+  // signedIn() resolves a company_admin and platformAdmin() is otherwise pointed only
+  // at /api/admin/scope, so under a plain roles:["anyUser"] the whole suite stays
+  // green while the ONLY account this plan creates gets 403 for reading `me`, for
+  // signing out, and for changing the password the CLI just set.
+  //
+  // An unscoped platform admin is what login always produces: it materialises
+  // actingCompanyId: null, and materialiseScope answers that with { kind: "platform" }.
+  const { deps } = platformAdmin();
+  deps.users = {
+    ...deps.users,
+    findById: async () => activeUser({ role: "platform_admin", companyId: null })
+  };
+  deps.sessions = {
+    ...deps.sessions,
+    createSession: async () => ({
+      id: SESSION_ID,
+      expiresAt: new Date("2026-08-05T08:00:00.000Z"),
+      absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z")
+    })
+  };
+
+  await withServer(deps, async (base) => {
+    const me = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(me.status, 200, "an unscoped platform admin cannot read me");
+    assert.equal((await me.json()).scope.kind, "platform");
+
+    const changed = await fetch(`${base}/api/admin/auth/password`, {
+      method: "POST",
+      headers: POST_HEADERS,
+      body: JSON.stringify({ currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" })
+    });
+    assert.equal(changed.status, 200, "an unscoped platform admin cannot change their password");
+
+    for (const path of ["/api/admin/auth/logout", "/api/admin/auth/logout-all"]) {
+      const response = await fetch(`${base}${path}`, { method: "POST", headers: POST_HEADERS });
+      assert.equal(response.status, 200, `an unscoped platform admin cannot ${path}`);
+    }
+  });
+});
+
+test("a tenant route alias still refuses an unscoped platform admin", async () => {
+  // The other half, and the reason the fix is two aliases rather than a wider
+  // `anyUser`. Plan 2c registers ~20 TENANT routes at anyUser; an unscoped platform
+  // scope carries no companyId, so admitting it there would drive a tenant query with
+  // nothing to bind. 6.3.3 promises those routes answer 409 scope_required -- which
+  // NOTHING IN PLAN 2b PRODUCES. This test pins the refusal so Plan 2c inherits a
+  // known-closed door rather than an accident.
+  const { permits } = require("../lib/authorization");
+  const unscoped = { kind: "platform", userId: USER, sessionId: SESSION_ID };
+  assert.equal(permits(unscoped, ["anyUser"]), false);
+  assert.equal(permits(unscoped, ["manager"]), false);
+  assert.equal(permits(unscoped, ["companyAdmin"]), false);
+  assert.equal(permits(unscoped, ["platform", "anyUser"]), true);
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -5836,14 +6094,35 @@ test("the bootstrap CLI refuses a missing or malformed email before opening a po
   }
 });
 
-test("the bootstrap CLI has no --force", () => {
-  // Spec 9.10, stated as an absence. A --force would mean "overwrite the account that
-  // is already there", and the remedy for a forgotten password is scripts/set-password.js.
-  const source = fs.readFileSync(BOOTSTRAP_SCRIPT, "utf8");
+// COMMENTS STRIPPED FIRST, and that is not a nicety. The script's own header explains
+// why there is no force flag, so a raw match would be red against a CORRECT file --
+// and both repairs available to whoever hits it lose: deleting the documentation, or
+// weakening the regex until it stops checking. source-structure.test.js:327-334 names
+// this exact trap and carries the stripper this one copies.
+function withoutComments(text) {
+  return text.replace(/^[ \t]*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+test("the bootstrap CLI has no force flag and never reads a password from argv", () => {
+  // Spec 9.10, stated as an absence. A force flag would mean "overwrite the account
+  // that is already there", and the remedy for a forgotten password is
+  // scripts/set-password.js.
+  const source = withoutComments(fs.readFileSync(BOOTSTRAP_SCRIPT, "utf8"));
   assert.doesNotMatch(source, /--force/);
-  // And it never reads the password from argv, which is the same rule seen from the
-  // other side.
-  assert.doesNotMatch(source, /argv\[3\]|argv\.slice\(3\)/);
+  // The same rule seen from the other side: argv carries the address and the display
+  // name, never the secret.
+  assert.doesNotMatch(source, /argv\[2\]|argv\.slice\(3\)/);
+});
+
+test("the bootstrap guard is monotonic, and the script says so where an operator will read it", () => {
+  // Spec 12's acceptance checkbox depends on it and design.md:714/:855 make it the
+  // justification for the only peer-creating route in the system. A script that
+  // silently lost the guard would pass every other test in this file.
+  const source = fs.readFileSync(BOOTSTRAP_SCRIPT, "utf8");
+  assert.match(source, /already been bootstrapped/);
+  assert.match(source, /bootstrapPlatformAdmin/);
+  // And it must NOT reach for the current-state question, which a DELETE defeats.
+  assert.doesNotMatch(withoutComments(source), /countActivePlatformAdmins/);
 });
 ```
 
@@ -5914,7 +6193,9 @@ const { loadDotEnv } = require("../env-file");
 const { openRuntimePool, closeAllPools } = require("../db");
 const { hashPassword, PasswordPolicyError, PASSWORD_MIN_LENGTH } = require("../lib/password");
 const users = require("../repositories/auth/users");
-const { appendAuditEvent } = require("../repositories/auth/audit");
+// NO require of repositories/auth/audit.js. The audit row is written inside
+// bootstrapPlatformAdmin's transaction; appendAuditEvent would open a second
+// connection and put it outside, which is the whole defect the guard exists to avoid.
 
 // The users.email CHECK, mirrored. Reaching the database to be told 23514 would put a
 // constraint name in front of an operator and describe DDL rather than what they typed.
@@ -6030,31 +6311,35 @@ async function main(argv) {
     throw new Error(`the password was rejected: ${error.code}`);
   }
 
-  // max: 1. This process issues two statements and exits; a pool sized for the server
+  // max: 1. This process issues one transaction and exits; a pool sized for the server
   // would open connections against max_connections=40 for no reason.
   await openRuntimePool({ connectionString: config.databaseUrl, max: 1 });
   try {
-    const created = await users.insertPlatformAdmin({ email, displayName, passwordHash });
-    // ON CONFLICT DO NOTHING, so null means the address is already taken. Exiting 0
-    // here would let a bootstrap script report success while creating nothing.
-    if (created === null) {
+    // The lock, the monotonic guard, the user row and its audit row are ONE
+    // transaction inside the repository. That is not tidiness: pg_advisory_xact_lock
+    // is transaction-scoped, and an audit row written afterwards by appendAuditEvent
+    // -- on its own connection -- could be lost to a crash, leaving the guard
+    // disarmed and the platform bootstrappable a second time.
+    //
+    // 'system' is the actor kind, and audit_events_actor_arc settles it rather than
+    // taste: 'user' requires actor_user_id and 'terminal' requires actor_terminal_id,
+    // and there is no authenticated actor at the moment the first account comes into
+    // existence. platform.admin_created declares both 'user' and 'system' for exactly
+    // this reason -- POST /api/platform/admins (Plan 2c) writes it as 'user'.
+    const { created, reason } = await users.bootstrapPlatformAdmin({ email, displayName, passwordHash });
+
+    // Two distinguishable refusals, because the operator's next move differs. Exiting
+    // 0 on either would let a bootstrap report success while creating nothing.
+    if (reason === "already_bootstrapped") {
+      throw new Error(
+        "this platform has already been bootstrapped, and that is permanent by design: " +
+          "the guard is an audit_events row, so deleting the administrator does not re-open it. " +
+          "Use scripts/set-password.js to recover an account, or POST /api/platform/admins to add one."
+      );
+    }
+    if (reason === "email_taken") {
       throw new Error(`${email} already exists; use scripts/set-password.js to change its password`);
     }
-
-    // 'system': audit_events_actor_arc requires actor_user_id for 'user' and
-    // actor_terminal_id for 'terminal', and there is no authenticated actor at the
-    // moment the first account comes into existence. platform.admin_created declares
-    // both 'user' and 'system' for exactly this reason -- POST /api/platform/admins
-    // (Plan 2c) writes the same action as 'user'.
-    await appendAuditEvent({
-      actorKind: "system",
-      actorLabel: "create-platform-admin",
-      action: "platform.admin_created",
-      outcome: "success",
-      targetKind: "user",
-      targetId: created.id,
-      detail: { email: created.email }
-    });
 
     process.stdout.write(`created platform administrator ${created.email} (${created.id})\n`);
   } finally {
