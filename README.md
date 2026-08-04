@@ -58,7 +58,7 @@ const epaper = createEpaperHubSdk({
 
 await epaper.updateTableDisplay({
   epaperId: 3,
-  tableNumber: 3,
+  tableLabel: "A1",
   status: "Welcome",
   url: "https://order.yeyintlwin.com/t/EXAMPLEtokenEXAMPLEtok"
 });
