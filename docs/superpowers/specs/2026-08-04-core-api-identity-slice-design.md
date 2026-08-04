@@ -793,6 +793,39 @@ pair. That assertion is a **required** item of Plan 2b's wiring, not a
 nice-to-have — everything else in `lib/` fails safe, and this one fails open and
 silently.
 
+## 11.6 Two boot checks Plan 2b must land, and one false claim to settle
+
+`route()` validates the audit action's **shape** (`noun.verb`) and nothing more.
+Two checks the design claims exist do not.
+
+**The audit vocabulary membership check is ready and was deliberately not landed
+here.** `lib/audit-vocabulary.js` exists, and wiring it into `validateRouteTable`
+is about six lines — I wrote it and reverted it. Without membership, a route may
+declare `user.frobnicated`, which passes the shape check, reaches `audit_events`
+— whose CHECK is *also* only a shape regex — and is written. The closed
+vocabulary is what `audit_events_detail_no_credentials` is protecting, and it is
+worthless if any handler can name an action nobody chose.
+
+It was reverted for a specific reason worth recording, because it is the same
+reason it must land in 2b rather than earlier. Plan 2a declared only the five
+`auth.*` actions its own code emits; parent §5.9 lists roughly twenty-five.
+Landing the check now would either block the synthetic route tables in
+`router-registration.test.js` — which legitimately use `shop.created`,
+`shop.updated` and `terminal.paired`, all real §5.9 entries — or force twenty
+entries to be declared for routes that do not exist. **Complete the vocabulary
+alongside the routes that emit each action, then land the check.** The three
+synthetic actions already prove the mechanism works.
+
+**The limiter roster check does not exist at all, and §5.7 says it does.** That
+section states *"`route()` rejects at boot any route whose `limit` names a
+limiter absent from it."* `validateRouteTable` inspects only `options.limit.key`
+(rejecting a principal-keyed bucket on a public route, which it does correctly).
+There is no roster constant anywhere and no `limit.name` check. Registering
+`limit: { key: "ip", name: "invented" }` today throws nothing and the process
+listens. Plan 2b must either make the claim true or delete it — and since 2b is
+the plan that introduces the first limited routes, making it true is the cheaper
+of the two.
+
 ## 12. Amendments required to the parent spec
 
 | Section | Amendment |
