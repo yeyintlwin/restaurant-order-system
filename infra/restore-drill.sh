@@ -158,8 +158,11 @@ docker compose exec -T -e DRILL_DB="$DRILL_DB" core-api sh -c \
 docker compose exec -T core-db sh -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U core_api_owner -d "$1" -f -' \
   sh "$DRILL_DB" <<'SQL'
--- S1. Every base table carries company_id uuid NOT NULL, or is one of the five named
+-- S1. Every base table carries company_id uuid NOT NULL, or is one of the six named
 -- exceptions -- each of which has its own positive assertion in the node suite.
+-- user_email_tokens is the sixth, and is pre-tenant: the token is presented by an
+-- unauthenticated caller, so the tenant is discovered BY that lookup and cannot be
+-- a column on the row.
 DO $$
 DECLARE bad text;
 BEGIN
@@ -167,7 +170,8 @@ BEGIN
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'public' AND c.relkind = 'r'
-     AND c.relname NOT IN ('audit_events', 'companies', 'schema_migrations', 'user_sessions', 'users')
+     AND c.relname NOT IN ('audit_events', 'companies', 'schema_migrations',
+                           'user_email_tokens', 'user_sessions', 'users')
      AND NOT EXISTS (
        SELECT 1 FROM pg_attribute a
         WHERE a.attrelid = c.oid AND a.attname = 'company_id' AND NOT a.attisdropped

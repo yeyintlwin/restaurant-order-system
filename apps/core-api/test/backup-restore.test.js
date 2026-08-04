@@ -263,7 +263,7 @@ test("the drill mirrors S1, S3, S4, S5 and S7 with the same exception lists", ()
   const script = drill();
 
   const tenantExceptions = arrayLiteral(invariants, "TENANT_COLUMN_EXCEPTIONS");
-  assert.equal(tenantExceptions.length, 5, "S1's exception list changed shape");
+  assert.equal(tenantExceptions.length, 6, "S1's exception list changed shape");
   for (const table of tenantExceptions) {
     assert.ok(script.includes(`'${table}'`), `S1 exception ${table} is missing from the drill`);
   }
