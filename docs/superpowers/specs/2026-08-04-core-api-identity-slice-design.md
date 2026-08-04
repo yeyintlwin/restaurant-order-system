@@ -826,6 +826,47 @@ listens. Plan 2b must either make the claim true or delete it — and since 2b i
 the plan that introduces the first limited routes, making it true is the cheaper
 of the two.
 
+## 11.8 Settled: Phase 3 moves ahead of 2c and 2d
+
+**New order: Plan 2b → Phase 3 → Plan 2c → Plan 2d.**
+
+Parent §1's roadmap runs 2 → 3 → 4. This reorders the back half of Phase 2:
+authentication still comes first, then table visits and e-paper move, and only
+then the admin CRUD and credential recovery that 2c and 2d carry.
+
+**Why.** §11.7's boundary — only core-api crosses to the SDK — is the
+architecture, not a tidy-up. Today `apps/customer-order/epaper-client.js`
+crosses it, which means a *front end* mints the visit credential and drives a
+display directly. Every plan landed before Phase 3 is another plan built on top
+of that, and 2c and 2d add no pressure to remove it. Doing Phase 3 second means
+the shape is right while there is still little built on the wrong one.
+
+The cost is accepted deliberately: the admin UI and forgot-password land later
+than they otherwise would.
+
+**Plan 2b cannot be skipped, and this is a hard dependency rather than a
+preference.** `customer-order` has no credential for core-api at all —
+`server.js:16` reads `EPAPER_API_KEY`, which is the *hub's* key, and core-api
+exposes nothing to authenticate against. A service calling core-api does so as a
+paired terminal, and that machinery is 2b's.
+
+### What Phase 3 has to carry, measured rather than estimated
+
+- **A new migration for `table_visits`.** No such table exists; `0001` and `0002`
+  have none.
+- **382 lines move**, not 31: `table-visit-store.js` (222) and `order-store.js`
+  (129) as well as `epaper-client.js` (31). The QR is the visit token, so the
+  display cannot move without the token's lifecycle, rotation and business-day
+  clock coming with it.
+- **`customer-order` becomes a paired terminal** so it can call core-api at all.
+- Only then is `epaper-client.js` deleted, the SDK dependency moved to
+  `core-api/package.json`, `source-structure.test.js:40`'s `["express", "pg"]`
+  widened, and the one-permitted-caller rule added.
+
+**The shortcut that does not work:** having `customer-order` pass the ordering
+URL *to* core-api. That keeps the credential being minted in the front end, which
+is the thing the boundary exists to stop.
+
 ## 11.7 Settled: core-api owns the display, end to end
 
 The architecture, stated plainly so nothing downstream has to infer it:
