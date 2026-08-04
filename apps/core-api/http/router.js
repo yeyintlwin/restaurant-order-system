@@ -27,7 +27,16 @@ function pathToRegExp(pattern) {
     .split("/")
     .map((segment) => (segment.startsWith(":") ? "[^/]+" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
     .join("/");
-  return new RegExp(`^${source}/?$`);
+  // NO optional trailing slash. nginx grades this service with `location = <path>`,
+  // which is an EXACT match, so "/health/" never matches `location = /health` and
+  // falls to the catch-all `location /` -- which carries the proxy include and no
+  // ACL. Tolerating the slash here therefore walked straight past `deny all` on
+  // /health, past `return 404` on /health/ready, and would have graded
+  // "POST /api/admin/auth/login/" under zone=core_api burst=40 instead of
+  // zone=core_login burst=5 -- the network half of the shed that keeps a flood off
+  // the 2-slot scrypt semaphore. Each file was locally correct; only the pair was
+  // wrong. route-auth.test.js pins it.
+  return new RegExp(`^${source}$`);
 }
 
 function route(method, path, options, handler) {
@@ -157,6 +166,11 @@ function createApp(deps = {}) {
   // "simple" is node:querystring, not qs — nothing in this service reads req.query, and the
   // extended parser is prototype-pollution surface for no benefit.
   app.set("query parser", "simple");
+  // The dispatch half of the same fix. pathToRegExp() governs the 404/405 tail;
+  // this governs Express's own matching, which defaults to tolerating a trailing
+  // slash. Both ends have to agree with nginx's `location =`, or the tail and the
+  // handler disagree about what is a route.
+  app.set("strict routing", true);
   // Deliberately NOT app.set("trust proxy"): the client IP is derived explicitly from
   // TRUSTED_PROXY_HOPS in lib/client-ip.js (Plan 2). Two derivation paths is one too many.
 

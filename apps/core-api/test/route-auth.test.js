@@ -104,3 +104,27 @@ test("server.js requires every route module, so this census covers what producti
     assert.ok(source.includes(`require("${specifier}")`), `server.js must require("${specifier}")`);
   }
 });
+
+test("no route answers to its own path with a trailing slash", () => {
+  // A cross-file invariant, and the only place the two halves of it meet.
+  //
+  // nginx grades this service with `location = <path>` -- an EXACT match. Express
+  // and the 404/405 tail used to tolerate a trailing slash, so "/health/" missed
+  // `location = /health` (and its `allow 127.0.0.1; deny all;`), fell through to
+  // the catch-all `location /`, was proxied with no ACL consulted, and was then
+  // matched and served by the handler. "/health/ready/" walked past its
+  // `return 404;` the same way.
+  //
+  // The cost is not the health routes. It is that every credential route inherits
+  // it: "POST /api/admin/auth/login/" would be graded by zone=core_api burst=40
+  // rather than zone=core_login burst=5, defeating the network half of the shed
+  // that keeps a flood off the 2-slot scrypt semaphore -- and the deploy's own
+  // probe curls the unslashed URI, so nothing would have noticed.
+  for (const entry of entries) {
+    assert.equal(
+      entry.pattern.test(`${entry.path}/`),
+      false,
+      `${entry.key} also answers to ${entry.path}/, which nginx's "location = ${entry.path}" does not cover`
+    );
+  }
+});
