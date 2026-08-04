@@ -124,21 +124,56 @@ test("0002_identity.sql adds the identity schema and locks the ledger", () => {
   assert.match(text, /CREATE TABLE user_email_tokens \(/);
   assert.match(text, /REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM core_api_app;/);
 
+  // SET LOCAL is transaction-scoped and every file gets its own BEGIN, so this
+  // is NOT inherited from 0001. Unlike 0001 this file ALTERs a pre-existing
+  // table, taking ACCESS EXCLUSIVE on users; unbounded, that queues behind any
+  // open transaction and every later reader of users queues behind it.
+  assert.match(text, /SET LOCAL lock_timeout/);
+
   // The live-token index MUST be partial on the two nullable columns and MUST
   // NOT mention expires_at: now() cannot appear in an index predicate, and a
   // developer "fixing" the expired-token case by adding it gets a silent
   // 42P17 at apply time.
   const liveIndex = text.match(/CREATE UNIQUE INDEX user_email_tokens_live_key[\s\S]*?;/);
   assert.ok(liveIndex, "user_email_tokens_live_key is missing");
-  assert.match(liveIndex[0], /WHERE consumed_at IS NULL AND revoked_at IS NULL/);
+  // Whitespace-loose: the neighbouring delivery_due index wraps its predicate
+  // across lines, so reformatting this one to match is a semantics-free change
+  // that must not turn this red. The token_hash assertion below stays exact --
+  // there the precise spelling IS the thing under test.
+  assert.match(liveIndex[0], /WHERE\s+consumed_at IS NULL\s+AND\s+revoked_at IS NULL/);
   assert.doesNotMatch(liveIndex[0], /expires_at|now\(\)/);
+
+  // 'swept' is an allowed revoked_reason, so an expiry sweep will run against
+  // expires_at. Without this index that is a seq scan over every token ever
+  // minted; 0001 builds the same thing for all three of its expiring tables.
+  const sweepIndex = text.match(/CREATE INDEX user_email_tokens_sweep_idx[\s\S]*?;/);
+  assert.ok(sweepIndex, "user_email_tokens_sweep_idx is missing");
+  assert.match(sweepIndex[0], /\(expires_at\)/);
+  assert.match(sweepIndex[0], /WHERE\s+consumed_at IS NULL\s+AND\s+revoked_at IS NULL/);
+
+  // Both end-state invariants are enforced by Postgres, not by discipline --
+  // the house rule 0001 states in its header. Without the second, a row with
+  // revoked_reason set but revoked_at NULL claims to be dead while still
+  // occupying the live_key slot.
+  assert.match(
+    text,
+    /CONSTRAINT user_email_tokens_single_end_state\s+CHECK \(consumed_at IS NULL OR revoked_at IS NULL\)/
+  );
+  assert.match(
+    text,
+    /CONSTRAINT user_email_tokens_revocation_is_explained\s+CHECK \(\(revoked_at IS NULL\) = \(revoked_reason IS NULL\)\)/
+  );
 
   // bytea(32), never hex text -- binding a raw credential by mistake must raise
   // "invalid input syntax for type bytea" rather than matching zero rows.
   assert.match(text, /token_hash\s+bytea NOT NULL CHECK \(octet_length\(token_hash\) = 32\)/);
 
-  // No company_id: this table is read in order to DISCOVER the tenant.
-  assert.doesNotMatch(text, /company_id/);
+  // No company_id: this table is read in order to DISCOVER the tenant. Asserted
+  // against the DDL with `--` comments stripped, because the comment standing
+  // over the table names the absent column in order to explain why it is absent
+  // -- an assertion on the raw text would forbid ever writing that explanation.
+  // No string literal in this file contains `--`, so the naive strip is exact.
+  assert.doesNotMatch(text.replace(/--.*$/gm, ""), /company_id/);
 });
 ```
 
@@ -158,8 +193,19 @@ CRLF-normalises before checksumming, but the test above asserts the stored bytes
 -- 0002_identity.sql -- credential recovery, and the ledger lockdown 0001 could
 -- not perform on itself.
 --
--- Additive only. Nothing here drops or renames, and the one new NOT NULL column
--- lives on a new table, so no existing row is rewritten.
+-- Additive only. Nothing here drops or renames, and the column added to an
+-- existing table is nullable, so no existing row is rewritten.
+
+-- SET LOCAL is transaction-scoped and the runner opens a fresh BEGIN for EVERY
+-- file, so 0001's settings are NOT inherited -- they have to be repeated here.
+-- They bind harder in this file than they did in 0001: ALTER TABLE users takes
+-- ACCESS EXCLUSIVE on a table that ALREADY EXISTS, so with no bound it queues
+-- behind any open transaction touching users, and every later reader of users
+-- then queues behind IT. The REVOKE at the foot of this file takes a lock on
+-- schema_migrations for the same reason. 0001 only ever created new tables --
+-- it could block on nothing pre-existing -- and set these anyway.
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '60s';
 
 -- ---------------------------------------------------------------------------
 -- users.email_verified_at
@@ -191,7 +237,8 @@ CREATE TABLE user_email_tokens (
   -- The address this token was actually sent to, snapshotted. Consumption
   -- requires it to still equal users.email, so a token minted before an
   -- address correction cannot be redeemed after one.
-  sent_to_email       text NOT NULL,
+  sent_to_email       text NOT NULL
+                        CHECK (length(sent_to_email) BETWEEN 3 AND 254),
   expires_at          timestamptz NOT NULL,
   consumed_at         timestamptz,
   consumed_from_ip    inet,
@@ -215,7 +262,18 @@ CREATE TABLE user_email_tokens (
                         CHECK (delivery_last_error IS NULL
                            OR length(delivery_last_error) <= 500),
   CONSTRAINT user_email_tokens_expires_after_creation
-    CHECK (expires_at > created_at)
+    CHECK (expires_at > created_at),
+  -- A row reaches its end state once: consumed or revoked, never both. Named
+  -- ..._single_end_state rather than ..._single_terminal_state like its
+  -- pairing-code sibling, because "terminal" means a physical device
+  -- everywhere else in this schema.
+  CONSTRAINT user_email_tokens_single_end_state
+    CHECK (consumed_at IS NULL OR revoked_at IS NULL),
+  -- Revocation always records why, and a reason always implies a revocation.
+  -- Without this, revoked_reason = 'superseded' with revoked_at still NULL is a
+  -- row that claims to be dead while it goes on occupying the live_key slot.
+  CONSTRAINT user_email_tokens_revocation_is_explained
+    CHECK ((revoked_at IS NULL) = (revoked_reason IS NULL))
 );
 
 CREATE UNIQUE INDEX user_email_tokens_hash_key
@@ -225,9 +283,13 @@ CREATE UNIQUE INDEX user_email_tokens_hash_key
 -- verbatim: now() cannot appear in an index predicate, so an EXPIRED but
 -- unconsumed row still occupies the slot and would permanently brick that
 -- user's recovery. Every mint site therefore runs
---   SELECT ... FOR UPDATE; revoke any live row; INSERT
--- inside ONE transaction. Do not "fix" the expiry case by adding expires_at to
--- this predicate -- Postgres rejects it as not IMMUTABLE.
+--   SELECT ... FROM users WHERE id = $1 FOR UPDATE; revoke any live row; INSERT
+-- inside ONE transaction. The USERS row lock is what stops two concurrent mints
+-- from racing into a 23505 -- locking the token rows would find NOTHING to lock
+-- in the common case where none is live, and both callers would sail through.
+-- It serialises both purposes for one user, which is acceptable at this volume.
+-- Do not "fix" the expiry case by adding expires_at to this predicate --
+-- Postgres rejects it as not IMMUTABLE.
 CREATE UNIQUE INDEX user_email_tokens_live_key
   ON user_email_tokens (user_id, purpose)
   WHERE consumed_at IS NULL AND revoked_at IS NULL;
@@ -238,6 +300,15 @@ CREATE INDEX user_email_tokens_delivery_due_idx
   WHERE delivery_sent_at IS NULL
     AND consumed_at IS NULL
     AND revoked_at IS NULL;
+
+-- The expiry sweep's driving index, same predicate shape as
+-- terminal_pairing_codes_sweep_idx. 'swept' is an allowed revoked_reason, so
+-- something WILL run WHERE expires_at <= now() AND consumed_at IS NULL AND
+-- revoked_at IS NULL -- without this it is a seq scan over every token ever
+-- minted, and an expired row holds a live_key slot until it is swept.
+CREATE INDEX user_email_tokens_sweep_idx
+  ON user_email_tokens (expires_at)
+  WHERE consumed_at IS NULL AND revoked_at IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- Lock the migration ledger against the application role
@@ -359,11 +430,25 @@ git commit -m "test(core-api): the migration set is two files, not one"
 
 ---
 
-### Task 3: Widen the three schema-invariant lists
+### Task 3: Widen the three invariant lists and the fixture truncate set
 
 **Files:**
 
 - Modify: `apps/core-api/test/schema-invariants.test.js:9`, `:20-37`, `:40-44`
+- Modify: `apps/core-api/testing/database.js:16-27` (`FIXTURE_TABLES`)
+- Modify: `apps/core-api/test/testing-database-clone.test.js` (the "ten tables" assertion)
+
+**Why the fixture set is here.** `TRUNCATE` is issued **without `CASCADE`**, over a
+hardcoded ten-table list. `user_email_tokens` carries a foreign key to `users`, so
+truncating `users` now fails with `0A000 cannot truncate a table referenced in a
+foreign key constraint` — taking all eleven subtests of
+`fixtures-two-tenant.test.js` and two of `testing-database-clone.test.js` with it.
+
+That is the mechanism **working**, not breaking. The comment above the list says
+so, and the parent spec says so: *"Omitting `CASCADE` is the point: when Phase 2
+adds `menu_items`, this fails loudly instead of leaving a table silently
+un-reset."* A new table joins the list deliberately or its rows survive a reseed
+and poison the next test.
 
 - [ ] **Step 1: Add the new positive assertion first**
 
@@ -452,17 +537,58 @@ const CASCADE_FKS = new Set([
 ]);
 ```
 
-- [ ] **Step 4: Run the suite to verify it passes**
+- [ ] **Step 4: Add the table to the fixture truncate set**
 
-Run: `node --test apps/core-api/test/schema-invariants.test.js`
+In `apps/core-api/testing/database.js`, add the new table to `FIXTURE_TABLES`.
+**Order matters for readability only** — `TRUNCATE` is a single statement over all
+of them — but keep children before parents to match the existing convention:
 
-Expected: PASS, 0 fail.
+```js
+const FIXTURE_TABLES = [
+  "audit_events",
+  "terminal_tokens",
+  "terminal_pairing_codes",
+  "terminals",
+  "user_email_tokens",
+  "user_sessions",
+  "user_shops",
+  "shop_tables",
+  "shops",
+  "users",
+  "companies"
+];
+```
 
-- [ ] **Step 5: Commit**
+Then update the count in `apps/core-api/test/testing-database-clone.test.js`. Find
+the assertion whose name says `resetFixtures empties the ten tenant tables` and
+change both the title and the count to **eleven**. Search for it:
 
 ```bash
-git add apps/core-api/test/schema-invariants.test.js
-git commit -m "test(core-api): user_email_tokens joins the three pre-tenant exception lists"
+grep -n "ten tenant tables\|FIXTURE_TABLES" apps/core-api/test/testing-database-clone.test.js
+```
+
+- [ ] **Step 5: Run every suite the change touches**
+
+Run:
+
+```bash
+node --test apps/core-api/test/schema-invariants.test.js \
+            apps/core-api/test/fixtures-two-tenant.test.js \
+            apps/core-api/test/testing-database-clone.test.js \
+            apps/core-api/test/testing-database.test.js
+```
+
+Expected: PASS, 0 fail. Before this task those three suites contributed thirteen
+failures with `0A000 cannot truncate a table referenced in a foreign key
+constraint`; all thirteen must now be green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/core-api/test/schema-invariants.test.js \
+        apps/core-api/testing/database.js \
+        apps/core-api/test/testing-database-clone.test.js
+git commit -m "test(core-api): user_email_tokens joins the exception lists and the reseed set"
 ```
 
 ---

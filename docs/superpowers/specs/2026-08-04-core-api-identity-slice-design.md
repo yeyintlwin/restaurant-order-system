@@ -95,8 +95,10 @@ CREATE TABLE user_email_tokens (
                         CHECK (purpose IN ('password_reset', 'email_verify')),
   token_hash          bytea NOT NULL CHECK (octet_length(token_hash) = 32),
   -- The address this token was actually sent to, snapshotted. Consumption
-  -- requires it still equal users.email.
-  sent_to_email       text NOT NULL,
+  -- requires it still equal users.email, so the bound mirrors users.email's:
+  -- an over-long value is not an error, it is a silently unredeemable row.
+  sent_to_email       text NOT NULL
+                        CHECK (length(sent_to_email) BETWEEN 3 AND 254),
   expires_at          timestamptz NOT NULL,
   consumed_at         timestamptz,
   consumed_from_ip    inet,
@@ -114,7 +116,13 @@ CREATE TABLE user_email_tokens (
   delivery_sent_at    timestamptz,
   delivery_last_error text CHECK (delivery_last_error IS NULL
                                   OR length(delivery_last_error) <= 500),
-  CONSTRAINT user_email_tokens_expires_after_creation CHECK (expires_at > created_at)
+  CONSTRAINT user_email_tokens_expires_after_creation CHECK (expires_at > created_at),
+  -- The two end-state invariants 0001 enforces on both of its sibling
+  -- credential tables. Postgres, not discipline.
+  CONSTRAINT user_email_tokens_single_end_state
+    CHECK (consumed_at IS NULL OR revoked_at IS NULL),
+  CONSTRAINT user_email_tokens_revocation_is_explained
+    CHECK ((revoked_at IS NULL) = (revoked_reason IS NULL))
 );
 
 CREATE UNIQUE INDEX user_email_tokens_hash_key
@@ -127,7 +135,24 @@ CREATE UNIQUE INDEX user_email_tokens_live_key
 CREATE INDEX user_email_tokens_delivery_due_idx
   ON user_email_tokens (delivery_next_at)
   WHERE delivery_sent_at IS NULL AND consumed_at IS NULL AND revoked_at IS NULL;
+
+CREATE INDEX user_email_tokens_sweep_idx
+  ON user_email_tokens (expires_at)
+  WHERE consumed_at IS NULL AND revoked_at IS NULL;
 ```
+
+**`revocation_is_explained` is the one doing real work.** Without it,
+`revoked_reason = 'superseded'` with `revoked_at` still `NULL` is a row that
+claims to be dead while it goes on occupying the `live_key` slot — precisely the
+brick this table is shaped to avoid.
+
+**The migration must repeat `SET LOCAL lock_timeout` and `statement_timeout`.**
+`SET LOCAL` is transaction-scoped and the runner opens a fresh `BEGIN` for every
+file, so `0001`'s settings are not inherited. They bind harder here than they did
+there: `ALTER TABLE users` takes `ACCESS EXCLUSIVE` on a table that already
+exists, so with no bound it queues behind any open transaction touching `users`,
+and every later reader of `users` then queues behind it. `0001` only ever created
+new tables, could block on nothing pre-existing, and set them anyway.
 
 **The partial unique index carries the pairing-code trap verbatim.** `now()`
 cannot appear in an index predicate, so an expired-but-unconsumed token still
