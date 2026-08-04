@@ -98,9 +98,23 @@ function drawQr(canvas, url) {
   }
 }
 
-function validateInput({ tableNumber, status, url }) {
-  if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 12) {
-    throw new Error("tableNumber must be an integer from 1 to 12");
+// Mirrors apps/core-api/migrations/0001_init.sql:196 --
+//   label text NOT NULL CHECK (label ~ '^[A-Z0-9][A-Z0-9 -]{0,7}$')
+// -- character for character. That column is the dining table's identity and this
+// renderer is what draws it, so the two must not drift again: the FONT map above was
+// itself derived from this charset (see the comment at 0001_init.sql:186). Note the
+// quantifier caps the whole label at 8 characters, not 8 after the first.
+//
+// Verified equivalent to the Postgres POSIX operator on this database, including the
+// trailing-newline case: JS `$` without /m anchors to end-of-input, so unlike Python
+// it does not admit "A1\n" where `~` would reject it.
+const TABLE_LABEL_PATTERN = /^[A-Z0-9][A-Z0-9 -]{0,7}$/;
+
+function validateInput({ tableLabel, status, url }) {
+  // Checked on the raw string. drawText() uppercases, but leaning on that would let a
+  // lowercase label through here and silently disagree with the CHECK constraint.
+  if (typeof tableLabel !== "string" || !TABLE_LABEL_PATTERN.test(tableLabel)) {
+    throw new Error("tableLabel must match ^[A-Z0-9][A-Z0-9 -]{0,7}$");
   }
   if (!String(status || "").trim()) throw new Error("status is required");
   try {
@@ -111,13 +125,24 @@ function validateInput({ tableNumber, status, url }) {
   }
 }
 
+// The label is drawn verbatim -- no "TABLE " prefix. Measured, not assumed: at scale 5
+// drawText advances 4*5=20px per character over 3*5=15px of ink, so an n-character label
+// from x=12 ends at 12 + 20*(n-1) + 14. The binding limit is not the 296px right edge
+// (14 characters) but drawQr's frame at x=194, which shares this y band (14..38) and is
+// drawn unfilled -- ink past x=193 lands in the QR quiet zone instead of being covered.
+// That caps the label at 9 characters. The schema caps it at 8, ending at x=166, so every
+// legal label clears the QR with a character to spare.
+//
+// A "TABLE " prefix cost 6 of those 9: the worst legal case "TABLE " + 8 characters ran to
+// x=286, clear of the right edge but 93px into the QR. Shrinking to fit needed scale 3,
+// which is the status line's size -- the table's identity would have stopped outranking its
+// status, and this is read at a glance across a table, not up close. So the prefix went.
 function renderTableDisplay(input) {
   validateInput(input);
   const canvas = Array.from({ length: DISPLAY_HEIGHT }, () => Array(DISPLAY_WIDTH).fill("W"));
-  const tableLabel = `TABLE ${String(input.tableNumber).padStart(2, "0")}`;
 
   rectangle(canvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, "B");
-  drawText(canvas, tableLabel, 12, 14, "R", 5);
+  drawText(canvas, input.tableLabel, 12, 14, "R", 5);
   wrapStatus(input.status).forEach((line, index) => drawText(canvas, line, 12, 62 + index * 22, "B", 3));
   drawText(canvas, "SCAN TO ORDER", 12, 109, "R", 2);
   drawQr(canvas, input.url);

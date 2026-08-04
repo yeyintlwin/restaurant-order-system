@@ -15,7 +15,7 @@ test("posts a compact table template to the selected e-paper", async () => {
 
   const result = await sdk.updateTableDisplay({
     epaperId: 3,
-    tableNumber: 8,
+    tableLabel: "A1",
     status: "Welcome",
     url: "https://order.example.test/t/SECONDtokenSECONDtok22"
   });
@@ -43,7 +43,7 @@ test("exposes table rendering without sending a request", () => {
   });
 
   const input = {
-    tableNumber: 2,
+    tableLabel: "TERRACE2",
     status: "Welcome",
     url: "https://order.example.test/t/THIRDtokenTHIRDtoken33"
   };
@@ -66,7 +66,7 @@ test("validates SDK credentials and e-paper IDs", async () => {
 
   const sdk = createEpaperHubSdk({ baseUrl: "https://epaper-hub.example.test", apiKey: "secret-key" });
   await assert.rejects(
-    () => sdk.updateTableDisplay({ epaperId: 13, tableNumber: 1, status: "Welcome", url: "https://order.example.test" }),
+    () => sdk.updateTableDisplay({ epaperId: 13, tableLabel: "B12", status: "Welcome", url: "https://order.example.test" }),
     /epaperId must be an integer from 1 to 12/
   );
 });
@@ -79,7 +79,7 @@ test("reports e-paper hub HTTP errors", async () => {
   });
 
   await assert.rejects(
-    () => sdk.updateTableDisplay({ epaperId: 1, tableNumber: 1, status: "Welcome", url: "https://order.example.test" }),
+    () => sdk.updateTableDisplay({ epaperId: 1, tableLabel: "B12", status: "Welcome", url: "https://order.example.test" }),
     /E-paper hub update failed with 401/
   );
 });
