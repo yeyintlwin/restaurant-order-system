@@ -9,9 +9,14 @@
 -- They bind harder in this file than they did in 0001: ALTER TABLE users takes
 -- ACCESS EXCLUSIVE on a table that ALREADY EXISTS, so with no bound it queues
 -- behind any open transaction touching users, and every later reader of users
--- then queues behind IT. The REVOKE at the foot of this file takes a lock on
--- schema_migrations for the same reason. 0001 only ever created new tables --
--- it could block on nothing pre-existing -- and set these anyway.
+-- then queues behind IT. 0001 only ever created new tables -- it could block on
+-- nothing pre-existing -- and set these anyway.
+--
+-- The ALTER is the whole reason. The three CREATE INDEX statements build on a
+-- table created in this same transaction, which no other session can see, and
+-- the REVOKE at the foot takes NO lock on schema_migrations at all -- it
+-- rewrites pg_class.relacl under a catalog lock and queues no reader. Measured,
+-- not assumed.
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 

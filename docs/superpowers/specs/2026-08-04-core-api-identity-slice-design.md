@@ -157,9 +157,17 @@ new tables, could block on nothing pre-existing, and set them anyway.
 **The partial unique index carries the pairing-code trap verbatim.** `now()`
 cannot appear in an index predicate, so an expired-but-unconsumed token still
 occupies the live slot and would permanently brick that user's recovery. Every
-mint site therefore runs `SELECT … FOR UPDATE` → revoke any live row → insert,
-inside one transaction. This is the same remedy the parent spec prescribes for
-`terminal_pairing_codes`, for the same reason.
+mint site therefore runs `SELECT … FROM users WHERE id = $1 FOR UPDATE` → revoke
+any live row → insert, inside one transaction.
+
+**The lock goes on the `users` row, not on the token rows.** Locking
+`user_email_tokens` finds *nothing to lock* in the common case where no live
+token exists, so two concurrent mints both sail through and one takes a `23505`
+on `user_email_tokens_live_key` — on the one screen whose entire purpose is
+issuing a credential. This is the same remedy the parent spec prescribes for
+`terminal_pairing_codes`, where `0001_init.sql:355-359` likewise names the parent
+table rather than the child. It serialises both purposes for one user, which is
+acceptable at this volume.
 
 **No `company_id`.** The token is presented by an unauthenticated caller, so the
 user — and therefore the tenant — is discovered *by* the lookup. It is in the same

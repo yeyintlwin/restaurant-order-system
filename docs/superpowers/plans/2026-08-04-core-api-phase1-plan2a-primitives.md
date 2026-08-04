@@ -26,14 +26,14 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 0 of 11 tasks done.**
+**Status: 1 of 11 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
 
 | Date | Session did | Tasks finished | Commits | Next |
 | --- | --- | --- | --- | --- |
-| | | **0/11** | | Task 1 |
+| 2026-08-04 | Task 1. `0002_identity.sql` plus its content test. Two review rounds: spec compliance passed first pass; code quality found four Important and three Minor gaps, ALL of which were plan/spec gaps rather than executor errors, and all seven are fixed. The migration now repeats `SET LOCAL lock_timeout`/`statement_timeout` (SET LOCAL is transaction-scoped and the runner opens a fresh BEGIN per file, so 0001s are NOT inherited -- and this is the first migration to ALTER a pre-existing table), names the `users` row as the one to lock at every mint site, carries the two end-state CHECKs 0001 enforces on both sibling credential tables, adds the sweep index, and bounds `sent_to_email`. Reviewer retracted one of its own claims -- REVOKE takes no lock on its target relation -- and I measured that myself before removing the clause. Plan and spec reconciled to the committed files. | **1/11** | `7fa8861`, `ab2e25b`, `947c258`, (this commit) | Task 2 |
 
 ---
 
@@ -107,7 +107,7 @@ consulted by both is the only way that stays true.
 - Create: `apps/core-api/migrations/0002_identity.sql`
 - Test: `apps/core-api/test/source-structure.test.js` (already covers it via C10)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `apps/core-api/test/migrate.test.js`, immediately after the existing
 `test("0001_init.sql is installed verbatim from the design appendix", …)` block:
@@ -177,13 +177,13 @@ test("0002_identity.sql adds the identity schema and locks the ledger", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 
 Expected: FAIL — `ENOENT: no such file or directory, open '…migrations/0002_identity.sql'`.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `apps/core-api/migrations/0002_identity.sql`. **Save it with LF line
 endings** — `.gitattributes` already pins `*.sql` to `eol=lf`, and the runner
@@ -201,9 +201,14 @@ CRLF-normalises before checksumming, but the test above asserts the stored bytes
 -- They bind harder in this file than they did in 0001: ALTER TABLE users takes
 -- ACCESS EXCLUSIVE on a table that ALREADY EXISTS, so with no bound it queues
 -- behind any open transaction touching users, and every later reader of users
--- then queues behind IT. The REVOKE at the foot of this file takes a lock on
--- schema_migrations for the same reason. 0001 only ever created new tables --
--- it could block on nothing pre-existing -- and set these anyway.
+-- then queues behind IT. 0001 only ever created new tables -- it could block on
+-- nothing pre-existing -- and set these anyway.
+--
+-- The ALTER is the whole reason. The three CREATE INDEX statements build on a
+-- table created in this same transaction, which no other session can see, and
+-- the REVOKE at the foot takes NO lock on schema_migrations at all -- it
+-- rewrites pg_class.relacl under a catalog lock and queues no reader. Measured,
+-- not assumed.
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 
@@ -322,7 +327,7 @@ CREATE INDEX user_email_tokens_sweep_idx
 REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM core_api_app;
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `node --test apps/core-api/test/migrate.test.js apps/core-api/test/source-structure.test.js`
 
@@ -331,7 +336,7 @@ database-backed tests listed in Task 2 now FAIL** — that is expected and is Ta
 2's job. If you have no `CORE_API_TEST_DATABASE_URL` exported, every DB test fails
 with the "hard failure on purpose" message instead; that is also fine here.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/migrations/0002_identity.sql apps/core-api/test/migrate.test.js
@@ -344,11 +349,17 @@ git commit -m "feat(core-api): 0002_identity - verification column, token table,
 
 **Files:**
 
-- Modify: `apps/core-api/test/migrate.test.js:104`, `:295`, `:302`, `:309`, `:536`
+- Modify: `apps/core-api/test/migrate.test.js:104`, `:358`, `:365`, `:372`, `:599`
 
 Five assertions encode "there is exactly one migration". Every one fails on file
 existence alone. They are not a bug — they are what stops a migration arriving
 unnoticed — so they widen deliberately, in one commit.
+
+> **Line numbers are post-Task-1.** Task 1 inserts 63 lines near the top of this
+> file, so `:104` is unmoved but the other four shifted. If they have drifted
+> again, find them by content — they are the only `["0001_init.sql"]` literals in
+> the file:
+> `grep -n '\["0001_init.sql"\]' apps/core-api/test/migrate.test.js`
 
 - [ ] **Step 1: Confirm exactly which assertions fail**
 
@@ -368,13 +379,13 @@ Line 104 — the on-disk set:
   assert.deepEqual(fs.readdirSync(MIGRATIONS_DIR).sort(), ["0001_init.sql", "0002_identity.sql"]);
 ```
 
-Line 295 — what a first run applies:
+Line 358 — what a first run applies:
 
 ```js
       assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql"]);
 ```
 
-Line 302 — the ledger's first row. Ordering is by `filename`, so `0001` stays
+Line 365 — the ledger's first row. Ordering is by `filename`, so `0001` stays
 first; assert both rather than only the head, or the second row is unpinned:
 
 ```js
@@ -384,13 +395,13 @@ first; assert both rather than only the head, or the second row is unpinned:
       );
 ```
 
-Line 309 — what a second run skips:
+Line 372 — what a second run skips:
 
 ```js
       assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql"]);
 ```
 
-Line 536 — the CLI's resulting ledger:
+Line 599 — the CLI's resulting ledger:
 
 ```js
     assert.deepEqual(
