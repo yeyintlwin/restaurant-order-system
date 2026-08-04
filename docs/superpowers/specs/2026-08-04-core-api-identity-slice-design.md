@@ -947,6 +947,99 @@ the caller changes nothing. The mapping belongs in the same change that widens
 the SDK contract and decides whether a screen is scoped to a shop or to a
 specific `epaper_hub` terminal.
 
+## 11.9 Landed: the SDK boundary moved before the token did
+
+**Status: shipped.** §11.7's exclusive is now a rule rather than a decision.
+`apps/customer-order/epaper-client.js` is deleted, `@restaurant/epaper-hub-sdk` is a
+dependency of `apps/core-api`, and `apps/core-api/epaper/hub-client.js` is the only
+file in the repository that requires it — asserted as a one-element `deepEqual` by
+rule C16 in `apps/core-api/test/source-structure.test.js`, both app-locally and
+across `apps/` and `packages/`.
+
+```text
+customer-order  →  core-api  →  epaper-hub-sdk  →  epaper-hub
+```
+
+The route is `POST /api/terminal/table-displays/:tableNumber`, `auth: 'terminal'`,
+audit action `table_display.updated`.
+
+### This does not contradict §11.7, and the reason has to be stated
+
+§11.7 says an interim design that has `customer-order` passing the ordering URL *to*
+core-api "would keep minting the credential in the front end and defeat the point."
+That is correct **about an end state**, and this is not one.
+
+What shipped passes the URL in the request body. `table-visit-store.js` still mints,
+rotates and expires the visit token inside `customer-order`. §11.7's own accounting
+is why: moving the token means moving 382 lines, `order-store.js`'s business-day
+clock, and a `table_visits` migration that does not exist — and §11.8 already
+scheduled that as Phase 3.
+
+The two moves are separable **in this direction only**:
+
+- Moving the SDK without the token leaves the token where it already was. It removes
+  a whole class of authority from a front end — nothing outside core-api can now
+  address a physical panel, hold the hub's key, or render a frame — while the visit
+  token's blast radius is unchanged.
+- Moving the token without the SDK is not possible: core-api would be minting a
+  credential it has no way to draw.
+
+So the ordering is forced, and the residual is named rather than hidden: **until
+Phase 3, a compromised `customer-order` can still mint a table's visit token.** It
+can no longer drive the display it appears on. Phase 3 closes the first half by
+moving the store; nothing else has to change at the boundary when it does, because
+the route already takes a table number and core-api will simply resolve the URL
+itself instead of reading it from the body.
+
+### The credential: a configured shared service token, and it is interim
+
+`customer-order` had no credential for core-api at all — §11.8 records that as a hard
+dependency on the pairing machinery. Pairing is Phase 3 and far larger than this
+change, so what shipped is a **configured shared service token**:
+`TABLE_DISPLAY_SERVICE_TOKEN`, held in both secrets files, sent as
+`Authorization: Bearer <token>`, compared with `crypto.timingSafeEqual` over SHA-256
+digests of both sides.
+
+**Why this was acceptable now.** It is the level the codebase already lives at, not a
+mechanism invented for one route: `customer-order` → `epaper-hub` uses `EPAPER_API_KEY`
+the same way, and the counter → `customer-order` checkout route uses `CHECKOUT_API_KEY`.
+Introducing a *third* pattern to avoid a fourth copy of an existing one would have
+made the boundary move the vehicle for an authentication design, and the boundary move
+is the change worth reviewing on its own.
+
+**What it costs, stated plainly.** One secret, shared between two services, with no
+lifecycle: no expiry, no rotation record, no revocation short of editing two files and
+restarting, and no way to tell from an audit row *which* holder of it acted. That last
+point is why the audit entry declares `actorKinds: ["system"]` and carries
+`actorLabel: "table-display-service"` — `audit_events_actor_arc` requires an id column
+for `'user'` and for `'terminal'`, and this caller references neither row.
+
+**Superseded by terminal pairing in Phase 3.** `customer-order` becomes a paired
+terminal, presents a `terminal_tokens` bearer at the same header on the same route,
+and the vocabulary entry becomes `actorKinds: ["terminal"]` with a real
+`actorTerminalId`. The route path was chosen under `/api/terminal/` for exactly that
+reason: the swap is a credential check and an audit actor kind, not a URL change.
+
+### Two smaller decisions worth not re-deriving
+
+**Both of core-api's display secrets are OPTIONAL, in every environment.** Unset,
+`POST /api/terminal/table-displays/:tableNumber` answers 503 and nothing else in the
+service notices. Requiring them would have made a forgotten line in `~/core-api.env`
+into a deploy that refuses to listen *after* the migration has applied and then fails
+the 90-second readiness gate — the failure shape §9.5 spends a page designing away.
+The check is not lost, it is moved: `customer-order` refuses to start without its half,
+so a half-configured deploy is one crash-looping container rather than silence. A token
+that *is* set must be ≥ 32 characters, which does refuse to listen — unlike a missing
+value, a weak one is a decision somebody made.
+
+**A hub failure is 503, not 502.** `db/errors.js`'s code vocabulary is closed and has
+no 502; inventing one would put a status in a response that nothing else in the service
+can produce. 503 also carries `Retry-After: 5` from `http/respond.js`, which is the
+correct instruction, and `customer-order`'s `isTransientEpaperError` reads the status out
+of the message and retries on it. The accepted residual: an SDK *input* rejection — a URL
+whose QR cannot fit the panel — also presents as a retryable 503. It cannot arise from the
+one caller, whose URLs are a fixed `{orderBaseUrl}/t/{22 chars}`.
+
 ## 12. Amendments required to the parent spec
 
 | Section | Amendment |
