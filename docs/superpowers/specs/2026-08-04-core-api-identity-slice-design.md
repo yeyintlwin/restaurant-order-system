@@ -773,6 +773,26 @@ carry a one-line note at each, and the limiter names (`password-reset` versus
 
 ---
 
+## 11.5 Carried into Plan 2b as a required item
+
+**`TRUSTED_PROXY_HOPS` must be asserted against the deployed proxy chain.**
+`lib/client-ip.js` counts from the right of `X-Forwarded-For` by that hop count.
+Set to 2 behind a single proxy, the pick lands on the last client-controlled
+entry and an attacker owns their own rate-limit bucket again — the exact attack
+the module exists to prevent, reachable from a config typo alone.
+
+No per-request test can catch it, and this was checked rather than assumed: a
+forged `X-Forwarded-For: 1.2.3.4` under a one-proxy deployment produces a header
+byte-identical to a legitimate two-proxy deployment whose real client is
+`1.2.3.4`. There is nothing the module can assert about its own input.
+
+It is still mitigable, by the technique that caught the trailing-slash bypass: a
+build-time assertion between the configured hop count and the proxy depth
+`infra/nginx/api.conf` actually deploys. Two locally-correct files, one wrong
+pair. That assertion is a **required** item of Plan 2b's wiring, not a
+nice-to-have — everything else in `lib/` fails safe, and this one fails open and
+silently.
+
 ## 12. Amendments required to the parent spec
 
 | Section | Amendment |

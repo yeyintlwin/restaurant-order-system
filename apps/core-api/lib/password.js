@@ -19,14 +19,20 @@ const SCRYPT_PARAMS = Object.freeze({ N: 32768, r: 8, p: 1, dkLen: 32 });
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 
 const SALT_BYTES = 16;
-// The largest p verifyPassword will attempt. See the guard in verifyPassword for
-// why this is not derived from maxmem.
-const MAX_VERIFIABLE_P = 16;
+// The largest N*r*p verifyPassword will attempt: four times what this service
+// writes. Four doublings of headroom, so the parameters can be raised without a
+// migration, and nothing a legitimate row could ever carry is refused. See the
+// guard in verifyPassword for why this is a work budget rather than a memory one.
+const MAX_VERIFIABLE_WORK = 4 * SCRYPT_PARAMS.N * SCRYPT_PARAMS.r * SCRYPT_PARAMS.p;
 const PASSWORD_MIN_LENGTH = 12;
 // The maximum exists to bound scrypt work reachable from an unauthenticated
 // route, not because long passwords are bad.
 const PASSWORD_MAX_LENGTH = 256;
 
+// Deliberately carries `code` but NOT `status`, unlike SemaphoreFullError, which
+// carries both so a route can rethrow it untouched. The same policy failure is a
+// 400 on a create route and a 422 on a change route, so the status is the route's
+// decision and this class must not pre-empt it.
 class PasswordPolicyError extends Error {
   constructor(code) {
     super(code);
@@ -93,20 +99,23 @@ async function verifyPassword(password, stored) {
   // greater than one or scrypt rejects it with a less legible error.
   if (!Number.isInteger(N) || N < 2 || (N & (N - 1)) !== 0) return false;
   if (!Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1) return false;
+  // Memory, so an absurd N or r is refused rather than allocated.
   if (128 * N * r > SCRYPT_MAXMEM) return false;
-  // p is bounded SEPARATELY, and deliberately not by OpenSSL's memory formula.
+
+  // And WORK, which is the bound that actually matters and which nothing else
+  // provides. scrypt costs N*r*p time and 128*N*r memory, so a memory guard
+  // bounds N and r for free -- their cost scales together -- and says NOTHING
+  // about p, whose memory contribution is negligible while its CPU cost is
+  // linear. Mirroring OpenSSL's own formula, 128*r*p + 128*r*(N+2) <= maxmem,
+  // therefore closes nothing: at N=32768, r=8 it admits p = 32766 EXACTLY at the
+  // limit. I measured that the hard way -- the mirrored guard let the row through
+  // and the process hung on roughly 55 minutes of libuv threadpool time, against
+  // a default pool of four.
   //
-  // That formula is 128*r*p + 128*r*(N+2) <= maxmem, and mirroring it here closes
-  // nothing: at N=32768, r=8 it admits p = 32766 EXACTLY at the limit, which costs
-  // roughly 55 minutes of libuv threadpool time for one verify against a default
-  // pool of four. Memory is not the scarce resource here; CPU is, and OpenSSL does
-  // not bound it. I measured this the hard way -- the mirrored formula let the row
-  // through and the process hung.
-  //
-  // So: a ceiling on the work factor itself. This service writes p = 1 and always
-  // has; 16 leaves room to raise it by four doublings without a migration, and
-  // refuses anything a legitimate row could never carry.
-  if (p > MAX_VERIFIABLE_P) return false;
+  // One budget over the whole product states the real invariant and bounds all
+  // three factors, including the residual the memory guard leaves in N*r: it
+  // permits 64 MiB while the shipped parameters use 32.
+  if (N * r * p > MAX_VERIFIABLE_WORK) return false;
   if (salt.length === 0 || expected.length === 0) return false;
 
   let actual;

@@ -137,9 +137,25 @@ test("a row claiming an absurd p is refused without attempting it", async () => 
   assert.equal(await verifyPassword("correct horse battery staple", stored), false);
   assert.ok(Date.now() - startedAt < 1000, "the p guard did not short-circuit before scrypt");
 
-  // And the ceiling is on p itself, so one past it is refused too.
-  assert.equal(
-    await verifyPassword("correct horse battery staple", `scrypt$N=32768,r=8,p=17$${"A".repeat(22)}$${"B".repeat(43)}`),
-    false
-  );
+  // The budget is over the whole product N*r*p, not over p alone, so it bounds
+  // the two factors the memory guard leaves headroom in as well. Both of these
+  // sit inside 128*N*r <= 64 MiB and outside the work budget.
+  for (const [N, r, p] of [
+    [32768, 8, 17], // p past the ceiling
+    [32768, 64, 1] // r past it, at the same memory
+  ]) {
+    assert.equal(
+      await verifyPassword(
+        "correct horse battery staple",
+        `scrypt$N=${N},r=${r},p=${p}$${"A".repeat(22)}$${"B".repeat(43)}`
+      ),
+      false,
+      `N=${N},r=${r},p=${p} should be outside the work budget`
+    );
+  }
+
+  // And the shipped parameters are comfortably inside it -- a budget that
+  // refused its own service's rows would pass this test by failing everything.
+  const real = await hashPassword("correct horse battery staple");
+  assert.equal(await verifyPassword("correct horse battery staple", real), true);
 });
