@@ -193,6 +193,30 @@ test("every rule matches its own violating fixture and ignores it inside a comme
   }
 });
 
+// A fixture is synthetic BAD code, so one tripping a different rule is not
+// automatically wrong -- but it is one of exactly two things, and only one of them
+// is acceptable. Either the text genuinely is two violations at once (allowlisted
+// below, with the reason), or the fixture carries decoration its own pattern never
+// needed. The second is how Task 10 shipped a C2 violation copied out of C4's
+// fixture, which is the most example-like text in this file and sits on an
+// ALLOWLIST rule -- so it is read by exactly the people entitled to write that call.
+const FIXTURE_CROSS_TRIPS = {
+  "C1 require pg -> C9 impure require in lib": "the fixture IS a pg require; both rules correctly forbid that exact text"
+};
+
+test("no rule's fixture trips a different rule except where that is stated", () => {
+  const observed = [];
+  for (const entry of RULES) {
+    for (const other of RULES) {
+      if (other === entry || other.extension !== entry.extension) continue;
+      if (other.pattern.test(stripComments(entry.mustMatch, entry.extension))) {
+        observed.push(`${entry.name} -> ${other.name}`);
+      }
+    }
+  }
+  assert.deepEqual(observed.sort(), Object.keys(FIXTURE_CROSS_TRIPS).sort());
+});
+
 test("C1: db/pool.js is the only file that requires pg", () => {
   assert.deepEqual(filesMatching(PG_REQUIRE), ["db/pool.js"]);
 });
@@ -347,8 +371,12 @@ const UNSCOPED_ALLOWLIST = [
 const UNSCOPED_CALL = rule(
   "C4 unscoped call",
   /\bwithUnscopedConnection\s*\(/,
-  "await withUnscopedConnection((client) => client.query(sql));",
-  "// await withUnscopedConnection((client) => client.query(sql));"
+  // MINIMAL on purpose. C4's pattern is /withUnscopedConnection\s*\(/, which
+  // matches on the call alone -- a callback body here is decoration its own rule
+  // never needed, and the decoration independently violated C2. Task 10 shipped a
+  // C2 violation copied straight out of this string.
+  "await withUnscopedConnection(fn);",
+  "// await withUnscopedConnection(fn);"
 );
 
 // C5 -- the needle is built by concatenation so the scanner cannot match itself

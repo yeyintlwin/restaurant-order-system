@@ -73,6 +73,36 @@ function assertAuditEvent(event) {
     }
   }
 
+  // audit_events_actor_arc, mirrored. Without this the constraint is reached
+  // instead, and a 23514 inside somebody else's transaction is a 500 where a
+  // programming error belongs. It is also the check most likely to fire: an
+  // action declaring actorKinds ["user"] obliges every caller to pass
+  // actorUserId, and nothing else reminds them.
+  const actorUserId = event.actorUserId ?? null;
+  const actorTerminalId = event.actorTerminalId ?? null;
+  const expectedIdColumn = { user: actorUserId, terminal: actorTerminalId }[actorKind];
+  if (expectedIdColumn === null) {
+    throw new Error(`audit: ${action} actorKind "${actorKind}" requires actor${actorKind === "user" ? "User" : "Terminal"}Id`);
+  }
+  if (expectedIdColumn === undefined && (actorUserId !== null || actorTerminalId !== null)) {
+    throw new Error(`audit: ${action} actorKind "${actorKind}" must carry neither actorUserId nor actorTerminalId`);
+  }
+
+  // audit_events_target_pair: (target_kind IS NULL) = (target_id IS NULL).
+  const targetKind = event.targetKind ?? null;
+  const targetId = event.targetId ?? null;
+  if ((targetKind === null) !== (targetId === null)) {
+    throw new Error(`audit: ${action} targetKind and targetId must be set together or not at all`);
+  }
+  // And the table's fourth column stops being dead data. entry() declares a
+  // targetKind per action; before this, nothing read it, so a reader of the
+  // vocabulary saw a constraint that was never enforced.
+  if (targetKind !== null && targetKind !== declared.targetKind) {
+    throw new Error(
+      `audit: ${action} targetKind "${targetKind}" is not the declared "${String(declared.targetKind)}"`
+    );
+  }
+
   return declared;
 }
 

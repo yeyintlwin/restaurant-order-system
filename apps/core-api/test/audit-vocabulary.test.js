@@ -108,3 +108,42 @@ test("assertAuditEvent rejects a non-scalar detail value", () => {
     /detail\.email must be a scalar/
   );
 });
+
+test("assertAuditEvent mirrors the actor arc, so it fails as a programming error not a 23514", () => {
+  // Both branches of audit_events_actor_arc. Before this the constraint was
+  // reached instead, and a check violation inside somebody else's transaction
+  // surfaces as a 500 where a programming error belongs.
+  assert.throws(
+    () => assertAuditEvent({ action: "auth.email_verify_requested", actorKind: "user", outcome: "success" }),
+    /requires actorUserId/
+  );
+  assert.throws(
+    () =>
+      assertAuditEvent({
+        action: "auth.email_send_failed",
+        actorKind: "system",
+        outcome: "failure",
+        actorUserId: "00000000-0000-0000-0000-000000000000"
+      }),
+    /must carry neither actorUserId nor actorTerminalId/
+  );
+});
+
+test("assertAuditEvent mirrors the target pair and enforces the declared targetKind", () => {
+  const base = { action: "auth.email_verified", actorKind: "anonymous", outcome: "success" };
+
+  // audit_events_target_pair: set together or not at all.
+  assert.throws(() => assertAuditEvent({ ...base, targetKind: "user" }), /set together or not at all/);
+  assert.throws(() => assertAuditEvent({ ...base, targetId: "abc" }), /set together or not at all/);
+
+  // And entry()'s targetKind stops being dead data. This was declared on every
+  // action and read by nothing, so a reader saw a constraint that did not exist.
+  assert.throws(
+    () => assertAuditEvent({ ...base, targetKind: "company", targetId: "abc" }),
+    /is not the declared "user"/
+  );
+
+  // The shapes the writer actually uses still pass.
+  assert.doesNotThrow(() => assertAuditEvent({ ...base, targetKind: "user", targetId: "abc" }));
+  assert.doesNotThrow(() => assertAuditEvent(base));
+});
