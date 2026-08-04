@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 4 of 11 tasks done.**
+**Status: 8 of 11 tasks done. Part 2 is complete.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -39,6 +39,7 @@ steps are ticked and its commit exists.
 | 2026-08-04 | Task 2. The migration-set pins. The plan said five sites; there are SIX -- `assert.equal(ledger.rowCount, 1)` is the only one that is not an array literal, so a grep for the literal finds five of six. The implementer escalated rather than guessing. Confirming that escalation surfaced a worse defect the plan had introduced: both multi-row ledger queries had NO `ORDER BY`, while the new two-element deepEqual and three `rows[0]` accesses had just made row order load-bearing. It would have passed every run until a HOT update or autovacuum reordered the heap. Review found one further real hole -- the pending-migration stderr assertion matched only the first filename, so it had stopped verifying that 0002 is reported at all. 23 pass, 0 fail. | **2/11** | `9d268e6`, (this commit) | Task 3 |
 | 2026-08-04 | Task 3. The plan named three files; there were SIX. Two sites the implementer found and fixed (a comma count over TRUNCATE_STATEMENT, a stale count in a test name), and one they escalated on instead of touching: `infra/restore-drill.sh` hand-mirrors S1 in SQL, and `backup-restore.test.js` regex-extracts the node list to cross-check it. With 0002 applied, the drill would RAISE on a GOOD restore -- a production defect, proved two-sided by deleting the name and watching the exception fire. Review then found the mirror is ONE-DIRECTIONAL: the loops prove node subset drill, nothing proved the reverse, and for an EXEMPTION list the unchecked direction is fail-open -- a bogus name added to the drill alone passed 12/0. Closed with a deepEqual, mutation-tested. 294 tests, 293 pass, 0 fail, 1 skip. | **3/11** | `3db26d9`, `732cc5f`, (this commit) | Task 4 |
 | 2026-08-04 | Task 4. `lib/tokens.js`. The implementer noticed that `lib/` had not existed until this commit, so rule C9 had been comparing `[]` to `[]` since it was written, and mutation-tested it now that it has something to scan. Review then found the gap C9 CANNOT see: a `Math.random` token is still 22 Base64URL characters, still unique across a thousand draws, and passes C9 -- the downgrade REMOVES a require. Demonstrated, not asserted. Closed with a new C14 over `lib/`, mutation-tested, which `lib/password.js` inherits on arrival for its salt. 300 tests, 299 pass. | **4/11** | `bd48644`, (this commit) | Task 5 |
+| 2026-08-04 | Tasks 5-8, closing Part 2. `lib/password.js` (scrypt + verification), `lib/semaphore.js`, `lib/client-ip.js`. The plan code was correct for all four -- the first tasks where it was. Two findings came from exercising the code rather than reading it: the implementer noticed the parameter guard bounded MEMORY (`128*N*r`) while the scarce resource on that path is CPU, and my first fix mirrored OpenSSL`s own formula, which closes nothing -- it admits p = 32766 EXACTLY at the limit. I found that by running it and hanging the process on a ~55 minute scrypt. The bound is now on the work factor itself. Separately the semaphore`s three claims (a shed costs no capacity, no dip on handoff, FIFO admission) were probed rather than trusted; all three hold. 334 tests, 333 pass. | **8/11** | `768f842`, `99210cb`, `33e293a`, `148dff8`, `f7a3316`, (this commit) | Task 9 |
 
 ## How to pick this up
 
@@ -857,7 +858,7 @@ git commit -m "feat(core-api): lib/tokens - the 22-char credential and its bytea
 - Create: `apps/core-api/lib/password.js`
 - Test: `apps/core-api/test/password.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/password.test.js`:
 
@@ -934,13 +935,13 @@ test("maxmem is raised, or scrypt throws at exactly these parameters", async () 
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/password.test.js`
 
 Expected: FAIL — `Cannot find module '../lib/password'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/lib/password.js`:
 
@@ -1022,7 +1023,7 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/password.test.js`
 
@@ -1030,7 +1031,7 @@ Expected: PASS, 7 tests. Each `hashPassword` call takes roughly 100 ms at these
 parameters, so the file takes a few seconds — that is the cost working as
 intended.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/password.js apps/core-api/test/password.test.js
@@ -1050,7 +1051,7 @@ Verification parses `N`/`r`/`p` **out of the stored value**, never out of the
 current constants, so the parameters can be raised later and every old hash still
 verifies.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/password.test.js`:
 
@@ -1113,13 +1114,13 @@ test("verification does not apply the length policy", async () => {
 Add `const crypto = require("node:crypto");` to the top of the test file if it is
 not already there.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/password.test.js`
 
 Expected: FAIL — `verifyPassword is not a function`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `apps/core-api/lib/password.js`, above `module.exports`:
 
@@ -1177,13 +1178,13 @@ async function verifyPassword(password, stored) {
 
 Then add `verifyPassword` to the exported object.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/password.test.js`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/password.js apps/core-api/test/password.test.js
@@ -1204,7 +1205,7 @@ unauthenticated from two routes. A request that would exceed the queue is **shed
 immediately**, never queued: a lengthening queue converts a CPU limit into a
 timeout storm.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/semaphore.test.js`:
 
@@ -1314,13 +1315,13 @@ test("a rejected acquire never occupies a slot", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/semaphore.test.js`
 
 Expected: FAIL — `Cannot find module '../lib/semaphore'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/lib/semaphore.js`:
 
@@ -1398,13 +1399,13 @@ function createSemaphore({ slots, queueDepth } = {}) {
 module.exports = { createSemaphore, SemaphoreFullError };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/semaphore.test.js`
 
 Expected: PASS, 9 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/semaphore.js apps/core-api/test/semaphore.test.js
@@ -1431,7 +1432,7 @@ the throttle entirely.
 the parent spec's `net.isIP()` prescription would violate it. The HTTP layer
 supplies the real one in Plan 2b.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/client-ip.test.js`:
 
@@ -1553,13 +1554,13 @@ test("isIP must be supplied, because lib/ may not require node:net", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/client-ip.test.js`
 
 Expected: FAIL — `Cannot find module '../lib/client-ip'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/lib/client-ip.js`:
 
@@ -1613,13 +1614,13 @@ function deriveClientIp({ header, trustedProxyHops, isIP }) {
 module.exports = { deriveClientIp, UNTRUSTED_BUCKET_KEY };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/client-ip.test.js`
 
 Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/client-ip.js apps/core-api/test/client-ip.test.js
