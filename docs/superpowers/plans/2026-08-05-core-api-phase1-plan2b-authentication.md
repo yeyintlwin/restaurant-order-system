@@ -280,13 +280,25 @@ test("the roster is exactly the seven limiters of spec 5.7", () => {
   assert.ok(Object.isFrozen(LIMITERS));
 });
 
-test("every roster entry declares a key, a window, a Retry-After policy and a bucket", () => {
+test("every roster entry declares a key, a window, a Retry-After policy, a bucket and a ceiling", () => {
+  const { DEFAULTS } = require("../config");
+  // config.js's naming rule: every DEFAULTED key is the camelCase of its
+  // environment variable. Re-derived here rather than hand-listed, so a renamed
+  // variable turns this red instead of silently sizing a bucket at undefined.
+  const camel = (name) =>
+    name.toLowerCase().replace(/_([a-z0-9])/g, (_, ch) => ch.toUpperCase());
+  const configFields = new Set(Object.keys(DEFAULTS).map(camel));
+
   for (const [name, entry] of Object.entries(LIMITERS)) {
     assert.ok(["ip", "user", "terminal"].includes(entry.key), `${name} keys on ${entry.key}`);
     assert.ok(Number.isInteger(entry.windowMs) && entry.windowMs > 0, `${name} window`);
     assert.equal(typeof entry.retryAfter, "boolean", `${name} retryAfter`);
     assert.ok(["request", "failure"].includes(entry.consume), `${name} consume`);
     assert.ok(Object.prototype.hasOwnProperty.call(LIMITERS, entry.bucket), `${name} bucket`);
+    // The ceiling is a CONFIG FIELD THAT EXISTS. Without this the pipeline reads
+    // deps[undefined-key], passes undefined as the ceiling, and lib/rate-limit.js
+    // throws inside a request -- a 500 on the login path, from a typo in a table.
+    assert.ok(configFields.has(entry.ceilingKey), `${name} names config field ${entry.ceilingKey}, which does not exist`);
     assert.ok(Object.isFrozen(entry));
   }
 });
@@ -473,21 +485,29 @@ const HOUR = 60 * MINUTE;
 // its ceiling is five CONSECUTIVE current_password_invalid results, reset by a
 // correct password -- a per-request count would lock a user out of their own
 // password-change route for succeeding at it.
-function limiter(key, windowMs, retryAfter, consume, bucket) {
-  return Object.freeze({ key, windowMs, retryAfter, consume, bucket });
+// `ceilingKey` is the CONFIG FIELD that sizes the bucket, and it is here rather
+// than in the pipeline so the roster stays the one place 5.7's table is written.
+// config.js's naming rule makes the mapping mechanical: every defaulted key is the
+// camelCase of its environment variable (ADMIN_MINT_RATE_PER_10MIN ->
+// adminMintRatePer10min), so the pipeline reads deps[declared.ceilingKey] and no
+// fourth copy of the roster exists.
+function limiter(key, windowMs, retryAfter, consume, bucket, ceilingKey) {
+  return Object.freeze({ key, windowMs, retryAfter, consume, bucket, ceilingKey });
 }
 
 const LIMITERS = Object.freeze({
   // Retry-After is deliberately absent on both credential-independent buckets:
   // the header would confirm to an attacker that their probes are landing, and
   // login and pair are the two 429s spec 6.2 marks as carrying no Retry-After.
-  "login-global": limiter("ip", MINUTE, false, "request", "login-global"),
-  "pair-global": limiter("ip", MINUTE, false, "request", "pair-global"),
-  "create-user": limiter("user", TEN_MINUTES, true, "request", "create-user"),
-  "password-reset": limiter("user", TEN_MINUTES, true, "request", "create-user"),
-  "pairing-code-mint": limiter("user", TEN_MINUTES, true, "request", "pairing-code-mint"),
-  "password-change-abuse": limiter("user", HOUR, true, "failure", "password-change-abuse"),
-  "token-rotate": limiter("terminal", HOUR, true, "request", "token-rotate")
+  "login-global": limiter("ip", MINUTE, false, "request", "login-global", "loginRatePerMinute"),
+  "pair-global": limiter("ip", MINUTE, false, "request", "pair-global", "pairRatePerMinute"),
+  "create-user": limiter("user", TEN_MINUTES, true, "request", "create-user", "adminMintRatePer10min"),
+  // Shares create-user's BUCKET and its CEILING: spec 5.7 says separating them
+  // would double the email-probing ceiling 5.8(b) exists to bound.
+  "password-reset": limiter("user", TEN_MINUTES, true, "request", "create-user", "adminMintRatePer10min"),
+  "pairing-code-mint": limiter("user", TEN_MINUTES, true, "request", "pairing-code-mint", "pairingMintRatePer10min"),
+  "password-change-abuse": limiter("user", HOUR, true, "failure", "password-change-abuse", "passwordAbuseThreshold"),
+  "token-rotate": limiter("terminal", HOUR, true, "request", "token-rotate", "rotateRatePerHour")
 });
 
 // A ceiling on how many windows are tracked at once. Keying on a client IP is
@@ -2778,6 +2798,800 @@ git commit -m "feat(core-api): materialise the scope, with [] and never null for
 
 ## Part 4 — The pipeline
 
+### Task 10: `http/authenticate.js` — resolution and strict channel binding
+
+**Files:**
+
+- Create: `apps/core-api/http/authenticate.js`
+- Create: `apps/core-api/test/authenticate.test.js`
+
+**This resolves `auth: 'user'` and nothing else.** `auth: 'terminal'` is left
+untouched, and that is not a simplification — `POST /api/terminal/table-displays/:tableNumber`
+authenticates a **configured shared service token inside its own handler**, and
+there is no `terminal_tokens` row behind it until Phase 3 pairs `customer-order`
+(§11.9). `repositories/auth/terminal-tokens.js` and `pairing.js` are already on
+C4's allowlist and stay unwritten.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `apps/core-api/test/authenticate.test.js`:
+
+```js
+"use strict";
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const { sessionTokensPresented, clientAddressOf, authenticateUser } = require("../http/authenticate");
+const { SESSION_COOKIE_NAME } = require("../http/cookies");
+const { hashToken } = require("../lib/tokens");
+const { ApiError } = require("../db/errors");
+
+const TOKEN = "AAAAAAAAAAAAAAAAAAAAAA";
+const OTHER = "BBBBBBBBBBBBBBBBBBBBBB";
+const USER = "aaaaaaaa-0003-4000-8000-000000000001";
+const SESSION = "aaaaaaaa-0008-4000-8000-000000000001";
+const COMPANY = "aaaaaaaa-0001-4000-8000-000000000001";
+
+function request(headers = {}) {
+  return { headers, core: { deps: {} } };
+}
+
+// A stub pair standing in for the two repositories. No database: this file is
+// about the CHANNEL, and both repositories have their own database suites.
+function deps(overrides = {}) {
+  return {
+    sessions: {
+      resolveSession: async (tokenHash) =>
+        tokenHash.equals(hashToken(TOKEN))
+          ? {
+              sessionId: SESSION, userId: USER, actingCompanyId: null,
+              expiresAt: new Date(), absoluteExpiresAt: new Date(), lastSeenAt: new Date(),
+              email: "a-admin@example.test", displayName: "A Admin",
+              role: "company_admin", companyId: COMPANY,
+              mustChangePassword: false, actingCompanyStatus: null
+            }
+          : null
+    },
+    scopes: {
+      materialiseScope: async (input) => ({ kind: "tenant", role: input.role, companyId: input.companyId, shopIds: [] })
+    },
+    ...overrides
+  };
+}
+
+test("a session presented in the cookie resolves", async () => {
+  const result = await authenticateUser(request({ cookie: `${SESSION_COOKIE_NAME}=${TOKEN}` }), deps());
+  assert.equal(result.session.userId, USER);
+  assert.equal(result.scope.companyId, COMPANY);
+});
+
+test("no cookie is 401 unauthenticated", async () => {
+  await assert.rejects(() => authenticateUser(request(), deps()), (error) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 401);
+    assert.equal(error.code, "unauthenticated");
+    return true;
+  });
+});
+
+test("TWO session cookies is 401, and is not resolved by picking one", async () => {
+  // Spec 6.3.4 names it explicitly. Picking the first is the natural
+  // implementation and it is the vulnerability: an attacker who can set a cookie
+  // on a sibling host shadows the real session with one the server then trusts.
+  // Picking the LAST is no better -- it just moves which one wins.
+  const req = request({ cookie: `${SESSION_COOKIE_NAME}=${TOKEN}; ${SESSION_COOKIE_NAME}=${OTHER}` });
+  await assert.rejects(() => authenticateUser(req, deps()), /unauthenticated/);
+  assert.equal(sessionTokensPresented(req).length, 2);
+});
+
+test("a session token in Authorization is NOT accepted -- strict channel binding", async () => {
+  // Spec 5.3: "a session cookie is never accepted from an Authorization header, a
+  // terminal token is never accepted from a cookie or a query string, and
+  // presenting both credentials does not widen access." The last clause is the one
+  // that gets lost: a resolver that tries the cookie and FALLS BACK to the header
+  // satisfies the first two sentences and violates the third.
+  await assert.rejects(
+    () => authenticateUser(request({ authorization: `Bearer ${TOKEN}` }), deps()),
+    /unauthenticated/
+  );
+});
+
+test("presenting both a bad cookie and a good bearer does not widen access", async () => {
+  await assert.rejects(
+    () => authenticateUser(
+      request({ cookie: `${SESSION_COOKIE_NAME}=${OTHER}`, authorization: `Bearer ${TOKEN}` }),
+      deps()
+    ),
+    /unauthenticated/
+  );
+});
+
+test("a malformed cookie value is refused before it reaches the database", async () => {
+  // hashToken() would happily digest any string, so an unfiltered value turns
+  // every junk cookie into an indexed lookup. The shape check is free and keeps
+  // the unauthenticated path off the database.
+  let calls = 0;
+  const spy = deps({ sessions: { resolveSession: async () => { calls += 1; return null; } } });
+  await assert.rejects(() => authenticateUser(request({ cookie: `${SESSION_COOKIE_NAME}=nope` }), spy), /unauthenticated/);
+  assert.equal(calls, 0, "a malformed token must not reach resolveSession");
+});
+
+test("authenticateUser never writes: it returns the session and leaves renewal to step 14", async () => {
+  // Spec 6.3.5: "Resolution at step 5 is read-only ... Invariant: a rejected
+  // request never extends a session." Without it, a script on a same-site sibling
+  // can fetch(..., {credentials:'include'}) every five minutes, collect
+  // 403 origin_not_allowed each time, and hold an unattended till session alive to
+  // the 7-day absolute cap instead of letting it die at the 8-hour idle horizon.
+  const calls = [];
+  const spy = deps({
+    sessions: {
+      resolveSession: async () => { calls.push("resolve"); return null; },
+      renewSession: async () => { calls.push("renew"); return null; }
+    }
+  });
+  await assert.rejects(() => authenticateUser(request({ cookie: `${SESSION_COOKIE_NAME}=${TOKEN}` }), spy));
+  assert.deepEqual(calls, ["resolve"]);
+});
+
+test("clientAddressOf counts from the right and fails closed", () => {
+  assert.deepEqual(clientAddressOf({ headers: { "x-forwarded-for": "1.2.3.4, 9.9.9.9" } }, 1), {
+    ip: "9.9.9.9", bucketKey: "9.9.9.9", trusted: true
+  });
+  // Hop count 0 (the development default) trusts nothing, so every request lands
+  // in the one shared "unknown" bucket -- strictest, and the correct fail-closed
+  // answer when no proxy is declared.
+  assert.deepEqual(clientAddressOf({ headers: { "x-forwarded-for": "1.2.3.4" } }, 0), {
+    ip: null, bucketKey: "unknown", trusted: false
+  });
+  assert.equal(clientAddressOf({ headers: {} }, 1).bucketKey, "unknown");
+  // A repeated header arrives as an array; joining it would invent an entry
+  // boundary no proxy wrote.
+  assert.equal(clientAddressOf({ headers: { "x-forwarded-for": ["1.2.3.4", "5.6.7.8"] } }, 1).trusted, false);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+node --test apps/core-api/test/authenticate.test.js
+```
+
+Expected: FAIL — `Cannot find module '../http/authenticate'`.
+
+- [ ] **Step 3: Write the module**
+
+Create `apps/core-api/http/authenticate.js`:
+
+```js
+"use strict";
+
+// Pipeline step 5 (spec 6.3.5): credential resolution and strict channel binding,
+// READ-ONLY. Every write that touches a session -- renewal, deletion -- belongs to
+// step 14 or to a handler.
+//
+// THIS MODULE ISSUES NO SQL. It calls the two pre-tenant repositories, which are
+// on rule C4's allowlist; this file is not, and rule C2's second needle bans a
+// `.query(` here regardless of what the handle is called.
+//
+// IT RESOLVES auth:'user' AND NOTHING ELSE. auth:'terminal' passes through the
+// pipeline untouched, because the only terminal route in the service authenticates
+// a CONFIGURED SHARED SERVICE TOKEN inside its own handler and has no
+// terminal_tokens row behind it until Phase 3 pairs apps/customer-order (spec
+// 11.9). Resolving a bearer here would 401 the one working authenticated route in
+// the service before its handler ever ran.
+
+// lib/client-ip.js takes `isIP` as an ARGUMENT because rule C9 bans node:net under
+// lib/, and its own header says http/ is what supplies it. This is that supply --
+// the second one, alongside http/routes/table-displays.js, which was written
+// before this module existed and is left alone deliberately: changing a shipped,
+// tested route to reach a helper is a risk with no benefit.
+const { isIP } = require("node:net");
+
+const { ApiError } = require("../db/errors");
+const { deriveClientIp } = require("../lib/client-ip");
+const { hashToken, TOKEN_LENGTH } = require("../lib/tokens");
+const { SESSION_COOKIE_NAME, readCookieValues } = require("./cookies");
+
+const TOKEN_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${TOKEN_LENGTH}}$`);
+
+function sessionTokensPresented(req) {
+  return readCookieValues(req.headers.cookie, SESSION_COOKIE_NAME);
+}
+
+function clientAddressOf(req, trustedProxyHops) {
+  return deriveClientIp({ header: req.headers["x-forwarded-for"], trustedProxyHops, isIP });
+}
+
+async function authenticateUser(req, deps) {
+  const presented = sessionTokensPresented(req);
+
+  // EXACTLY ONE. Spec 6.3.4: "No session cookie, unresolvable, or MORE THAN ONE
+  // __Host-core_session" is 401. Picking the first is the natural implementation
+  // and it is the vulnerability -- an attacker who can set a cookie on a sibling
+  // host shadows the real session with one the server then trusts. Picking the
+  // last only moves which one wins.
+  if (presented.length !== 1) throw new ApiError(401, "unauthenticated");
+
+  const token = presented[0];
+  // Shape first, so a junk cookie never becomes an indexed lookup. hashToken()
+  // would digest any string, so without this every 22-byte-or-not value on the
+  // internet is a database round trip on the unauthenticated path.
+  if (!TOKEN_PATTERN.test(token)) throw new ApiError(401, "unauthenticated");
+
+  // The Authorization header is NEVER consulted for a session, and it is never
+  // consulted as a FALLBACK either. Spec 5.3's third clause -- "presenting both
+  // credentials does not widen access" -- is the one a try-cookie-then-header
+  // resolver satisfies on paper and violates in fact.
+  const session = await deps.sessions.resolveSession(hashToken(token));
+  if (session === null) throw new ApiError(401, "unauthenticated");
+
+  const scope = await deps.scopes.materialiseScope({
+    userId: session.userId,
+    sessionId: session.sessionId,
+    role: session.role,
+    companyId: session.companyId,
+    actingCompanyId: session.actingCompanyId
+  });
+
+  return { session, scope };
+}
+
+module.exports = { sessionTokensPresented, clientAddressOf, authenticateUser, TOKEN_PATTERN };
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/authenticate.test.js apps/core-api/test/client-ip.test.js apps/core-api/test/source-structure.test.js
+```
+
+Expected: all pass. C7's `CREDENTIAL_QUERY` rule is the one to watch here — this
+module must never read `req.query.<anything>`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/http/authenticate.js apps/core-api/test/authenticate.test.js
+git commit -m "feat(core-api): resolve a session from the cookie, and from nowhere else"
+```
+
+---
+
+### Task 11: Wire the §6.3.5 pipeline into the dispatch wrapper
+
+This is the task that can break the one working route in the service. Read
+"Six things this plan will NOT let you do", item 5, before starting.
+
+**Files:**
+
+- Modify: `apps/core-api/http/router.js`
+- Modify: `apps/core-api/server.js`
+- Modify: `apps/core-api/test/server-bootstrap.test.js`
+- Create: `apps/core-api/test/pipeline.test.js`
+
+**The mirrors.** `server-bootstrap.test.js` asserts `start()`'s collaborator order
+with a `deepEqual` on an array of strings, so any new step in `start()` moves it:
+
+```bash
+grep -n "deepEqual(calls" apps/core-api/test/server-bootstrap.test.js
+```
+
+- [ ] **Step 1: Write the failing test**
+
+Create `apps/core-api/test/pipeline.test.js`:
+
+```js
+"use strict";
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const { route, createApp } = require("../http/router");
+const { sendJson } = require("../http/respond");
+const { SESSION_COOKIE_NAME } = require("../http/cookies");
+const { createRateLimiter } = require("../lib/rate-limit");
+const { createSemaphore } = require("../lib/semaphore");
+
+// Scratch routes for this file only, exercising each pipeline branch. route-auth
+// deliberately registers nothing, so these cannot pollute its census.
+const ORIGIN = "https://api.yeyintlwin.com";
+const TOKEN = "AAAAAAAAAAAAAAAAAAAAAA";
+
+route("GET", "/__pipe/open", { auth: "public", sample: {} }, (req, res) => sendJson(res, 200, { ok: true }));
+route("GET", "/__pipe/me", { auth: "user", roles: ["anyUser"], sample: {} }, (req, res) =>
+  sendJson(res, 200, { userId: req.core.scope.userId, actorKind: req.core.actorKind })
+);
+route(
+  "POST",
+  "/__pipe/change",
+  { auth: "user", roles: ["anyUser"], body: null, audit: "auth.logout", exemptFromPasswordChange: true, sample: {} },
+  (req, res) => sendJson(res, 200, { ok: true })
+);
+route(
+  "POST",
+  "/__pipe/guarded",
+  { auth: "user", roles: ["anyUser"], body: null, audit: "auth.logout", sample: {} },
+  (req, res) => sendJson(res, 200, { ok: true })
+);
+route(
+  "POST",
+  "/__pipe/limited",
+  { auth: "public", body: null, audit: "auth.login_failed", limit: { key: "ip", name: "login-global" }, sample: {} },
+  (req, res) => sendJson(res, 200, { ok: true })
+);
+
+const USER = "aaaaaaaa-0003-4000-8000-000000000001";
+const SESSION_ID = "aaaaaaaa-0008-4000-8000-000000000001";
+
+function harness(overrides = {}) {
+  const renewals = [];
+  let at = 1_700_000_000_000;
+  const deps = {
+    log: () => {},
+    apiPublicOrigin: ORIGIN,
+    trustedProxyHops: 1,
+    sessionIdleSeconds: 28800,
+    sessionAbsoluteSeconds: 604800,
+    loginRatePerMinute: 3,
+    passwordAbuseThreshold: 5,
+    adminMintRatePer10min: 20,
+    pairingMintRatePer10min: 30,
+    pairRatePerMinute: 20,
+    rotateRatePerHour: 5,
+    rateLimiter: createRateLimiter({ now: () => at }),
+    scryptSemaphore: createSemaphore({ slots: 2 }),
+    mustChangePassword: false,
+    sessions: {
+      resolveSession: async () => ({
+        sessionId: SESSION_ID, userId: USER, actingCompanyId: null,
+        expiresAt: new Date(at + 1000), absoluteExpiresAt: new Date(at + 100000),
+        lastSeenAt: new Date(at), email: "a@example.test", displayName: "A",
+        role: "company_admin", companyId: "aaaaaaaa-0001-4000-8000-000000000001",
+        mustChangePassword: deps.mustChangePassword, actingCompanyStatus: null
+      }),
+      renewSession: async (input) => { renewals.push(input); return null; }
+    },
+    scopes: {
+      materialiseScope: async (input) => ({ kind: "tenant", userId: input.userId, sessionId: input.sessionId, companyId: input.companyId, role: input.role, shopIds: [] })
+    },
+    appendAuditEvent: async () => "1",
+    ...overrides
+  };
+  return { deps, renewals, advance: (ms) => { at += ms; } };
+}
+
+async function withServer(deps, run) {
+  const app = createApp(deps);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  try {
+    await run(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+const cookie = { cookie: `${SESSION_COOKIE_NAME}=${TOKEN}` };
+const jsonPost = { Origin: ORIGIN, "Content-Type": "application/json", ...cookie };
+
+test("a public route is unaffected by the pipeline", async () => {
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/open`);
+    assert.equal(response.status, 200);
+  });
+});
+
+test("an unknown path is 404 BEFORE any credential or Origin is considered", async () => {
+  // Spec 6.3.5 marks step 2 [credential-independent]. Running the Origin gate as
+  // an app.use() ahead of matching would answer 403 here, handing an attacker a
+  // route-existence oracle that needs no credential at all.
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/nonexistent`, { method: "POST" });
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error.code, "not_found");
+  });
+});
+
+test("a cookie-authenticated GET resolves and sets the log actor", async () => {
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/me`, { headers: cookie });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { userId: USER, actorKind: "user" });
+  });
+});
+
+test("a 401 clears the cookie only when one was presented", async () => {
+  // Spec 6.3.4: "+ clearing Set-Cookie only when one was presented". Sending one
+  // unconditionally would let any unauthenticated request instruct a browser to
+  // drop a cookie it never sent.
+  const { deps } = harness({ sessions: { resolveSession: async () => null, renewSession: async () => null } });
+  await withServer(deps, async (base) => {
+    const without = await fetch(`${base}/__pipe/me`);
+    assert.equal(without.status, 401);
+    assert.deepEqual(without.headers.getSetCookie(), []);
+
+    const with_ = await fetch(`${base}/__pipe/me`, { headers: cookie });
+    assert.equal(with_.status, 401);
+    assert.match(with_.headers.getSetCookie().join(), /__Host-core_session=;.*Max-Age=0/);
+  });
+});
+
+test("must_change_password is 403 on a non-exempt route and passes on an exempt one", async () => {
+  // Spec 5.4: "must_change_password is enforced IN THE RESOLVER, not the UI:
+  // while true, every route except POST /api/admin/auth/password and
+  // POST /api/admin/auth/logout returns 403."
+  const { deps } = harness();
+  deps.mustChangePassword = true;
+  await withServer(deps, async (base) => {
+    const blocked = await fetch(`${base}/__pipe/guarded`, { method: "POST", headers: jsonPost });
+    assert.equal(blocked.status, 403);
+    assert.equal((await blocked.json()).error.code, "password_change_required");
+
+    const allowed = await fetch(`${base}/__pipe/change`, { method: "POST", headers: jsonPost });
+    assert.equal(allowed.status, 200);
+  });
+});
+
+test("the gate order is 401, then 403 password_change_required, then 403 origin", async () => {
+  // 6.3.5 puts step 6 before step 7. Reversed, an attacker with no session learns
+  // whether their Origin is allowed before being asked for a credential.
+  const { deps } = harness();
+  deps.mustChangePassword = true;
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/guarded`, {
+      method: "POST",
+      headers: { ...cookie, Origin: "https://evil.test", "Content-Type": "text/plain" }
+    });
+    assert.equal((await response.json()).error.code, "password_change_required");
+  });
+});
+
+test("a cookie-authenticated POST needs Origin and Content-Type; a GET does not", async () => {
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const noOrigin = await fetch(`${base}/__pipe/change`, {
+      method: "POST", headers: { ...cookie, "Content-Type": "application/json" }
+    });
+    assert.equal(noOrigin.status, 403);
+    assert.equal((await noOrigin.json()).error.code, "origin_not_allowed");
+
+    const badType = await fetch(`${base}/__pipe/change`, {
+      method: "POST", headers: { ...cookie, Origin: ORIGIN, "Content-Type": "text/plain" }
+    });
+    assert.equal(badType.status, 415);
+
+    const get = await fetch(`${base}/__pipe/me`, { headers: cookie });
+    assert.equal(get.status, 200, "a cookie-auth GET is not origin-gated (6.3.3, 6.3.4)");
+  });
+});
+
+test("a credential-independent bucket sheds with 429 and NO Retry-After", async () => {
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    for (let n = 1; n <= 3; n += 1) {
+      const ok = await fetch(`${base}/__pipe/limited`, {
+        method: "POST", headers: { Origin: ORIGIN, "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.5" }
+      });
+      assert.equal(ok.status, 200, `call ${n}`);
+    }
+    const shed = await fetch(`${base}/__pipe/limited`, {
+      method: "POST", headers: { Origin: ORIGIN, "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.5" }
+    });
+    assert.equal(shed.status, 429);
+    assert.equal(shed.headers.get("retry-after"), null, "login-global must not confirm the bucket");
+    assert.equal((await shed.json()).error.code, "rate_limited");
+  });
+});
+
+test("the credential-independent bucket is consumed BEFORE any credential is read", async () => {
+  // Spec 6.3.5 step 4a: "before any scrypt is queued". A limiter that ran after
+  // resolution would let an attacker queue work by presenting junk.
+  let resolved = 0;
+  const { deps } = harness({
+    sessions: { resolveSession: async () => { resolved += 1; return null; }, renewSession: async () => null }
+  });
+  await withServer(deps, async (base) => {
+    for (let n = 0; n < 5; n += 1) {
+      await fetch(`${base}/__pipe/limited`, {
+        method: "POST", headers: { Origin: ORIGIN, "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.6" }
+      });
+    }
+  });
+  assert.equal(resolved, 0, "a public route must not resolve a credential at all");
+});
+
+test("a rejected request never extends a session; a successful one does", async () => {
+  // The invariant of 5.2 and 6.3.5 step 14, and the attack it closes: a script on
+  // order.yeyintlwin.com can fetch(..., {credentials:'include'}) every five
+  // minutes, collect 403 origin_not_allowed each time, and hold an unattended till
+  // session alive to the 7-day absolute cap.
+  const { deps, renewals } = harness();
+  await withServer(deps, async (base) => {
+    await fetch(`${base}/__pipe/change`, { method: "POST", headers: { ...cookie, "Content-Type": "application/json" } });
+    assert.deepEqual(renewals, [], "a 403 renewed a session");
+
+    await fetch(`${base}/__pipe/me`, { headers: { ...cookie, "X-Forwarded-For": "198.51.100.7" } });
+    assert.equal(renewals.length, 1);
+    assert.equal(renewals[0].sessionId, SESSION_ID);
+    assert.equal(renewals[0].lastSeenIp, "198.51.100.7");
+  });
+});
+
+test("a renewal failure never turns a successful response into an error", async () => {
+  // Step 14 runs after the response is written. A throw there must be logged, not
+  // surfaced: the request succeeded, and the only casualty is an idle window that
+  // slides a minute later.
+  const { deps } = harness({
+    sessions: {
+      resolveSession: async () => ({
+        sessionId: SESSION_ID, userId: USER, actingCompanyId: null,
+        expiresAt: new Date(), absoluteExpiresAt: new Date(), lastSeenAt: new Date(),
+        email: "a@example.test", displayName: "A", role: "company_admin",
+        companyId: "aaaaaaaa-0001-4000-8000-000000000001",
+        mustChangePassword: false, actingCompanyStatus: null
+      }),
+      renewSession: async () => { throw new Error("connection terminated unexpectedly"); }
+    }
+  });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/me`, { headers: cookie });
+    assert.equal(response.status, 200);
+  });
+});
+
+test("the existing terminal route still works: the pipeline resolves nothing for it", async () => {
+  // THE REGRESSION THIS WHOLE TASK RISKS. POST /api/terminal/table-displays/:tableNumber
+  // authenticates a configured service token in its own handler and has no
+  // terminal_tokens row behind it. A pipeline that resolved a bearer would 401 it
+  // before the handler ran, and a pipeline that origin-gated /api/terminal/* would
+  // 403 it.
+  require("../http/routes/table-displays");
+  const { deps } = harness({
+    tableDisplay: { configured: true, updateTableDisplay: async () => ({ ok: true }) },
+    tableDisplayServiceToken: "0123456789abcdef0123456789abcdef"
+  });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/terminal/table-displays/7`, {
+      method: "POST",
+      headers: { Authorization: "Bearer 0123456789abcdef0123456789abcdef", "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "Welcome", orderingUrl: "https://order.example.test/t/AAAAAAAAAAAAAAAAAAAAAA" })
+    });
+    assert.equal(response.status, 200, "no Origin header, no cookie, and it must still be 200");
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+node --test apps/core-api/test/pipeline.test.js
+```
+
+Expected: FAIL — the cookie route answers 200 with `req.core.scope` undefined
+(a `TypeError` → 500), no 401, no 429, no renewal.
+
+- [ ] **Step 3: Implement**
+
+**(a)** In `apps/core-api/http/router.js` add the requires:
+
+```js
+const { LIMITERS } = require("../lib/rate-limit");
+const { AUDIT_ACTIONS } = require("../lib/audit-vocabulary");
+const { buildClearingCookie } = require("./cookies");
+const { requiresOriginCheck, assertOriginAndContentType } = require("./csrf");
+const { sessionTokensPresented, clientAddressOf, authenticateUser } = require("./authenticate");
+```
+
+(The first two are already there from Tasks 2 and 3.)
+
+Then add the pipeline above `createApp`:
+
+```js
+// Spec 6.3.5, steps 3 through 7, in order, and THE ORDERING IS THE SECURITY
+// PROPERTY. It runs INSIDE the dispatch wrapper -- after route lookup -- because
+// as an app.use() ahead of the routes it would answer 403 origin_not_allowed for
+// an unknown path instead of 404 not_found, destroying the
+// [credential-independent] property step 2 is marked with. And a pure
+// http/csrf.js called from here is the only compliant shape anyway:
+// source-structure.test.js rule C3 forbids app.use( outside this file.
+//
+// Returns true when the handler should run. Every refusal RESPONDS HERE and
+// returns false, rather than throwing: two of them (429, 401) have to set a
+// header, ApiError cannot carry one, and one style for all five beats a mix a
+// reader has to hold in their head.
+async function runPipeline(entry, req, res, deps) {
+  // Step 3 -- the declared auth mode. Nothing to do at runtime: route() and
+  // validateRouteTable() have already refused a table with a missing or unknown
+  // mode, which is why 6.3.5 marks this step "never a runtime 500".
+
+  // Step 4a -- CREDENTIAL-INDEPENDENT buckets, before any scrypt is queued.
+  const address = clientAddressOf(req, deps.trustedProxyHops);
+  req.core.clientIp = address.ip;
+  req.core.clientBucketKey = address.bucketKey;
+  if (!consumeLimit(entry, req, res, deps, "ip", address.bucketKey)) return false;
+
+  if (entry.options.auth === "user") {
+    // Step 5 -- credential resolution and channel binding, READ-ONLY.
+    const authenticate = deps.authenticate || authenticateUser;
+    let resolved;
+    try {
+      resolved = await authenticate(req, deps);
+    } catch (error) {
+      if (!(error && error.status === 401)) throw error;
+      // A clearing Set-Cookie ONLY when one was presented (6.3.4). Sending it
+      // unconditionally would let any unauthenticated request instruct a browser
+      // to drop a cookie it never sent.
+      const headers = sessionTokensPresented(req).length > 0 ? { "Set-Cookie": buildClearingCookie() } : {};
+      sendError(res, error, req.core.requestId, headers);
+      return false;
+    }
+
+    req.core.session = resolved.session;
+    req.core.scope = resolved.scope;
+    req.core.actorKind = "user";
+    req.core.actorId = resolved.session.userId;
+
+    // Step 5b -- PRINCIPAL-KEYED buckets. They could not run at 4a: the principal
+    // does not exist until now, and keying them on the presented credential string
+    // would put every probe in a fresh empty bucket AND make the map an
+    // unauthenticated memory-growth vector.
+    if (!consumeLimit(entry, req, res, deps, "user", resolved.session.userId)) return false;
+
+    // Step 6 -- the must_change_password gate, in the RESOLVER and not the UI.
+    // Spec 8.5 rule 3 fixes the exempt set at exactly two routes, and
+    // route-auth.test.js asserts it by set equality.
+    if (resolved.session.mustChangePassword && entry.options.exemptFromPasswordChange !== true) {
+      sendError(res, { status: 403, code: "password_change_required" }, req.core.requestId);
+      return false;
+    }
+  }
+
+  // Step 7 -- Origin and Content-Type, AFTER the password gate. Reversed, an
+  // attacker with no session learns whether their Origin is allowed before being
+  // asked for a credential.
+  if (requiresOriginCheck(entry)) {
+    try {
+      assertOriginAndContentType({
+        origin: req.headers.origin,
+        contentType: req.headers["content-type"],
+        apiPublicOrigin: deps.apiPublicOrigin
+      });
+    } catch (error) {
+      sendError(res, error, req.core.requestId);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// One helper for both 4a and 5b: `stage` is the key kind this call is responsible
+// for, so a principal-keyed limiter is invisible at 4a and an ip-keyed one is not
+// consumed twice.
+function consumeLimit(entry, req, res, deps, stage, bucketKey) {
+  const declared = entry.options.limit ? LIMITERS[entry.options.limit.name] : null;
+  if (declared === null || declared.key !== stage) return true;
+  // "failure" limiters are the handler's to consume -- password-change-abuse
+  // counts consecutive failures, and a per-request decrement would lock a user out
+  // of their own password-change route for succeeding at it.
+  if (declared.consume !== "request") return true;
+
+  const ceiling = deps[declared.ceilingKey];
+  const verdict = deps.rateLimiter.consume(entry.options.limit.name, bucketKey, ceiling);
+  if (verdict.allowed) return true;
+
+  const headers = verdict.retryAfterSeconds === null ? {} : { "Retry-After": String(verdict.retryAfterSeconds) };
+  sendError(res, { status: 429, code: "rate_limited" }, req.core.requestId, headers);
+  return false;
+}
+
+// Step 14 -- sliding renewal, at most once per 60 seconds, and ONLY on a request
+// that reached the handler and succeeded. The throttle itself lives in the SQL so
+// two concurrent requests cannot both decide they are the one allowed to renew.
+async function renewIfSucceeded(entry, req, res, deps) {
+  if (entry.options.auth !== "user" || req.core.session === undefined) return;
+  if (res.statusCode >= 400) return;
+  try {
+    await deps.sessions.renewSession({
+      sessionId: req.core.session.sessionId,
+      idleSeconds: deps.sessionIdleSeconds,
+      lastSeenIp: req.core.clientIp
+    });
+  } catch (error) {
+    // The response is already written. A failure here costs one minute of idle
+    // window, and turning a successful request into a 500 because of it would be
+    // strictly worse.
+    req.core.logExtra.renewal = "failed";
+  }
+}
+```
+
+**(b)** Replace the dispatch wrapper's body — find it with
+`grep -n "req.core.routePattern = entry.path" apps/core-api/http/router.js`:
+
+```js
+  for (const entry of routes) {
+    app[entry.method.toLowerCase()](entry.path, (req, res, next) => {
+      req.core.routePattern = entry.path;
+      // async, because steps 5 and 14 both await. The whole body is one promise
+      // chain so a rejection anywhere reaches next() and the error tail, which is
+      // the only thing that may build a response from an exception.
+      (async () => {
+        if (!(await runPipeline(entry, req, res, deps))) return;
+        await entry.handler(req, res);
+        await renewIfSucceeded(entry, req, res, deps);
+      })().catch(next);
+    });
+  }
+```
+
+**(c)** In `apps/core-api/server.js`, build the new collaborators and pass them:
+
+```js
+const { createSemaphore } = require("./lib/semaphore");
+const { createRateLimiter } = require("./lib/rate-limit");
+const sessionsRepository = require("./repositories/auth/sessions");
+const scopesRepository = require("./repositories/auth/scope-materialize");
+```
+
+and inside `start()`, in the `createApp({ … })` call, add:
+
+```js
+    apiPublicOrigin: config.apiPublicOrigin,
+    sessionIdleSeconds: config.sessionIdleSeconds,
+    sessionAbsoluteSeconds: config.sessionAbsoluteSeconds,
+    loginRatePerMinute: config.loginRatePerMinute,
+    loginTimeBudgetMs: config.loginTimeBudgetMs,
+    passwordAbuseThreshold: config.passwordAbuseThreshold,
+    adminMintRatePer10min: config.adminMintRatePer10min,
+    pairingMintRatePer10min: config.pairingMintRatePer10min,
+    pairRatePerMinute: config.pairRatePerMinute,
+    rotateRatePerHour: config.rotateRatePerHour,
+    // Date.now is injected HERE rather than read inside lib/, which is what keeps
+    // lib/rate-limit.js Tier 1 and every window boundary unit-testable.
+    rateLimiter: options.rateLimiter || createRateLimiter({ now: Date.now }),
+    // Spec 5.1: SCRYPT_SLOTS concurrent hashes with a queue depth of 4x, shedding
+    // 503 rather than queueing -- "a lengthening queue converts a CPU limit into a
+    // timeout storm". ONE semaphore for the whole process: two would be two limits.
+    scryptSemaphore: options.scryptSemaphore || createSemaphore({ slots: config.scryptSlots }),
+    sessions: options.sessions || sessionsRepository,
+    scopes: options.scopes || scopesRepository,
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/pipeline.test.js apps/core-api/test/table-displays.test.js \
+            apps/core-api/test/route-auth.test.js apps/core-api/test/router-registration.test.js \
+            apps/core-api/test/health.test.js apps/core-api/test/server-bootstrap.test.js
+```
+
+Expected: all pass. **`table-displays.test.js` is the one that matters** — it is
+the proof the pipeline did not 401 or 403 the only working authenticated route.
+If `server-bootstrap.test.js` fails on its `deepEqual(calls, …)`, the new
+collaborators were added to `start()`'s ordered section rather than to the
+`createApp` argument; move them.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/http/router.js apps/core-api/server.js \
+        apps/core-api/test/pipeline.test.js apps/core-api/test/server-bootstrap.test.js
+git commit -m "feat(core-api): the 6.3.5 pipeline, inside the wrapper where 404 still beats 403"
+```
+
+---
+
+## Part 5 — The routes
+
 <!-- PART-BREAK -->
+
 
 
