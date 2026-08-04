@@ -826,6 +826,55 @@ listens. Plan 2b must either make the claim true or delete it — and since 2b i
 the plan that introduces the first limited routes, making it true is the cheaper
 of the two.
 
+## 11.7 Settled: only core-api may call the e-paper SDK
+
+Recorded here because it is decided, is violated today, and the violation is
+load-bearing until Phase 3.
+
+Parent decision 5 says *"core-api owns business logic and calls it through the
+SDK."* This sharpens it to an exclusive: **`@restaurant/epaper-hub-sdk` has
+exactly one permitted caller, and it is `core-api`.** No other app drives an
+e-paper display.
+
+### What violates it today
+
+`apps/customer-order/epaper-client.js` is the only runtime consumer in the
+repository — a 27-line adapter that `server.js` uses to flip a table to
+`Table is in use` on the first order. `epaper-hub` does not consume its own SDK,
+and `core-api` does not depend on it at all: its manifest is `["express", "pg"]`,
+pinned by `source-structure.test.js:40`.
+
+So this cannot be enforced now. `customer-order` is the *only* thing that updates
+a display, and deleting it before core-api can do the job leaves every table
+showing the wrong status.
+
+### What it costs, in the commit that lands it
+
+Phase 3 already owns moving e-paper orchestration into core-api. This decision
+makes three consequences explicit rather than incidental:
+
+1. `apps/customer-order/epaper-client.js` and its test are **deleted**, not
+   ported — the adapter's shape belongs to a service that owns table visits.
+2. `@restaurant/epaper-hub-sdk` moves out of `apps/customer-order/package.json`
+   and into `apps/core-api/package.json`. That is a **third** runtime dependency
+   for core-api, and `source-structure.test.js:40`'s `deepEqual` on
+   `["express", "pg"]` moves in the same commit. Both lockfiles regenerate.
+3. The exclusivity gets a rule, in the shape this repository already uses twice —
+   C1 (`pg` only in `db/pool.js`), C3 (`express` only in `http/router.js`). A
+   repo-wide scan for `require("@restaurant/epaper-hub-sdk")` whose permitted set
+   is a one-element list. Without it the rule is a convention, and every
+   convention in this service that mattered has a test.
+
+### The coupling this does NOT fix
+
+`epaper-client.js` passes `epaperId: tableNumber`, which looks like the thing to
+correct while moving it. It is not, and parent §10 already worked this out: the
+coupling lives in `packages/epaper-hub-sdk/index.js:24`, which hard-rejects any
+`epaperId` outside 1..12, as does `table-template.js`'s `validateInput`. Moving
+the caller changes nothing. The mapping belongs in the same change that widens
+the SDK contract and decides whether a screen is scoped to a shop or to a
+specific `epaper_hub` terminal.
+
 ## 12. Amendments required to the parent spec
 
 | Section | Amendment |
