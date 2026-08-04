@@ -230,10 +230,12 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
     assert.equal(catalog.tables.user_email_tokens.user_id.type, "uuid");
     assert.equal(catalog.tables.user_email_tokens.user_id.notNull, true);
 
-    // Credential digest as bytea, never hex text: binding a raw credential by
-    // mistake must raise "invalid input syntax for type bytea", not match zero rows.
-    assert.equal(catalog.tables.user_email_tokens.token_hash.type, "bytea");
-    assert.ok(catalog.constraintNames.has("user_email_tokens_expires_after_creation"));
+    // Nothing further here. This test's remit is evidence that each exception is
+    // legitimately exempt from the company_id rule -- the two assertions above are
+    // exactly that. token_hash's type is already swept by S4 over every %_hash
+    // column, and the expires_at CHECK is pinned in migrate.test.js; asserting them
+    // here would make this the only exception carrying claims unrelated to its
+    // exemption.
 
     // The exception list itself cannot rot into naming tables that no longer exist.
     for (const table of TENANT_COLUMN_EXCEPTIONS) {

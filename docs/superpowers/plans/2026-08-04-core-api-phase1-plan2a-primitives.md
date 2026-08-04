@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 2 of 11 tasks done.**
+**Status: 3 of 11 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -37,6 +37,7 @@ steps are ticked and its commit exists.
 
 ---
 | 2026-08-04 | Task 2. The migration-set pins. The plan said five sites; there are SIX -- `assert.equal(ledger.rowCount, 1)` is the only one that is not an array literal, so a grep for the literal finds five of six. The implementer escalated rather than guessing. Confirming that escalation surfaced a worse defect the plan had introduced: both multi-row ledger queries had NO `ORDER BY`, while the new two-element deepEqual and three `rows[0]` accesses had just made row order load-bearing. It would have passed every run until a HOT update or autovacuum reordered the heap. Review found one further real hole -- the pending-migration stderr assertion matched only the first filename, so it had stopped verifying that 0002 is reported at all. 23 pass, 0 fail. | **2/11** | `9d268e6`, (this commit) | Task 3 |
+| 2026-08-04 | Task 3. The plan named three files; there were SIX. Two sites the implementer found and fixed (a comma count over TRUNCATE_STATEMENT, a stale count in a test name), and one they escalated on instead of touching: `infra/restore-drill.sh` hand-mirrors S1 in SQL, and `backup-restore.test.js` regex-extracts the node list to cross-check it. With 0002 applied, the drill would RAISE on a GOOD restore -- a production defect, proved two-sided by deleting the name and watching the exception fire. Review then found the mirror is ONE-DIRECTIONAL: the loops prove node subset drill, nothing proved the reverse, and for an EXEMPTION list the unchecked direction is fail-open -- a bogus name added to the drill alone passed 12/0. Closed with a deepEqual, mutation-tested. 294 tests, 293 pass, 0 fail, 1 skip. | **3/11** | `3db26d9`, `732cc5f`, (this commit) | Task 4 |
 
 ## How to pick this up
 
@@ -63,6 +64,26 @@ $env:CORE_API_TEST_DATABASE_URL = 'postgres://core_api_owner:devpassword@127.0.0
 ```
 
 Tasks 1, 3–8 and 10 need no database. Tasks 2, 9 and 11 do.
+
+### Standing rule: every list in this repository is mirrored somewhere
+
+This plan undercounted its own edit sites **three times** — Task 2 named five pins
+where there were six, Task 3 named three files where there were four, and Task 3's
+list of sites was still short by two after that. The pattern is not carelessness in
+any one task; it is that this codebase deliberately pins invariants in more than
+one place so a change cannot land quietly, and the mirrors are not co-located with
+what they mirror.
+
+`schema-invariants.test.js`'s exception lists are re-derived by
+`backup-restore.test.js`, which cross-checks them against a **shell script** in
+`infra/`. `FIXTURE_TABLES` is pinned by a `deepEqual`, a `length`, a comma count in
+a different suite, and two test names. None of that is discoverable from the file
+being edited.
+
+**So: before editing any list, grep for its name and for the spelled-out count
+across `apps/`, `infra/` and `docs/` — and treat a site the plan does not mention
+as a finding to report, not a decision to make.** The tasks below give the greps
+where they are known.
 
 ### Two things this plan will NOT let you do
 
@@ -502,9 +523,44 @@ git commit -m "test(core-api): the migration set is two files, not one"
 
 **Files:**
 
-- Modify: `apps/core-api/test/schema-invariants.test.js:9`, `:20-37`, `:40-44`
-- Modify: `apps/core-api/testing/database.js:16-27` (`FIXTURE_TABLES`)
-- Modify: `apps/core-api/test/testing-database-clone.test.js` (the "ten tables" assertion)
+- Modify: `apps/core-api/test/schema-invariants.test.js` — three lists, one test name, plus the existing S1 positive-assertion test
+- Modify: `apps/core-api/testing/database.js` — `FIXTURE_TABLES`
+- Modify: `apps/core-api/test/testing-database.test.js` — the `deepEqual`, the `length`, and the test name
+- Modify: `apps/core-api/test/testing-database-clone.test.js` — a **comma count** and two test names
+- Modify: `infra/restore-drill.sh` — the S1 `NOT IN` list and its comment
+- Modify: `apps/core-api/test/backup-restore.test.js` — the exception-count pin
+
+**Six files.** The last two are the ones nothing in `apps/core-api/test/` points
+at: `backup-restore.test.js` regex-extracts `TENANT_COLUMN_EXCEPTIONS` out of
+`schema-invariants.test.js` and cross-checks every name against
+`infra/restore-drill.sh`.
+
+⚠️ **The drill edit is a production fix, not test bookkeeping.**
+`restore-drill.sh` re-implements S1 in SQL and raises
+`S1: tables without company_id uuid NOT NULL: …` for any base table lacking the
+column. `user_email_tokens` lacks it by design, so once `0002_identity.sql` is
+applied **the drill fails on a perfectly good restore** — and a drill that goes red
+on success is worse than no drill, because it teaches whoever reads it to ignore
+the result.
+
+`testing-database-clone.test.js` also asserts the `TRUNCATE` statement's comma
+count directly — `TRUNCATE_STATEMENT.match(/,/g).length` — which is a site no
+grep for `FIXTURE_TABLES` will find.
+
+Do **not** touch `docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md`,
+which contains the same SQL. That is a historical record of what Plan 5 shipped.
+
+**Four files, seven sites.** `FIXTURE_TABLES` is pinned harder than it looks:
+`testing-database.test.js` carries a full `deepEqual` over the list, an
+`assert.equal(FIXTURE_TABLES.length, 10)`, and a test named *"the truncate set
+names all ten non-infrastructure tables"* — so the count appears three times in
+one test, plus once more in a neighbouring suite's test name. Find every site by
+content rather than by line number, which has drifted twice already in this plan:
+
+```bash
+grep -rn "FIXTURE_TABLES\|ten tenant tables\|ten non-infrastructure" \
+  apps/core-api/testing apps/core-api/test
+```
 
 **Why the fixture set is here.** `TRUNCATE` is issued **without `CASCADE`**, over a
 hardcoded ten-table list. `user_email_tokens` carries a foreign key to `users`, so
@@ -518,7 +574,7 @@ adds `menu_items`, this fails loudly instead of leaving a table silently
 un-reset."* A new table joins the list deliberately or its rows survive a reseed
 and poison the next test.
 
-- [ ] **Step 1: Add the new positive assertion first**
+- [x] **Step 1: Add the new positive assertion first**
 
 S1 requires that **each** tenant-column exception carries its own positive
 assertion, so a bare list entry is a hole.
@@ -554,7 +610,7 @@ positive assertion instead` (`:193`), after the `audit_events` assertions:
     assert.ok(catalog.constraintNames.has("user_email_tokens_expires_after_creation"));
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `node --test apps/core-api/test/schema-invariants.test.js`
 
@@ -563,7 +619,7 @@ and S2b still FAIL because the lists have not moved. That is the correct
 intermediate state: the positive assertion is written before the exemption it
 justifies.
 
-- [ ] **Step 3: Widen the three lists**
+- [x] **Step 3: Widen the three lists**
 
 `:9` — `TENANT_COLUMN_EXCEPTIONS`, five entries to six, alphabetical:
 
@@ -605,7 +661,7 @@ const CASCADE_FKS = new Set([
 ]);
 ```
 
-- [ ] **Step 4: Add the table to the fixture truncate set**
+- [x] **Step 4: Add the table to the fixture truncate set**
 
 In `apps/core-api/testing/database.js`, add the new table to `FIXTURE_TABLES`.
 **Order matters for readability only** — `TRUNCATE` is a single statement over all
@@ -627,15 +683,20 @@ const FIXTURE_TABLES = [
 ];
 ```
 
-Then update the count in `apps/core-api/test/testing-database-clone.test.js`. Find
-the assertion whose name says `resetFixtures empties the ten tenant tables` and
-change both the title and the count to **eleven**. Search for it:
+Then the three pins in `apps/core-api/test/testing-database.test.js`, all inside
+one test:
 
-```bash
-grep -n "ten tenant tables\|FIXTURE_TABLES" apps/core-api/test/testing-database-clone.test.js
-```
+- the test's own name — *"the truncate set names all ten non-infrastructure
+  tables"* → **eleven**
+- the `assert.deepEqual(FIXTURE_TABLES, [ … ])` list — add `"user_email_tokens"`
+  in the same position as above
+- `assert.equal(FIXTURE_TABLES.length, 10)` → **11**
 
-- [ ] **Step 5: Run every suite the change touches**
+And one test name in `apps/core-api/test/testing-database-clone.test.js` —
+*"resetFixtures empties the ten tenant tables and leaves the ledger alone"* →
+**eleven**. That test's body counts no tables, so the name is the only site.
+
+- [x] **Step 5: Run every suite the change touches**
 
 Run:
 
@@ -650,7 +711,7 @@ Expected: PASS, 0 fail. Before this task those three suites contributed thirteen
 failures with `0A000 cannot truncate a table referenced in a foreign key
 constraint`; all thirteen must now be green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/core-api/test/schema-invariants.test.js \

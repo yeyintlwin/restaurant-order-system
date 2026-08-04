@@ -268,6 +268,24 @@ test("the drill mirrors S1, S3, S4, S5 and S7 with the same exception lists", ()
     assert.ok(script.includes(`'${table}'`), `S1 exception ${table} is missing from the drill`);
   }
 
+  // The loop above proves node ⊆ drill. This proves drill ⊆ node, and that is the
+  // direction that matters for an EXEMPTION list: a name present only in the drill
+  // silently stops S1 checking that table on every future restore, and the drill
+  // still exits 0. Fail-open, and invisible -- adding a bogus seventh name passed
+  // this suite before this assertion existed.
+  //
+  // S3 and S7 are requirement lists rather than exemption lists, so their unchecked
+  // direction only makes the drill stricter and surfaces as a loud RAISE. They are
+  // left one-directional deliberately.
+  const drillS1 = (script.match(/c\.relname NOT IN \(([\s\S]*?)\)/)[1].match(/'([a-z_]+)'/g) || []).map(
+    (quoted) => quoted.replace(/'/g, "")
+  );
+  assert.deepEqual(
+    drillS1.sort(),
+    [...tenantExceptions].sort(),
+    "the drill's S1 exemption list and TENANT_COLUMN_EXCEPTIONS have diverged"
+  );
+
   const anchors = objectKeys(invariants, "ANCHORS");
   assert.equal(anchors.length, 4, "S3's anchor list changed shape");
   for (const anchor of anchors) {

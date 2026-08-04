@@ -162,7 +162,9 @@ docker compose exec -T core-db sh -c \
 -- exceptions -- each of which has its own positive assertion in the node suite.
 -- user_email_tokens is the sixth, and is pre-tenant: the token is presented by an
 -- unauthenticated caller, so the tenant is discovered BY that lookup and cannot be
--- a column on the row.
+-- a column on the row. It could not be one even if that were not so -- a platform
+-- admin's users.company_id is NULL by users_platform_admin_has_no_company, so
+-- company_id uuid NOT NULL here would be unfillable for their password reset.
 DO $$
 DECLARE bad text;
 BEGIN
