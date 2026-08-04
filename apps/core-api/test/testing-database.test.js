@@ -64,12 +64,13 @@ test("maintenanceDsn swaps only the database name, preserving credentials and po
   );
 });
 
-test("the truncate set names all ten non-infrastructure tables", () => {
+test("the truncate set names all eleven non-infrastructure tables", () => {
   assert.deepEqual(FIXTURE_TABLES, [
     "audit_events",
     "terminal_tokens",
     "terminal_pairing_codes",
     "terminals",
+    "user_email_tokens",
     "user_sessions",
     "user_shops",
     "shop_tables",
@@ -77,7 +78,7 @@ test("the truncate set names all ten non-infrastructure tables", () => {
     "users",
     "companies"
   ]);
-  assert.equal(FIXTURE_TABLES.length, 10);
+  assert.equal(FIXTURE_TABLES.length, 11);
   assert.ok(!FIXTURE_TABLES.includes("schema_migrations"));
   assert.equal(TEMPLATE_DATABASE_NAME, "core_api_test_template");
 });

@@ -18,6 +18,7 @@ const FIXTURE_TABLES = [
   "terminal_tokens",
   "terminal_pairing_codes",
   "terminals",
+  "user_email_tokens",
   "user_sessions",
   "user_shops",
   "shop_tables",

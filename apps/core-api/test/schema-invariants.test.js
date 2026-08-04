@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { after, before, describe, test } = require("node:test");
 const { cloneTemplate, migrationChecksums, skipDatabaseTests } = require("../testing/database");
 
-// S1. Five entries, not the two the settled text names. Each one's own positive
+// S1. Six entries, not the two the settled text names. Each one's own positive
 // assertion lives in its own test below, so this is a stated shape rather than a
 // hole: a Phase-2 table that omits company_id fails unless a developer
 // consciously edits this list.
@@ -10,6 +10,7 @@ const TENANT_COLUMN_EXCEPTIONS = [
   "audit_events",
   "companies",
   "schema_migrations",
+  "user_email_tokens",
   "user_sessions",
   "users"
 ];
@@ -31,16 +32,21 @@ const COMPOSITE_FK_EXCEPTIONS = {
     "attribution: references a TENANT table single-column, which needs saying out loud",
   "user_sessions.user_id": "pre-tenant: read in order to DISCOVER the tenant",
   "user_sessions.acting_company_id": "pre-tenant: read in order to DISCOVER the tenant",
+  "user_email_tokens.user_id": "pre-tenant: read in order to DISCOVER the tenant",
   "terminal_tokens.pairing_code_id":
     "the row is already anchored by its own composite FK; making this composite needs a " +
     "4-column UNIQUE that 0001 does not create"
 };
 
-// S2b. CASCADE is permitted for exactly three FKs and nothing else.
+// S2b. CASCADE is permitted for exactly four FKs and nothing else.
 const CASCADE_FKS = new Set([
   "user_shops.user_id,company_id",
   "user_sessions.user_id",
-  "user_sessions.acting_company_id"
+  "user_sessions.acting_company_id",
+  // Same class as user_sessions.user_id: an ephemeral credential, not history.
+  // A deleted user must not be blocked by a dead reset token, and unlike an
+  // audit row the token has no accountability value once its subject is gone.
+  "user_email_tokens.user_id"
 ]);
 
 // S3. Postgres already refuses a composite FK without a matching UNIQUE. The
@@ -211,6 +217,24 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
     assert.equal(catalog.tables.audit_events.company_id.notNull, false);
     assert.ok(catalog.constraintNames.has("audit_events_shop_implies_company"));
 
+    // user_email_tokens is pre-tenant: the token is presented by an
+    // unauthenticated caller, so the company is discovered BY this lookup
+    // rather than being known before it. Same class as user_sessions.
+    assert.equal(
+      catalog.tables.user_email_tokens.company_id,
+      undefined,
+      "user_email_tokens must have no company_id at all"
+    );
+
+    // The single link to a tenant, NOT NULL so no row can float free of a user.
+    assert.equal(catalog.tables.user_email_tokens.user_id.type, "uuid");
+    assert.equal(catalog.tables.user_email_tokens.user_id.notNull, true);
+
+    // Credential digest as bytea, never hex text: binding a raw credential by
+    // mistake must raise "invalid input syntax for type bytea", not match zero rows.
+    assert.equal(catalog.tables.user_email_tokens.token_hash.type, "bytea");
+    assert.ok(catalog.constraintNames.has("user_email_tokens_expires_after_creation"));
+
     // The exception list itself cannot rot into naming tables that no longer exist.
     for (const table of TENANT_COLUMN_EXCEPTIONS) {
       assert.ok(catalog.tables[table], `the exception list names a table that does not exist: ${table}`);
@@ -227,7 +251,7 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
     }
   });
 
-  test("S2b: no SET NULL or SET DEFAULT, and CASCADE only on the three named keys", () => {
+  test("S2b: no SET NULL or SET DEFAULT, and CASCADE only on the four named keys", () => {
     assert.deepEqual(foreignKeysWithWrongDeleteAction(catalog.foreignKeys), []);
 
     for (const key of CASCADE_FKS) {

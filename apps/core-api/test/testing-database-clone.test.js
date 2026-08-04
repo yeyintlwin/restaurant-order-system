@@ -29,8 +29,8 @@ test("staleness compares the ledger against the migrations directory, digest inc
   );
 });
 
-test("the truncate statement names ten tables, restarts identity and has no CASCADE", () => {
-  assert.equal(TRUNCATE_STATEMENT.match(/,/g).length, 9);
+test("the truncate statement names eleven tables, restarts identity and has no CASCADE", () => {
+  assert.equal(TRUNCATE_STATEMENT.match(/,/g).length, 10);
   assert.doesNotMatch(TRUNCATE_STATEMENT, /CASCADE/i);
   assert.match(TRUNCATE_STATEMENT, / RESTART IDENTITY$/);
 });
@@ -83,7 +83,7 @@ describe("cloned test database", { skip: skipDatabaseTests() }, () => {
     assert.equal(rows[0].moved, true);
   });
 
-  test("resetFixtures empties the ten tenant tables and leaves the ledger alone", async () => {
+  test("resetFixtures empties the eleven tenant tables and leaves the ledger alone", async () => {
     await db.resetFixtures();
     await db.unscoped("INSERT INTO companies (id, name) VALUES ($1, $2)", [COMPANY_ID, "To Be Truncated"]);
 
