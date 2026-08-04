@@ -39,6 +39,26 @@ present in the real environment always wins over the file.
 | `DATABASE_MIGRATION_URL` | **required** | The migration pool (`max: 1`), closed before `listen()`. Username must be `core_api_owner` when `NODE_ENV=production` (CI runs as `postgres`). |
 | `DATABASE_URL` | **required** | The runtime pool. Username must be `core_api_app` in every environment, and the DSN must differ from `DATABASE_MIGRATION_URL`. |
 | `CORE_API_TEST_DATABASE_URL` | unset | Maintenance DSN the test harness clones the template from. Never set in production. |
+| `EPAPER_HUB_URL` | `http://epaper-hub:3000` | Base URL of the e-paper hub. Absolute `http:`/`https:`, no query or fragment; a path is allowed. Deliberately **not** held to the `API_PUBLIC_ORIGIN` rules — the hub is another container on the Compose `default` bridge. |
+| `EPAPER_API_KEY` | unset | The hub's bearer — the same value `epaper-hub` reads as `API_KEY`. **Optional**: unset, the display route answers 503 and nothing else changes. |
+| `TABLE_DISPLAY_SERVICE_TOKEN` | unset | The interim shared service token `customer-order` presents (§11.9). **Optional**, but ≥ 32 characters when set. |
+
+### The display route, and why its two secrets are optional
+
+`core-api` is the only permitted caller of `@restaurant/epaper-hub-sdk` (identity-slice
+design §11.7). `epaper/hub-client.js` is the single file that requires it and
+`POST /api/terminal/table-displays/:tableNumber` is the route that drives it;
+`apps/customer-order` reaches a display only through that route.
+
+Both credentials above are optional **in every environment**, and that is a decision rather
+than an omission. This process migrates the database *before* it listens, so a required
+secret missing from `~/core-api.env` would refuse to listen after the migration had already
+applied and fail the deploy's 90-second readiness gate. Unconfigured, only the display route
+is affected and it answers 503. The loud half of the pair is on the other side:
+`customer-order` refuses to start without its copy of the token, so a half-configured deploy
+presents as one crash-looping container rather than as silence. A token that *is* set must
+be ≥ 32 characters — that one refuses to listen, because unlike a missing value it is a
+decision somebody made.
 
 Everything else — the session, pairing, rate-limit, scrypt and pool tunables — is
 defaulted in `config.js` (`DEFAULTS`) to the same value `docker-compose.yml` sets,

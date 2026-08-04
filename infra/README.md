@@ -11,7 +11,7 @@ Production services:
 
 The deployed project folder is `~/restaurant-order-system`. It should contain only `docker-compose.yml` and optional `config/`. Runtime secrets stay in `~/restaurant-order-system.env`.
 
-Docker publishes the hub at `127.0.0.1:3000` and customer ordering at `127.0.0.1:3100`; Nginx terminates HTTPS for both subdomains. Inside Compose, customer ordering uses `EPAPER_HUB_URL=http://epaper-hub:3000`. On every customer-order startup, tables 1 through 12 are reset to `WELCOME` before port 3100 begins accepting traffic.
+Docker publishes the hub at `127.0.0.1:3000` and customer ordering at `127.0.0.1:3100`; Nginx terminates HTTPS for both subdomains. Inside Compose, **core-api** uses `EPAPER_HUB_URL=http://epaper-hub:3000` and customer ordering uses `CORE_API_URL=http://core-api:3200` — the display path is `customer-order → core-api → epaper-hub`, and core-api is the only service that holds the e-paper SDK (identity-slice design §11.7). On every customer-order startup, tables 1 through 12 are reset to `WELCOME` before port 3100 begins accepting traffic; those twelve requests now go through core-api.
 
 ## Secure Table QR Runtime Values
 
@@ -22,6 +22,14 @@ SHOP_ID=1
 CHECKOUT_API_KEY=<independent-random-secret>
 BUSINESS_TIME_ZONE=Asia/Tokyo
 BUSINESS_DAY_ROLLOVER_HOUR=6
+TABLE_DISPLAY_SERVICE_TOKEN=<32+ character random secret, same value in ~/core-api.env>
+```
+
+`TABLE_DISPLAY_SERVICE_TOKEN` is new with the §11.7 boundary move and customer-order refuses to
+start without it. Generate it once and put the identical value in **both** secrets files:
+
+```bash
+node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'
 ```
 
 Compose supplies `BUSINESS_TIME_ZONE` and `BUSINESS_DAY_ROLLOVER_HOUR` as non-secret defaults. `SHOP_ID` and `CHECKOUT_API_KEY` must come from the external runtime environment file, which stays outside the deploy folder at mode `600`.
@@ -42,8 +50,18 @@ Each table display shows an opaque visit URL, `https://order.yeyintlwin.com/t/AA
 
 | File | Read by | Holds |
 | --- | --- | --- |
-| `~/restaurant-order-system.env` | `epaper-hub`, `customer-order` | `EPAPER_API_KEY`, `SHOP_ID`, `CHECKOUT_API_KEY`, … |
-| `~/core-api.env` | `core-db`, `core-api` | `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL`, `DATABASE_URL` |
+| `~/restaurant-order-system.env` | `epaper-hub`, `customer-order` | `API_KEY`, `SHOP_ID`, `CHECKOUT_API_KEY`, `TABLE_DISPLAY_SERVICE_TOKEN`, … |
+| `~/core-api.env` | `core-db`, `core-api` | `POSTGRES_PASSWORD`, `DATABASE_MIGRATION_URL`, `DATABASE_URL`, `EPAPER_API_KEY`, `TABLE_DISPLAY_SERVICE_TOKEN` |
+
+Two values are deliberately **duplicated across both files**, and each is duplicated for a
+different reason:
+
+- `TABLE_DISPLAY_SERVICE_TOKEN` — the same secret on both sides of one bearer check.
+  `customer-order` presents it, `core-api` compares it. A mismatch is a 401 on every display
+  update and nothing else, so check this pair first when panels stop changing.
+- The e-paper hub key — `epaper-hub` reads it as `API_KEY` and `core-api` reads the same value
+  as `EPAPER_API_KEY`. It moved into `~/core-api.env` because §11.7 moved the SDK: `core-api`
+  is now the only process that talks to the hub, and `customer-order` no longer needs it at all.
 
 Both are mode `600`, owned by the deploy user, and both stay **outside** the deploy folder —
 `deploy.yml` deletes everything in `~/restaurant-order-system` except `docker-compose.yml` and
@@ -67,7 +85,20 @@ Create `~/core-api.env` **before** core-api's first production deploy:
 POSTGRES_PASSWORD=<24+ chars; avoid / + = so the DSN needs no escaping>
 DATABASE_MIGRATION_URL=postgres://core_api_owner:<the same password>@core-db:5432/core
 DATABASE_URL=postgres://core_api_app:<a second password>@core-db:5432/core
+EPAPER_API_KEY=<the same value epaper-hub reads as API_KEY>
+TABLE_DISPLAY_SERVICE_TOKEN=<the same value customer-order presents>
 ```
+
+The last two arrived with the §11.7 boundary move and behave differently from everything above
+them: **core-api boots without them.** Leave either empty and the service still migrates, listens
+and passes the deploy's readiness gate — only `POST /api/terminal/table-displays/{n}` answers 503.
+That is deliberate. This process migrates the database *before* it listens, so a required secret
+missing from this file would refuse to listen after the schema had already changed and fail the
+90-second gate. The loud half of the pair is on the other side: `customer-order` refuses to start
+without its copy, so a half-configured deploy is one crash-looping container rather than silence.
+
+A `TABLE_DISPLAY_SERVICE_TOKEN` that *is* set must be at least 32 characters — that one does
+refuse to listen, because unlike a missing value it is a decision somebody made.
 
 `POSTGRES_PASSWORD` must be byte-identical to the password inside `DATABASE_MIGRATION_URL`;
 `core-api` refuses to listen if they differ, which is exactly how "somebody edited one line and not

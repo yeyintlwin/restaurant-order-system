@@ -46,25 +46,26 @@ http://localhost:3100/t/<token-from-the-table-1-QR>
 
 Table QR codes always encode the production origin, so copy only the 22-character token when testing locally.
 
-Applications can update a table display through the SDK:
+### One service drives the displays
 
-```js
-const { createEpaperHubSdk } = require("./packages/epaper-hub-sdk");
-
-const epaper = createEpaperHubSdk({
-  baseUrl: "https://epaper-hub.yeyintlwin.com",
-  apiKey: process.env.EPAPER_API_KEY
-});
-
-await epaper.updateTableDisplay({
-  epaperId: 3,
-  tableLabel: "A1",
-  status: "Welcome",
-  url: "https://order.yeyintlwin.com/t/EXAMPLEtokenEXAMPLEtok"
-});
+```text
+customer-order  →  core-api  →  @restaurant/epaper-hub-sdk  →  epaper-hub
 ```
 
-Keep this call on the server so `EPAPER_API_KEY` is never exposed to customers. `TABLE_DISPLAY_API_KEY` is a separate server-only credential for the customer-order provisioning endpoint; it is not the e-paper hub `EPAPER_API_KEY` or its `API_KEY` fallback.
+`core-api` is the controlling API and the **only** permitted caller of the e-paper SDK (identity-slice design §11.7). `apps/core-api/epaper/hub-client.js` is the single file in the repository that requires it, and rule C16 in `apps/core-api/test/source-structure.test.js` asserts that repository-wide as a one-element list.
+
+Everything else asks core-api:
+
+```bash
+curl -X POST "https://api.yeyintlwin.com/api/terminal/table-displays/7" \
+  -H "Authorization: Bearer $TABLE_DISPLAY_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"Welcome","orderingUrl":"https://order.yeyintlwin.com/t/EXAMPLEtokenEXAMPLEtok"}'
+```
+
+`TABLE_DISPLAY_SERVICE_TOKEN` is an interim shared service token (§11.9), held in both `~/restaurant-order-system.env` and `~/core-api.env` and compared with `crypto.timingSafeEqual`. Phase 3 replaces it with terminal pairing. `EPAPER_API_KEY` — the hub's own credential — now lives only in `~/core-api.env` and is never exposed to customers. `TABLE_DISPLAY_API_KEY` is a different, server-only credential for the customer-order provisioning endpoint; it is neither of the two above.
+
+The ordering URL still travels in that request body because `customer-order` still mints the visit token. §11.7's end state has core-api resolving the token itself so no front end holds one; that moves in Phase 3 with `table-visit-store.js`, and §11.9 records why the SDK boundary moved first.
 
 Initialize a table display through the customer-order service:
 
@@ -127,13 +128,14 @@ The environment files remain outside that folder: `~/restaurant-order-system.env
 and `customer-order`, and `~/core-api.env` for `core-db` and `core-api`. They are separate on
 purpose — see `infra/README.md`, "Core API runtime: two secrets files and core-net".
 
-Customer-order production startup requires these values. Keep `SHOP_ID` and `CHECKOUT_API_KEY` in the external production environment file; Compose supplies the two non-secret business-time defaults.
+Customer-order production startup requires these values. Keep `SHOP_ID`, `CHECKOUT_API_KEY` and `TABLE_DISPLAY_SERVICE_TOKEN` in the external production environment file; Compose supplies the two non-secret business-time defaults.
 
 ```dotenv
 SHOP_ID=1
 CHECKOUT_API_KEY=<independent-random-secret>
 BUSINESS_TIME_ZONE=Asia/Tokyo
 BUSINESS_DAY_ROLLOVER_HOUR=6
+TABLE_DISPLAY_SERVICE_TOKEN=<32+ character random secret, same value in ~/core-api.env>
 ```
 
-Docker Compose runs `epaper-hub` and `customer-order` together. The hub and order ports bind only to `127.0.0.1`; Nginx owns public HTTPS. The order service waits for the hub health check, then connects to it privately at `http://epaper-hub:3000` while rendering public QR links for `https://order.yeyintlwin.com`.
+Docker Compose runs `epaper-hub`, `customer-order`, `core-api` and `core-db` together. The hub, order and API ports bind only to `127.0.0.1`; Nginx owns public HTTPS. The order service waits for the hub health check, then reaches `core-api` privately at `http://core-api:3200` for every display update while rendering public QR links for `https://order.yeyintlwin.com`; `core-api` is the service that connects to the hub at `http://epaper-hub:3000`.

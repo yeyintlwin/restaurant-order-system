@@ -20,23 +20,37 @@ http://localhost:3100/t/<token-from-the-table-1-QR>
 
 Table QR codes always encode the production origin `https://order.yeyintlwin.com`, so copy only the 22-character token when testing locally.
 
-For direct local processes outside Docker, set `EPAPER_HUB_URL=http://localhost:3000`. Compose overrides it with the private service address shown below.
+For direct local processes outside Docker, set `CORE_API_URL=http://localhost:3200`. Compose overrides it with the private service address shown below.
+
+## This app does not drive the e-paper displays
+
+It asks `core-api` to, and `core-api` calls the SDK. That is the boundary of the identity-slice design §11.7: **core-api is the controlling API, and `@restaurant/epaper-hub-sdk` has exactly one permitted caller.** Concretely:
+
+- `apps/customer-order/table-display-client.js` sends `POST /api/terminal/table-displays/{tableNumber}` to core-api with `{ "status": …, "orderingUrl": … }`.
+- core-api renders the frame and posts it to the hub.
+- This app holds no hub URL and no hub key. `EPAPER_HUB_URL` and `EPAPER_API_KEY` are `core-api`'s configuration and live in `~/core-api.env`.
+
+The bearer it presents is `TABLE_DISPLAY_SERVICE_TOKEN`, an **interim shared service token** (§11.9): core-api compares it with `crypto.timingSafeEqual` over SHA-256 digests. Phase 3 pairs this app as a terminal and replaces the shared token with a `terminal_tokens` bearer at the same route.
+
+What has **not** moved yet is the QR itself. `table-visit-store.js` still mints, rotates and expires the visit token here, and the ordering URL travels to core-api in the request body. §11.7's end state has core-api resolving the token so no front end ever holds one; that is Phase 3, together with `order-store.js` and a `table_visits` migration. §11.9 records why the SDK moved first.
 
 ## Environment
 
 ```bash
 PORT=3100
-EPAPER_HUB_URL=http://epaper-hub:3000
+CORE_API_URL=http://core-api:3200
+TABLE_DISPLAY_SERVICE_TOKEN=<32-plus-character-random-secret>
 ORDER_BASE_URL=https://order.yeyintlwin.com
 SHOP_ID=1
 CHECKOUT_API_KEY=<independent-random-secret>
 BUSINESS_TIME_ZONE=Asia/Tokyo
 BUSINESS_DAY_ROLLOVER_HOUR=6
-EPAPER_API_KEY=replace-with-epaper-hub-api-key
 TABLE_DISPLAY_API_KEY=replace-with-a-separate-long-random-secret
 ```
 
-`CHECKOUT_API_KEY`, `TABLE_DISPLAY_API_KEY`, `EPAPER_API_KEY`, and the `API_KEY` fallback are server-only credentials and are never exposed to browser code. `ORDER_BASE_URL` is the public page encoded into each table QR code. Production deployment reads `SHOP_ID` and `CHECKOUT_API_KEY` from the external runtime environment file at `~/restaurant-order-system.env`; Compose supplies the exact `BUSINESS_TIME_ZONE` and `BUSINESS_DAY_ROLLOVER_HOUR` defaults.
+`CHECKOUT_API_KEY`, `TABLE_DISPLAY_API_KEY` and `TABLE_DISPLAY_SERVICE_TOKEN` are server-only credentials and are never exposed to browser code. `TABLE_DISPLAY_SERVICE_TOKEN` is **outbound** (presented to core-api) while `TABLE_DISPLAY_API_KEY` is **inbound** (required by this app's own provisioning route); they are different secrets and must not be set to the same value. `ORDER_BASE_URL` is the public page encoded into each table QR code. Production deployment reads `SHOP_ID`, `CHECKOUT_API_KEY` and `TABLE_DISPLAY_SERVICE_TOKEN` from the external runtime environment file at `~/restaurant-order-system.env`; Compose supplies the exact `BUSINESS_TIME_ZONE` and `BUSINESS_DAY_ROLLOVER_HOUR` defaults.
+
+Startup **refuses to listen** without `CORE_API_URL`, `TABLE_DISPLAY_SERVICE_TOKEN` and `ORDER_BASE_URL`. That is deliberately stricter than core-api, which treats its half of the pair as optional and answers 503: core-api migrates the database before it listens, so a required secret missing there would fail the deploy gate after the schema had already changed. This container crash-looping is the loud half of that pair.
 
 ## Initialize A Table Display
 

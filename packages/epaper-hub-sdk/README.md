@@ -48,7 +48,19 @@ The returned object can be posted directly to `/api/epapers/:id`. Keep the API k
 
 ## Docker Runtime
 
-The customer-order container uses this SDK through the private Compose address `http://epaper-hub:3000`, not the public e-paper hub URL. Its startup bootstrap uses the same server-side client to reset tables 1 through 12 to `Welcome` before customer traffic is accepted. Keep `EPAPER_API_KEY` (or the hub's `API_KEY` fallback) only in the external runtime environment file.
+**This package has exactly one permitted caller, and it is `apps/core-api`.**
+
+That is the identity-slice design §11.7, and it is enforced rather than agreed: rule C16 in `apps/core-api/test/source-structure.test.js` scans `apps/` and `packages/` for `require("@restaurant/epaper-hub-sdk")` and asserts the result is the one-element list `["apps/core-api/epaper/hub-client.js"]`. A second caller is a failing test, not a code-review remark. The reason is that this package reaches twelve physical panels and renders a QR from a URL that *is* a table's visit credential, so "which process may drive a display" is an authorisation question.
+
+The **core-api** container uses this SDK through the private Compose address `http://epaper-hub:3000`, not the public e-paper hub URL. Keep `EPAPER_API_KEY` (the same value the hub reads as `API_KEY`) in `~/core-api.env`.
+
+`apps/customer-order` used to hold it. It now reaches a display through core-api instead:
+
+```text
+customer-order  →  core-api  →  @restaurant/epaper-hub-sdk  →  epaper-hub
+```
+
+Its startup bootstrap still resets tables 1 through 12 to `Welcome` before customer traffic is accepted; those twelve requests are now `POST /api/terminal/table-displays/{n}` against core-api, authenticated with the interim shared `TABLE_DISPLAY_SERVICE_TOKEN` of §11.9 and replaced by terminal pairing in Phase 3.
 
 The same external runtime environment file must provide the customer-order production values below. Compose supplies the non-secret timezone and rollover defaults, while `SHOP_ID` and `CHECKOUT_API_KEY` remain in that file.
 
