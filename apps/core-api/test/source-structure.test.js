@@ -215,7 +215,8 @@ test("every rule matches its own violating fixture and ignores it inside a comme
 // fixture, which is the most example-like text in this file and sits on an
 // ALLOWLIST rule -- so it is read by exactly the people entitled to write that call.
 const FIXTURE_CROSS_TRIPS = {
-  "C1 require pg -> C9 impure require in lib": "the fixture IS a pg require; both rules correctly forbid that exact text"
+  "C1 require pg -> C9 impure require in lib": "the fixture IS a pg require; both rules correctly forbid that exact text",
+  "C2 raw query -> C2 query on any handle": "C2's two needles are nested by construction -- a pool/client handle IS a handle, so clause 1's fixture must trip clause 2 or clause 2 is not the broader of the pair"
 };
 
 test("no rule's fixture trips a different rule except where that is stated", () => {
@@ -310,8 +311,49 @@ const PG_REQUIRE = rule(
   '// const { Pool } = require("pg");'
 );
 
-test("C2: no raw pool/client query outside db/", () => {
+test("C2: no raw query outside db/ and the nine sanctioned pre-tenant files", () => {
+  // Clause 1, unchanged, and deliberately NOT exempting the allowlist. `pool` and
+  // `client` name a real pg Client, and withUnscopedConnection yields a narrow
+  // { query } handle that is not one. repositories/auth/* may query; it may not
+  // claim to hold a Client. db/health.js and repositories/auth/audit.js both name
+  // the handle `connection`, and audit.js documents that as load-bearing.
   assert.deepEqual(filesMatching(RAW_QUERY, (file) => !file.startsWith("db/")), []);
+
+  // Clause 2, which closes the naming-convention escape. Clause 1 is a
+  // VARIABLE-NAME rule, and measured against its own pattern, session.query(),
+  // connection.query(), conn.query(), db.query() and handle.query() all walk
+  // straight past it. So a handler writing
+  //     const session = await acquireRuntimeClient();
+  //     await session.query("SELECT * FROM users WHERE email = $1", [email]);
+  // passes C1 (no pg require), C2, C3, C4 (no withUnscopedConnection) and C5 --
+  // unscoped SQL outside db/, on the login path, invisible to the entire
+  // structural suite. acquireRuntimeClient is re-exported from db/index.js, so
+  // that is four lines of ordinary-looking code.
+  //
+  // The exemption therefore has to be a FILE list rather than a promise about
+  // identifiers, and C4's is the right list: budgeted at exactly nine, asserted
+  // as such, and unable to grow without a visible diff. Widening instead to all
+  // of repositories/ -- the reading a reasonable person reaches, since C4 already
+  // sanctions repositories/auth/* to hold a connection, so "obviously it may
+  // query it" -- would permanently remove the choke point from the directory 2b
+  // and 2c fill with users.js, sessions.js and scope-materialize.js, which is
+  // precisely the code that owns tenant isolation.
+  //
+  // And the allowlist will not need widening for ordinary Phase-2 repositories,
+  // which is the objection to expect. The SCOPED path is a function call, not a
+  // handle method: a tenant repository writes
+  //     const { rows } = await tenantQuery(scope, SELECT_ITEMS, [id]);
+  // and the sole `.query(` sits inside db/index.js at tenantQuery's own body,
+  // which is exempt. So clause 2 can only fire on a file that went around
+  // tenantQuery to hold a raw handle -- which is the finding, not a false
+  // positive. Adding a file here is therefore always the wrong repair.
+  assert.deepEqual(
+    filesMatching(
+      ANY_HANDLE_QUERY,
+      (file) => !file.startsWith("db/") && !UNSCOPED_ALLOWLIST.includes(file)
+    ),
+    []
+  );
 });
 
 test("C3: only http/router.js requires express or registers a route", () => {
@@ -340,11 +382,28 @@ test("C5: the cross-tenant escape hatch appears only under repositories/platform
 
 // C2 -- raw query calls live only under db/. Everything else goes through the
 // choke point, or the tenant predicate came from nowhere.
+//
+// TWO needles, because the rule has two jobs and one regex cannot do both. This
+// one bans the two identifiers that mean "a real pg Client" EVERYWHERE outside
+// db/, including inside the C4 allowlist, where the handle is a narrow
+// { query } object and calling it `client` misdescribes what is held.
 const RAW_QUERY = rule(
   "C2 raw query",
   /\b(?:pool|client)\.query\s*\(/,
   "await client.query('SELECT 1');",
   "// await client.query('SELECT 1');"
+);
+
+// ...and this one bans a query on ANY handle, exempted by file rather than by
+// name. Strictly broader than RAW_QUERY, and applied to a strictly narrower set
+// of files -- neither replaces the other. Verified green against the tree the day
+// it landed: the only `.query(` outside db/ is repositories/auth/audit.js, which
+// is already on C4's list, so this needs zero new exceptions.
+const ANY_HANDLE_QUERY = rule(
+  "C2 query on any handle",
+  /\.query\s*\(/,
+  "await session.query('SELECT 1');",
+  "// await session.query('SELECT 1');"
 );
 
 // C3 -- one way to register a route means one place authentication can be
