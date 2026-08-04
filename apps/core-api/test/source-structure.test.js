@@ -155,20 +155,34 @@ test("C11 - the repository test script runs the core-api suite", () => {
   }
 });
 
-test("the walker scanned every Plan-1 source file, with POSIX separators", () => {
+test("the walker scanned every source file, with POSIX separators", () => {
   // Requirement 2: a floor plus sentinels. Without it, a walker returning []
-  // makes every "no file matches X" rule below pass. Plan 1 ends with exactly
-  // fifteen scanned files: config.js, env-file.js, server.js,
-  // db/{errors,health,index,migrate,pool,scope}.js, http/{respond,router}.js,
-  // http/routes/health.js, migrations/0001_init.sql and
-  // scripts/{reset-database,setup-template-db}.js. Raise this floor in each
-  // later plan as lib/, repositories/ and http/routes/ fill in.
+  // makes every "no file matches X" rule below pass -- and that is not
+  // hypothetical. C9 spent the whole of Plan 1 comparing [] to [] because
+  // apps/core-api/lib/ did not exist, and nobody noticed until Plan 2a put a file
+  // in it.
+  //
+  // Plan 1 ended at fifteen. Plan 2a adds seven: migrations/0002_identity.sql,
+  // lib/{tokens,password,semaphore,client-ip,audit-vocabulary}.js and
+  // repositories/auth/audit.js. Raise this floor in each later plan as
+  // repositories/ and http/routes/ fill in.
   assert.ok(
-    SOURCE_FILES.length >= 15,
+    SOURCE_FILES.length >= 22,
     `scanned only ${SOURCE_FILES.length} files: ${SOURCE_FILES.join(", ")}`
   );
 
-  for (const sentinel of ["db/index.js", "http/routes/health.js", "migrations/0001_init.sql"]) {
+  for (const sentinel of [
+    "db/index.js",
+    "http/routes/health.js",
+    "migrations/0001_init.sql",
+    // Plan 2a's three new AREAS, one sentinel each. The floor alone cannot catch
+    // a walker that silently stops descending into one of them -- the count would
+    // still clear 22 on the strength of the others, and C9 and C14 would go back
+    // to comparing [] to [] exactly as C9 did for the whole of Plan 1.
+    "lib/tokens.js",
+    "repositories/auth/audit.js",
+    "migrations/0002_identity.sql"
+  ]) {
     assert.ok(SOURCE_FILES.includes(sentinel), `sentinel ${sentinel} was not scanned`);
   }
 

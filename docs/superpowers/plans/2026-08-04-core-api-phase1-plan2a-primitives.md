@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 10 of 11 tasks done. Parts 1-3 are complete.**
+**Status: 11 of 11 tasks done. PLAN 2a IS COMPLETE.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -41,6 +41,7 @@ steps are ticked and its commit exists.
 | 2026-08-04 | Task 4. `lib/tokens.js`. The implementer noticed that `lib/` had not existed until this commit, so rule C9 had been comparing `[]` to `[]` since it was written, and mutation-tested it now that it has something to scan. Review then found the gap C9 CANNOT see: a `Math.random` token is still 22 Base64URL characters, still unique across a thousand draws, and passes C9 -- the downgrade REMOVES a require. Demonstrated, not asserted. Closed with a new C14 over `lib/`, mutation-tested, which `lib/password.js` inherits on arrival for its salt. 300 tests, 299 pass. | **4/11** | `bd48644`, (this commit) | Task 5 |
 | 2026-08-04 | Tasks 5-8, closing Part 2. `lib/password.js` (scrypt + verification), `lib/semaphore.js`, `lib/client-ip.js`. The plan code was correct for all four -- the first tasks where it was. Two findings came from exercising the code rather than reading it: the implementer noticed the parameter guard bounded MEMORY (`128*N*r`) while the scarce resource on that path is CPU, and my first fix mirrored OpenSSL`s own formula, which closes nothing -- it admits p = 32766 EXACTLY at the limit. I found that by running it and hanging the process on a ~55 minute scrypt. The bound is now on the work factor itself. Separately the semaphore`s three claims (a shed costs no capacity, no dip on handoff, FIFO admission) were probed rather than trusted; all three hold. 334 tests, 333 pass. | **8/11** | `768f842`, `99210cb`, `33e293a`, `148dff8`, `f7a3316`, (this commit) | Task 9 |
 | 2026-08-04 | Tasks 9-10, closing Part 3. `lib/audit-vocabulary.js` and `repositories/auth/audit.js`. The plan`s Task 10 code was DEFECTIVE and the implementer caught it by running the suite rather than the file: naming the withUnscopedConnection callback `client` turns rule C2 (`no raw pool/client query outside db/`) red while the writer`s own five tests stay green -- a tenant-isolation rule broken by a task reporting success. Root cause is sharp: the plan copied the shape from C4`s deliberately-VIOLATING fixture string in source-structure.test.js, which is synthetic bad text, not a template. Plan 1`s real code uses `connection`. Fixed here and warned in the plan, because Plan 2b adds the other five repositories/auth/* files and every one hits the same wall. Also closed two review gaps: the `system` actor arc had no test though it is exactly what Plan 2d`s sweeper calls, and appendAuditEvent returns a bigint as a STRING. 350 tests, 349 pass. | **10/11** | `dca54ed`, `b079c2f`, (this commit) | Task 11 |
+| 2026-08-04 | Task 11, closing the plan. Walker floor 15 -> 22, with one sentinel per NEW area rather than only the count -- a walker that silently stopped descending into `lib/` would still clear 22 on the strength of the others, and C9 and C14 would go back to comparing [] to [] exactly as C9 did for the whole of Plan 1. Floor mutation-tested: 23 fails, 22 passes. Repository-wide `npm test` green across all four suites: 11 / 33 / 66 / 353. One visible skip remains, C6 guarded on `repositories/platform/`, which arms in Plan 2c. | **11/11** | (this commit) | Plan 2b |
 
 ## How to pick this up
 
@@ -2122,7 +2123,7 @@ git commit -m "feat(core-api): repositories/auth/audit - the pre-tenant append-o
 The walker's floor exists so that a walker returning `[]` cannot make every
 "no file matches X" rule pass vacuously. It must rise with each plan.
 
-- [ ] **Step 1: Confirm the new file count**
+- [x] **Step 1: Confirm the new file count**
 
 Run:
 
@@ -2135,7 +2136,7 @@ Expected: seven new paths — `lib/audit-vocabulary.js`, `lib/client-ip.js`,
 `lib/password.js`, `lib/semaphore.js`, `lib/tokens.js`,
 `migrations/0002_identity.sql`, `repositories/auth/audit.js`.
 
-- [ ] **Step 2: Raise the floor and add a sentinel**
+- [x] **Step 2: Raise the floor and add a sentinel**
 
 In `apps/core-api/test/source-structure.test.js`, replace the floor block:
 
@@ -2166,7 +2167,7 @@ In `apps/core-api/test/source-structure.test.js`, replace the floor block:
   }
 ```
 
-- [ ] **Step 3: Run the structural suite**
+- [x] **Step 3: Run the structural suite**
 
 Run: `node --test apps/core-api/test/source-structure.test.js`
 
@@ -2174,7 +2175,7 @@ Expected: PASS. In particular C9 (`nothing under lib/ touches the filesystem, th
 network or the database`) now has five real files to check rather than none — if
 it fails, something under `lib/` requires `node:fs`, `node:net`, `pg` or `../db`.
 
-- [ ] **Step 4: Run the whole area gate with a real database**
+- [x] **Step 4: Run the whole area gate with a real database**
 
 Run:
 
@@ -2194,7 +2195,7 @@ npm test
 
 Expected: all four workspace suites green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/source-structure.test.js docs/superpowers/plans/2026-08-04-core-api-phase1-plan2a-primitives.md
