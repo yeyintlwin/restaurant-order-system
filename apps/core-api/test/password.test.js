@@ -123,3 +123,23 @@ test("verification does not apply the length policy", async () => {
   assert.equal(await verifyPassword("a".repeat(300), stored), false);
   assert.equal(await verifyPassword("aaaaaaaaaaaa", stored), true);
 });
+
+test("a row claiming an absurd p is refused without attempting it", async () => {
+  // The CPU bound, which OpenSSL does not provide. Its own accounting is
+  // 128*r*p + 128*r*(N+2) <= maxmem, and at N=32768, r=8 that admits p = 32766
+  // EXACTLY at the 64 MiB limit -- roughly 55 minutes of libuv threadpool time
+  // for one verify, against a default pool of four. Such a row also satisfies the
+  // users.password_hash CHECK, so the column cannot refuse it either.
+  //
+  // Timed, not merely asserted: the point is that it never reaches scrypt.
+  const stored = `scrypt$N=32768,r=8,p=32766$${"A".repeat(22)}$${"B".repeat(43)}`;
+  const startedAt = Date.now();
+  assert.equal(await verifyPassword("correct horse battery staple", stored), false);
+  assert.ok(Date.now() - startedAt < 1000, "the p guard did not short-circuit before scrypt");
+
+  // And the ceiling is on p itself, so one past it is refused too.
+  assert.equal(
+    await verifyPassword("correct horse battery staple", `scrypt$N=32768,r=8,p=17$${"A".repeat(22)}$${"B".repeat(43)}`),
+    false
+  );
+});
