@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 8 of 11 tasks done. Part 2 is complete.**
+**Status: 10 of 11 tasks done. Parts 1-3 are complete.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -40,6 +40,7 @@ steps are ticked and its commit exists.
 | 2026-08-04 | Task 3. The plan named three files; there were SIX. Two sites the implementer found and fixed (a comma count over TRUNCATE_STATEMENT, a stale count in a test name), and one they escalated on instead of touching: `infra/restore-drill.sh` hand-mirrors S1 in SQL, and `backup-restore.test.js` regex-extracts the node list to cross-check it. With 0002 applied, the drill would RAISE on a GOOD restore -- a production defect, proved two-sided by deleting the name and watching the exception fire. Review then found the mirror is ONE-DIRECTIONAL: the loops prove node subset drill, nothing proved the reverse, and for an EXEMPTION list the unchecked direction is fail-open -- a bogus name added to the drill alone passed 12/0. Closed with a deepEqual, mutation-tested. 294 tests, 293 pass, 0 fail, 1 skip. | **3/11** | `3db26d9`, `732cc5f`, (this commit) | Task 4 |
 | 2026-08-04 | Task 4. `lib/tokens.js`. The implementer noticed that `lib/` had not existed until this commit, so rule C9 had been comparing `[]` to `[]` since it was written, and mutation-tested it now that it has something to scan. Review then found the gap C9 CANNOT see: a `Math.random` token is still 22 Base64URL characters, still unique across a thousand draws, and passes C9 -- the downgrade REMOVES a require. Demonstrated, not asserted. Closed with a new C14 over `lib/`, mutation-tested, which `lib/password.js` inherits on arrival for its salt. 300 tests, 299 pass. | **4/11** | `bd48644`, (this commit) | Task 5 |
 | 2026-08-04 | Tasks 5-8, closing Part 2. `lib/password.js` (scrypt + verification), `lib/semaphore.js`, `lib/client-ip.js`. The plan code was correct for all four -- the first tasks where it was. Two findings came from exercising the code rather than reading it: the implementer noticed the parameter guard bounded MEMORY (`128*N*r`) while the scarce resource on that path is CPU, and my first fix mirrored OpenSSL`s own formula, which closes nothing -- it admits p = 32766 EXACTLY at the limit. I found that by running it and hanging the process on a ~55 minute scrypt. The bound is now on the work factor itself. Separately the semaphore`s three claims (a shed costs no capacity, no dip on handoff, FIFO admission) were probed rather than trusted; all three hold. 334 tests, 333 pass. | **8/11** | `768f842`, `99210cb`, `33e293a`, `148dff8`, `f7a3316`, (this commit) | Task 9 |
+| 2026-08-04 | Tasks 9-10, closing Part 3. `lib/audit-vocabulary.js` and `repositories/auth/audit.js`. The plan`s Task 10 code was DEFECTIVE and the implementer caught it by running the suite rather than the file: naming the withUnscopedConnection callback `client` turns rule C2 (`no raw pool/client query outside db/`) red while the writer`s own five tests stay green -- a tenant-isolation rule broken by a task reporting success. Root cause is sharp: the plan copied the shape from C4`s deliberately-VIOLATING fixture string in source-structure.test.js, which is synthetic bad text, not a template. Plan 1`s real code uses `connection`. Fixed here and warned in the plan, because Plan 2b adds the other five repositories/auth/* files and every one hits the same wall. Also closed two review gaps: the `system` actor arc had no test though it is exactly what Plan 2d`s sweeper calls, and appendAuditEvent returns a bigint as a STRING. 350 tests, 349 pass. | **10/11** | `dca54ed`, `b079c2f`, (this commit) | Task 11 |
 
 ## How to pick this up
 
@@ -1642,7 +1643,7 @@ One table, consulted by two callers: Plan 2b's boot-time route check (§8.5 rule
 and Task 10's writer. Two copies would disagree the first time somebody adds an
 action.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/audit-vocabulary.test.js`:
 
@@ -1759,13 +1760,13 @@ test("assertAuditEvent rejects a non-scalar detail value", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/audit-vocabulary.test.js`
 
 Expected: FAIL — `Cannot find module '../lib/audit-vocabulary'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/lib/audit-vocabulary.js`:
 
@@ -1845,13 +1846,13 @@ function assertAuditEvent(event) {
 module.exports = { AUDIT_ACTIONS, assertAuditEvent };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/audit-vocabulary.test.js`
 
 Expected: PASS, 10 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/audit-vocabulary.js apps/core-api/test/audit-vocabulary.test.js
@@ -1872,7 +1873,7 @@ nine-entry `UNSCOPED_ALLOWLIST`, so this path is fixed — do not rename it. The
 writer is pre-tenant because a failed login has no tenant: it writes
 `company_id = NULL` and the row is still the only evidence the attempt happened.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Three details of the test harness that are easy to get wrong, and each produces a
 confusing failure rather than an obvious one:
@@ -2003,13 +2004,13 @@ describe("the pre-tenant audit writer", { skip: skipDatabaseTests() }, () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/audit-writer.test.js`
 
 Expected: FAIL — `Cannot find module '../repositories/auth/audit'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/repositories/auth/audit.js`:
 
@@ -2057,8 +2058,8 @@ async function appendAuditEvent(event) {
     detail = {}
   } = event;
 
-  return withUnscopedConnection(async (client) => {
-    const { rows } = await client.query(INSERT, [
+  return withUnscopedConnection(async (connection) => {
+    const { rows } = await connection.query(INSERT, [
       companyId,
       shopId,
       actorKind,
@@ -2079,13 +2080,29 @@ async function appendAuditEvent(event) {
 module.exports = { appendAuditEvent, PRE_TENANT_REASON };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+> ⚠️ **The callback parameter is named `connection`, and that is load-bearing.**
+> Rule C2 (`no raw pool/client query outside db/`) matches the literal text
+> `/(?:pool|client)\.query\s*\(/` in every scanned file and exempts only
+> `db/`. Naming it `client` turns C2 red while this task's own tests stay green —
+> a tenant-isolation rule broken by a task that reports success.
+>
+> The trap is that C4's *violating fixture* in `source-structure.test.js` reads
+> `withUnscopedConnection((client) => client.query(sql))`. That string is
+> deliberately-bad synthetic text, not a template. Plan 1's real code uses
+> `connection` (`db/health.js:75`, `:111`).
+>
+> **This recurs in Plan 2b**, which adds the other five `repositories/auth/*.js`
+> entries of the C4 allowlist — `users`, `sessions`, `terminal-tokens`,
+> `pairing`, `scope-materialize`. All five hit this same wall if written from the
+> fixture's shape.
+
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/audit-writer.test.js`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/repositories/auth/audit.js apps/core-api/test/audit-writer.test.js

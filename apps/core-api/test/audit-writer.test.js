@@ -109,4 +109,30 @@ describe("the pre-tenant audit writer", { skip: skipDatabaseTests() }, () => {
     assert.equal(rows[0].actor_label, "audit-actor@example.test");
     assert.equal(rows[0].target_kind, "user");
   });
+
+  test("a system actor writes with both actor id columns null", async () => {
+    // The only declared actorKind with no test in the plan, and the one Plan 2d's
+    // expiry sweeper will call. audit_events_actor_arc requires BOTH actor id
+    // columns null for 'system', so this is the arc's other branch -- the 'user'
+    // test above only exercises the branch that sets one.
+    await appendAuditEvent({
+      action: "auth.email_send_failed",
+      actorKind: "system",
+      outcome: "failure",
+      targetKind: "user",
+      targetId: "00000000-0000-0000-0000-000000000000",
+      detail: { purpose: "password_reset", attempts: 5 }
+    });
+
+    const { rows } = await database.unscoped(
+      "SELECT * FROM audit_events WHERE action = 'auth.email_send_failed'"
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].actor_user_id, null);
+    assert.equal(rows[0].actor_terminal_id, null);
+    assert.equal(rows[0].company_id, null);
+    // attempts survives as a JSON number, not a string -- the flat-scalar rule
+    // permits numbers and a caller reading it back should get one.
+    assert.deepEqual(rows[0].detail, { purpose: "password_reset", attempts: 5 });
+  });
 });

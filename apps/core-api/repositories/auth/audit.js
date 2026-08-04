@@ -20,6 +20,10 @@ const INSERT = `
   RETURNING id
 `;
 
+// Returns audit_events.id as a STRING, not a number: the column is bigint and
+// node-postgres hands those back as strings rather than silently losing
+// precision past 2^53. Nothing reads it today; a later caller doing arithmetic
+// or `=== someNumber` against it would be surprised.
 async function appendAuditEvent(event) {
   // Vocabulary first: an undeclared action, actor kind, outcome or detail key
   // must fail as a programming error here rather than as a 23514 check
