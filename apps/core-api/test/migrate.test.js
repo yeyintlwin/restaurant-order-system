@@ -124,6 +124,38 @@ test("0001_init.sql is installed verbatim from the design appendix", () => {
   );
 });
 
+test("0002_identity.sql adds the identity schema and locks the ledger", () => {
+  const text = fs.readFileSync(path.join(MIGRATIONS_DIR, "0002_identity.sql"), "utf8");
+
+  assert.equal(text.includes("\r\n"), false, "0002_identity.sql must be stored with LF endings");
+
+  // The three changes, each asserted by the thing that would break if it were
+  // dropped rather than by a substring of the prose around it.
+  assert.match(text, /ALTER TABLE users\s+ADD COLUMN email_verified_at timestamptz;/);
+  assert.match(text, /CREATE TABLE user_email_tokens \(/);
+  assert.match(text, /REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM core_api_app;/);
+
+  // The live-token index MUST be partial on the two nullable columns and MUST
+  // NOT mention expires_at: now() cannot appear in an index predicate, and a
+  // developer "fixing" the expired-token case by adding it gets a silent
+  // 42P17 at apply time.
+  const liveIndex = text.match(/CREATE UNIQUE INDEX user_email_tokens_live_key[\s\S]*?;/);
+  assert.ok(liveIndex, "user_email_tokens_live_key is missing");
+  assert.match(liveIndex[0], /WHERE consumed_at IS NULL AND revoked_at IS NULL/);
+  assert.doesNotMatch(liveIndex[0], /expires_at|now\(\)/);
+
+  // bytea(32), never hex text -- binding a raw credential by mistake must raise
+  // "invalid input syntax for type bytea" rather than matching zero rows.
+  assert.match(text, /token_hash\s+bytea NOT NULL CHECK \(octet_length\(token_hash\) = 32\)/);
+
+  // No company_id: this table is read in order to DISCOVER the tenant. Asserted
+  // against the DDL with `--` comments stripped, because the comment standing
+  // over the table names the absent column in order to explain why it is absent
+  // -- an assertion on the raw text would forbid ever writing that explanation.
+  // No string literal in this file contains `--`, so the naive strip is exact.
+  assert.doesNotMatch(text.replace(/--.*$/gm, ""), /company_id/);
+});
+
 // --- filenames and checksums (no database) ---------------------------------
 
 test("reads files in numeric order with a 32-byte digest each", () => {
