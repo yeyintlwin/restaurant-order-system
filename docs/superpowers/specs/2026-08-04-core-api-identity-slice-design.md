@@ -826,7 +826,17 @@ listens. Plan 2b must either make the claim true or delete it — and since 2b i
 the plan that introduces the first limited routes, making it true is the cheaper
 of the two.
 
-## 11.7 Settled: only core-api may call the e-paper SDK
+## 11.7 Settled: core-api owns the display, end to end
+
+The architecture, stated plainly so nothing downstream has to infer it:
+
+> **core-api is the controlling API.** `customer-order` is a front end; its
+> backend is core-api. To update an e-paper display you go *through* core-api,
+> which calls the SDK. The QR frame reaches core-api too.
+
+That makes the SDK's permitted-caller set a one-element list, and it makes the
+whole rendered frame — label, status **and QR** — core-api's output rather than
+something a front end assembles and hands over.
 
 Recorded here because it is decided, is violated today, and the violation is
 load-bearing until Phase 3.
@@ -864,6 +874,27 @@ makes three consequences explicit rather than incidental:
    repo-wide scan for `require("@restaurant/epaper-hub-sdk")` whose permitted set
    is a one-element list. Without it the rule is a convention, and every
    convention in this service that mattered has a test.
+
+### The QR is the visit token, so it moves with it
+
+Worth naming because it is the part that looks like presentation and is not.
+`renderTableDisplay` draws the QR from a URL, and that URL *is* the credential:
+parent §1 defines it as an opaque visit token, `.../t/AAAAAAAAAAAAAAAAAAAAAA`,
+carrying no table number, shop id or business date. Scanning it enrols a phone
+into that table's current visit.
+
+Today `apps/customer-order/table-visit-store.js` mints it and
+`server.js:274,319,411` reads it back through `visitStore.getOrderingUrl()` at
+every display update. So "core-api owns the QR" is not a rendering change — it
+means **the visit token, its lifecycle and its rotation move to core-api**, which
+is exactly what parent §10 assigns to Phase 3 ("orders, table visits and e-paper
+orchestration move into core-api"). The display is downstream of that move, not
+separable from it.
+
+The consequence for sequencing: a front end cannot be handed a token to draw. It
+asks core-api to update a table, and core-api resolves the token, renders and
+calls the hub. Any interim design that has `customer-order` passing a URL *to*
+core-api would keep minting the credential in the front end and defeat the point.
 
 ### The coupling this does NOT fix
 
