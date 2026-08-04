@@ -138,11 +138,52 @@ test("the three secrets live only in ~/core-api.env, never in a file the reposit
   // printf that installs the sweep line -- and none of those writes a secret. What
   // must never appear is a REDIRECTION INTO the file: it is created once, by hand,
   // at mode 600.
-  const WRITES_THE_SECRETS_FILE = /(?:>|>>|tee)\s*["']?(?:~|\$HOME)\/core-api\.env/;
-  // Positive control, written as a concatenation so a repo-wide grep for the banned
-  // string does not hit the test that enforces the ban. Without this the rule could
-  // pass because the regex is wrong rather than because the workflow is clean.
-  assert.match("cat > " + "~/core-api.env", WRITES_THE_SECRETS_FILE);
+  // A quote may appear ANYWHERE in the path, not only opening it. The previous
+  // pattern was /(?:>|>>|tee)\s*["']?(?:~|\$HOME)\/core-api\.env/, whose single
+  // optional quote could only tolerate one that opened the WHOLE path -- never one
+  // that closed after the variable. So `> "$HOME"/core-api.env` sailed past it,
+  // and that is not an exotic spelling: `"$HOME"/...` is this workflow's own
+  // dominant style, at the disk check, the backup prune and the crontab printf.
+  // A developer adding a line to that heredoc reaches for it by imitation, not
+  // evasion -- and the temptation is real, because deploy.yml aborts every deploy
+  // on a fresh box with `MISSING ~/core-api.env`, which is exactly the prompt for
+  // "why is this still a manual step". The outcome would be POSTGRES_PASSWORD and
+  // both DSNs flowing through the runner, and a file the design says is mode 600
+  // by hand becoming workflow-managed at the umask default.
+  // \btee\b so a word merely ending in "tee" is not a redirection.
+  const WRITES_THE_SECRETS_FILE =
+    /(?:>|>>|\btee\b)\s*["']?(?:~|\$HOME|\$\{HOME\})["']?\/["']?core-api\.env/;
+
+  // Positive controls, written as concatenations so a repo-wide grep for the banned
+  // string does not hit the test that enforces the ban. Without these the rule could
+  // pass because the regex is wrong rather than because the workflow is clean --
+  // which is what had happened: the one control below exercised only the `~` branch,
+  // the branch that already worked, so the rule LOOKED mutation-tested.
+  for (const banned of [
+    "cat > " + "~/core-api.env",
+    "cat > " + "$HOME/core-api.env",
+    'cat > "$HOME' + '/core-api.env"',
+    'printf x > "$HOME"' + "/core-api.env",
+    'printf x >> "$HOME"' + "/core-api.env",
+    "tee " + '"$HOME"/core-api.env',
+    "cat > " + "${HOME}/core-api.env",
+    "cat > " + "~/'core-api.env'"
+  ]) {
+    assert.match(banned, WRITES_THE_SECRETS_FILE, `the ban does not cover: ${banned}`);
+  }
+
+  // ...and the three LEGITIMATE mentions stay legal. Over-banning is not the safe
+  // direction here: the repair for a false positive is to delete the `test -f`
+  // precondition, which is the line that makes a fresh box fail loudly instead of
+  // booting without a database password.
+  for (const allowed of [
+    "test -f " + "~/core-api.env || { echo 'MISSING'; exit 1; }",
+    "export CORE_ENV_FILE=../core-api.env",
+    'ls -1t "$HOME"/backups/pre-deploy-*.dump'
+  ]) {
+    assert.doesNotMatch(allowed, WRITES_THE_SECRETS_FILE, `the ban wrongly covers: ${allowed}`);
+  }
+
   assert.doesNotMatch(workflow, WRITES_THE_SECRETS_FILE);
 
   // And no owner or app DSN anywhere in the workflow. `-U core_api_owner` in the
