@@ -37,7 +37,20 @@ const AUDIT_ACTIONS = Object.freeze({
   // row there is no user to name, and audit_events_target_pair requires
   // (target_kind IS NULL) = (target_id IS NULL) -- so both are NULL and the
   // address survives only in detail.email.
-  "auth.password_reset_requested": entry(["anonymous"], ["success", "failure"], "user", ["email"])
+  "auth.password_reset_requested": entry(["anonymous"], ["success", "failure"], "user", ["email"]),
+  // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc
+  // requires actor_user_id NOT NULL for 'user' and actor_terminal_id NOT NULL for
+  // 'terminal'; POST /api/terminal/table-displays/:tableNumber authenticates a CONFIGURED
+  // SERVICE TOKEN, which references neither row -- apps/customer-order has no terminals
+  // row until Phase 3 pairs it. 'system' is the arc's both-NULL branch, and it is the
+  // honest one of the two: the caller presented a credential, so it is not 'anonymous'.
+  // Phase 3 changes this to ["terminal"] in the same commit that mints the terminal.
+  //
+  // detail carries the STATUS and nothing else. The ordering URL is the visit token, and
+  // `url` is not on audit_events_detail_no_credentials' banned-key list -- so the only
+  // thing keeping a live table credential out of a 365-day retention window is this list
+  // being short on purpose.
+  "table_display.updated": entry(["system"], ["success", "failure"], "table_display", ["status"])
 });
 
 function assertAuditEvent(event) {

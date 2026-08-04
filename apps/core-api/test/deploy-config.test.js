@@ -70,6 +70,36 @@ test("the core-api image installs from its own lockfile and ships its scripts", 
   // npm ci cannot run without it.
   assert.ok(fs.existsSync(path.join(appRoot, "package-lock.json")), "apps/core-api/package-lock.json");
 
+  // The e-paper SDK (spec 11.7: core-api is its one permitted caller). THREE lines,
+  // and each of them fails in a different way when it is the one missing.
+  //
+  //   the COPY, ABOVE the RUN -- npm resolves a file: link by reading the target's
+  //     package.json at install time, so a COPY below the RUN is ENOENT on a path that
+  //     exists in the repository, which reads as a broken lockfile;
+  //   the SDK's OWN install -- `npm ci` in apps/core-api creates the symlink and does
+  //     NOT install a linked package's dependencies, so without it the image builds
+  //     clean, boots clean, passes /health/ready, and then dies at the first display
+  //     update with MODULE_NOT_FOUND on qrcode-generator. Nothing else in this suite
+  //     can see that: the SDK resolves locally from packages/epaper-hub-sdk/node_modules
+  //     on the developer machine and in CI, where deploy.yml installs it by name.
+  //   and the ORDER between them.
+  //
+  // This is the pair apps/customer-order/Dockerfile carried until the boundary moved,
+  // and it moved here in the same commit.
+  assert.match(dockerfile, /^COPY packages\/epaper-hub-sdk \.\/packages\/epaper-hub-sdk$/m);
+  assert.match(dockerfile, /npm --prefix packages\/epaper-hub-sdk ci --omit=dev/);
+  assert.ok(
+    dockerfile.indexOf("COPY packages/epaper-hub-sdk") <
+      dockerfile.indexOf("npm --prefix packages/epaper-hub-sdk ci"),
+    "the SDK must be COPYed before npm resolves the file: link against it"
+  );
+
+  const manifest = JSON.parse(readText(appRoot, "package.json"));
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(manifest.dependencies, "@restaurant/epaper-hub" + "-sdk"),
+    "the Dockerfile installs a package the manifest no longer declares"
+  );
+
   assert.match(dockerfile, /^ENV NODE_ENV=production PORT=3200 HOST=0\.0\.0\.0 TZ=UTC$/m);
   assert.match(dockerfile, /^EXPOSE 3200$/m);
   assert.match(dockerfile, /^CMD \["node", "apps\/core-api\/server\.js"\]$/m);
@@ -167,6 +197,17 @@ test("core-api joins both networks, publishes only on loopback, and health-check
   assert.match(text, /^      API_PUBLIC_ORIGIN: https:\/\/api\.yeyintlwin\.com$/m);
   assert.match(text, /^      TERMINAL_ALLOWED_ORIGINS: ""$/m);   // Phase 1: no CORS headers at all
   assert.match(text, /^      TRUSTED_PROXY_HOPS: 1$/m);
+
+  // Spec 11.7: core-api is the SDK's one permitted caller, so THIS service is the one
+  // that reaches the hub. Scoped to the core-api block -- the literal used to live in
+  // customer-order's, and a document-wide match would have stayed green through the
+  // move, which is the whole thing this assertion is here to catch.
+  const coreApi = servicesOf(text)["core-api"];
+  assert.match(coreApi, /^      EPAPER_HUB_URL: http:\/\/epaper-hub:3000$/m);
+  // ...and the two credentials that go with it are NOT in this committed file.
+  assert.doesNotMatch(text, /EPAPER_API_KEY:/);
+  assert.doesNotMatch(text, /TABLE_DISPLAY_SERVICE_TOKEN:/);
+
   assert.match(text, /^      SESSION_IDLE_SECONDS: 28800$/m);
   assert.match(text, /^      SESSION_ABSOLUTE_SECONDS: 604800$/m);
   assert.match(text, /^      SCRYPT_SLOTS: 2$/m);

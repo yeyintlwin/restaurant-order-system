@@ -292,6 +292,75 @@ test("TERMINAL_ALLOWED_ORIGINS accepts exact https origins and nothing else", ()
   }
 });
 
+test("EPAPER_HUB_URL defaults to the compose service and is not held to the origin rules", () => {
+  // Spec 11.7 made core-api the SDK's one permitted caller, so this service is the one
+  // that reaches the hub. parseOrigin is deliberately NOT reused: the hub is another
+  // container on the compose `default` bridge at http://epaper-hub:3000 -- plaintext, on
+  // a hostname that is neither https nor loopback -- which parseOrigin refuses in every
+  // environment, production included. That hop is the SAME one apps/customer-order has
+  // made since Phase 1; this change moved which container makes it, not what it crosses.
+  assert.equal(startupConfiguration(DEV_ENV).epaperHubUrl, "http://epaper-hub:3000");
+  assert.equal(startupConfiguration(PRODUCTION_ENV).epaperHubUrl, "http://epaper-hub:3000");
+
+  assert.equal(
+    startupConfiguration(withEnv(DEV_ENV, { EPAPER_HUB_URL: "https://hub.example.test/" })).epaperHubUrl,
+    "https://hub.example.test"
+  );
+  // A PATH is legal, unlike an origin: the SDK appends /api/epapers/<id> to whatever base
+  // it is given, so a hub mounted under a prefix is a real deployment.
+  assert.equal(
+    startupConfiguration(withEnv(DEV_ENV, { EPAPER_HUB_URL: "http://epaper-hub:3000/hub" })).epaperHubUrl,
+    "http://epaper-hub:3000/hub"
+  );
+
+  for (const bad of [
+    "epaper-hub:3000",                       // not absolute
+    "ftp://epaper-hub:3000",                 // not http(s)
+    "http://user:pw@epaper-hub:3000",        // credentials in a URL
+    "http://epaper-hub:3000?x=1",            // the SDK refuses a query
+    "http://epaper-hub:3000#f"               // ...and a fragment
+  ]) {
+    assertRefusal(withEnv(DEV_ENV, { EPAPER_HUB_URL: bad }), "EPAPER_HUB_URL");
+  }
+});
+
+test("both display credentials are optional, and a token that IS set must be strong", () => {
+  // OPTIONAL IS THE DECISION, not an omission (spec 11.9). This process migrates the
+  // database BEFORE it listens, so a required secret missing from ~/core-api.env would
+  // refuse to listen AFTER the migration had applied and fail the deploy's 90-second
+  // readiness gate -- the exact shape spec 9.5 designs against. Unconfigured, only
+  // POST /api/terminal/table-displays/:tableNumber answers 503.
+  const bare = startupConfiguration(DEV_ENV);
+  assert.equal(bare.epaperApiKey, undefined);
+  assert.equal(bare.tableDisplayServiceToken, undefined);
+  assert.equal(startupConfiguration(withEnv(DEV_ENV, { EPAPER_API_KEY: "" })).epaperApiKey, undefined);
+
+  const token = "0123456789abcdef0123456789abcdef";
+  const configured = startupConfiguration(
+    withEnv(DEV_ENV, { EPAPER_API_KEY: "hub-key", TABLE_DISPLAY_SERVICE_TOKEN: token })
+  );
+  assert.equal(configured.epaperApiKey, "hub-key");
+  assert.equal(configured.tableDisplayServiceToken, token);
+
+  // ...but a token that has been filled in with something guessable IS worth refusing to
+  // listen over: it is a shared bearer for a route that drives twelve physical panels,
+  // and unlike a missing one it is a decision somebody made.
+  for (const weak of ["changeme", token.slice(0, 31)]) {
+    assertRefusal(
+      withEnv(DEV_ENV, { TABLE_DISPLAY_SERVICE_TOKEN: weak }),
+      "TABLE_DISPLAY_SERVICE_TOKEN"
+    );
+  }
+
+  // Read UNTRIMMED, like every other secret: a token may legitimately end in a space, and
+  // trimming one turns a correct credential into a 401 nobody can see.
+  const padded = `${token} `;
+  assert.equal(
+    startupConfiguration(withEnv(DEV_ENV, { TABLE_DISPLAY_SERVICE_TOKEN: padded })).tableDisplayServiceToken,
+    padded
+  );
+});
+
 test("the tunables default to the container's values", () => {
   const config = startupConfiguration(DEV_ENV);
 

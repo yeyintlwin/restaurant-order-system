@@ -92,6 +92,17 @@ services:
       # OPTIONS responder ships inert.
       TERMINAL_ALLOWED_ORIGINS: ""
       TRUSTED_PROXY_HOPS: 1
+      # Spec 11.7: core-api is the ONLY permitted caller of the e-paper SDK, so this
+      # service -- not customer-order -- is the one that reaches the hub. Both endpoints
+      # sit on the `default` bridge; core-api is the only service on BOTH networks, which
+      # is what lets it hold core-net and still talk to the hub.
+      #
+      # Its two CREDENTIALS are deliberately not here. EPAPER_API_KEY and
+      # TABLE_DISPLAY_SERVICE_TOKEN come from ${CORE_ENV_FILE} (~/core-api.env, mode 600)
+      # like every other secret this service reads: this file is committed, and
+      # `docker compose config` interpolates env_file contents but prints THIS block
+      # verbatim to anyone who runs it on the box.
+      EPAPER_HUB_URL: http://epaper-hub:3000
       SESSION_IDLE_SECONDS: 28800
       SESSION_ABSOLUTE_SECONDS: 604800
       PAIRING_CODE_TTL_SECONDS: 900
@@ -175,11 +186,25 @@ services:
       - ${EPAPER_ENV_FILE:-.env}
     environment:
       PORT: 3100
-      EPAPER_HUB_URL: http://epaper-hub:3000
+      # Spec 11.7: this app no longer holds the e-paper SDK and no longer speaks to the
+      # hub at all. It asks core-api to update a table, and core-api calls the SDK. So
+      # EPAPER_HUB_URL moved to the core-api block above and this replaces it.
+      #
+      # Reachable because core-api declares `networks: [core-net, default]` -- it is the
+      # only service on both, and this one is on `default` implicitly. The bearer it
+      # presents (TABLE_DISPLAY_SERVICE_TOKEN) is a secret and comes from
+      # ${EPAPER_ENV_FILE}, not from this committed file.
+      CORE_API_URL: http://core-api:3200
       ORDER_BASE_URL: https://order.yeyintlwin.com
       BUSINESS_TIME_ZONE: Asia/Tokyo
       BUSINESS_DAY_ROLLOVER_HOUR: 6
     depends_on:
+      # STILL the hub, not core-api. The dependency is about the DISPLAY being ready
+      # before this app tries to reset twelve of them at startup, and the hub is what
+      # owns the panels; core-api is now a hop on the way there. Adding
+      # `core-api: service_healthy` here would also put a database migration in front of
+      # the customer ordering page, which is a much larger blast radius for a page that
+      # otherwise needs nothing from core-net.
       epaper-hub:
         condition: service_healthy
     oom_score_adj: 500

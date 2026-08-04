@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const { createEpaperClient } = require("./epaper-client");
+const { createTableDisplayClient } = require("./table-display-client");
 const { createOrderStore, MAX_TABLE_NUMBER } = require("./order-store");
 const { createTableVisitStore } = require("./table-visit-store");
 
@@ -11,17 +11,27 @@ const DEFAULT_ORDER_BASE_URL = "https://order.yeyintlwin.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
+// Spec 11.7: this app is a front end and its backend is core-api. It no longer holds the
+// e-paper SDK, no longer reads EPAPER_HUB_URL, and no longer reads the hub's EPAPER_API_KEY
+// or API_KEY -- core-api owns all three now. What it reads instead is where core-api is and
+// the shared service token it presents there.
+//
+// The startup requirement stays STRICT (throw, do not degrade), and that is the loud half
+// of a deliberately quiet pair: core-api treats the same two values as optional so that a
+// box whose ~/core-api.env has not been updated still migrates, listens and passes the
+// deploy's readiness gate. If both ends were lenient a half-configured deploy would be
+// silent -- twelve panels frozen on yesterday's QR and nothing to show for it. This throw
+// is what makes it a crash-looping container instead.
 function createConfiguredEpaperClient(requireStartupConfiguration = false) {
-  const hubUrl = process.env.EPAPER_HUB_URL;
-  const apiKey = process.env.EPAPER_API_KEY || process.env.API_KEY;
+  const coreApiUrl = process.env.CORE_API_URL;
+  const serviceToken = process.env.TABLE_DISPLAY_SERVICE_TOKEN;
   const orderBaseUrl = process.env.ORDER_BASE_URL;
-  if (requireStartupConfiguration && (!hubUrl || !apiKey || !orderBaseUrl)) {
+  if (requireStartupConfiguration && (!coreApiUrl || !serviceToken || !orderBaseUrl)) {
     throw new Error("E-paper startup configuration is incomplete");
   }
-  return createEpaperClient({
-    hubUrl,
-    apiKey,
-    orderBaseUrl
+  return createTableDisplayClient({
+    coreApiUrl,
+    serviceToken
   });
 }
 
@@ -430,11 +440,18 @@ function isTransientEpaperError(error) {
   if (
     error?.code === "EPAPER_CONFIGURATION" ||
     error?.code === "ERR_INVALID_URL" ||
-    // tableLabel is the SDK's rejection; tableNumber is still thrown by table-visit-store.js
-    // for this app's own 1..12 range, and both are permanent -- retrying either just burns
-    // the startup attempt budget three times over.
-    /^(?:baseUrl|apiKey|epaperId|tableNumber|tableLabel|status|url)\b.*\b(?:must|is required)\b|^url is too long for the e-paper QR area$|^Invalid URL$/.test(message)
+    // The SDK's own rejections (baseUrl/apiKey/epaperId/tableLabel/status/url) used to be
+    // thrown IN THIS PROCESS. Since spec 11.7 moved the SDK behind core-api they arrive as
+    // a 4xx status instead, and the status branch below already classifies those as
+    // permanent. The names are kept because the pattern still has to catch what this
+    // process throws on its own: table-visit-store.js rejects a tableNumber outside 1..12,
+    // and retrying that just burns the startup attempt budget three times over.
+    /^(?:tableNumber|url)\b.*\b(?:must|is required)\b|^Invalid URL$/.test(message)
   ) return false;
+  // The status core-api answered with, read out of table-display-client.js's message.
+  // 401 and 422 are settled facts about the request; 408, 429 and 5xx are worth another
+  // attempt, and so is a message with no status at all -- that is a transport failure,
+  // which is what a restarting core-api looks like from here.
   const status = /(?:^|\D)([1-5]\d{2})(?:\D|$)/.exec(message);
   if (!status) return true;
   const value = Number(status[1]);

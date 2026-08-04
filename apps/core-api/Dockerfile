@@ -10,17 +10,33 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# FIRST, and it is an ordering constraint rather than a preference: core-api's manifest
+# now carries "@restaurant/epaper-hub-sdk": "file:../../packages/epaper-hub-sdk" (spec
+# 11.7 -- core-api is the SDK's one permitted caller), and npm resolves a file: link by
+# READING the target's package.json at install time. With this COPY below the RUN, the
+# install fails with ENOENT on a path that exists in the repository, which reads as a
+# broken lockfile rather than a missing COPY.
+COPY packages/epaper-hub-sdk ./packages/epaper-hub-sdk
+
 # One COPY, deliberately: it carries scripts/ as well as the source, and
 # create-platform-admin.js (Plan 2), unlock-account.js and set-password.js all run
 # through `docker compose exec` against this image.
 COPY apps/core-api ./apps/core-api
 
-# `ci`, not `install`. customer-order uses `install` despite having a lockfile;
-# core-api is the first app here with a real dependency tree, so failing loudly on a
-# stale lockfile is the behaviour a release build should have. --workspaces=false
-# because the root package.json is not in this image and npm must not go looking for
-# it. pg-native is never installed: it needs libpq and a C toolchain.
-RUN npm --prefix apps/core-api ci --omit=dev --workspaces=false
+# The SDK's OWN dependency tree, installed separately. `npm ci` in apps/core-api creates
+# the symlink and stops there -- it does not install a linked package's dependencies -- so
+# without this line the image boots and then dies at the first display update with
+# MODULE_NOT_FOUND on qrcode-generator, which nothing in the test suite can see.
+# apps/customer-order/Dockerfile carried the same pair of lines until this change moved
+# the SDK here.
+#
+# `ci`, not `install`. customer-order used `install` despite having a lockfile; core-api
+# is the app with a real dependency tree, so failing loudly on a stale lockfile is the
+# behaviour a release build should have. --workspaces=false because the root package.json
+# is not in this image and npm must not go looking for it. pg-native is never installed:
+# it needs libpq and a C toolchain.
+RUN npm --prefix packages/epaper-hub-sdk ci --omit=dev \
+ && npm --prefix apps/core-api ci --omit=dev --workspaces=false
 
 # HOST=0.0.0.0 is correct INSIDE a container -- 127.0.0.1 there is unreachable from
 # docker-proxy and the compose network. Confinement to loopback is the Compose port

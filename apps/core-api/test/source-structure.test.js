@@ -30,14 +30,25 @@ test("core-api declares the scripts, dependencies and engine the image and runbo
   assert.equal(manifest.scripts["db:reset"], "node scripts/reset-database.js");
   assert.equal(manifest.engines.node, ">=20");
 
-  // EXACTLY two runtime dependencies, and only ONE of them is new to this
-  // repository: apps/epaper-hub already ships express@^4.21.2, so `pg` is the
-  // single NEW dependency Phase 1 introduces. express is still listed here
-  // explicitly because http/router.js requires it and the Dockerfile installs
-  // from THIS manifest with `npm ci --workspaces=false` -- leaning on the repo
-  // root's hoisted express@4.22.2 would produce an image that boots straight into
+  // EXACTLY three runtime dependencies. express is listed explicitly because
+  // http/router.js requires it and the Dockerfile installs from THIS manifest
+  // with `npm ci --workspaces=false` -- leaning on the repo root's hoisted
+  // express@4.22.2 would produce an image that boots straight into
   // MODULE_NOT_FOUND while everything stayed green locally.
-  assert.deepEqual(Object.keys(manifest.dependencies).sort(), ["express", "pg"]);
+  //
+  // The third is the e-paper SDK, and it moved HERE from
+  // apps/customer-order/package.json. Spec 11.7: core-api is the SDK's one
+  // permitted caller, which C16 below asserts as a one-element list. This
+  // literal and that rule have to move together -- widening C16 without the
+  // manifest gives a permitted caller that cannot resolve its own require.
+  assert.deepEqual(
+    Object.keys(manifest.dependencies).sort(),
+    [SDK_SPECIFIER, "express", "pg"]
+  );
+
+  // A file: link, never a version range: the SDK is workspace-local and has no
+  // registry entry, so a caret here resolves to nothing at `npm ci` time.
+  assert.equal(manifest.dependencies[SDK_SPECIFIER], "file:../../packages/epaper-hub-sdk");
 
   // Express 5 changes path-pattern syntax and the OPTIONS/HEAD fallbacks the
   // router tail depends on. It must never arrive as a quiet caret bump.
@@ -164,10 +175,12 @@ test("the walker scanned every source file, with POSIX separators", () => {
   //
   // Plan 1 ended at fifteen. Plan 2a adds seven: migrations/0002_identity.sql,
   // lib/{tokens,password,semaphore,client-ip,audit-vocabulary}.js and
-  // repositories/auth/audit.js. Raise this floor in each later plan as
+  // repositories/auth/audit.js, and http/body.js is the twenty-third. The
+  // e-paper boundary adds epaper/hub-client.js and
+  // http/routes/table-displays.js. Raise this floor in each later plan as
   // repositories/ and http/routes/ fill in.
   assert.ok(
-    SOURCE_FILES.length >= 22,
+    SOURCE_FILES.length >= 25,
     `scanned only ${SOURCE_FILES.length} files: ${SOURCE_FILES.join(", ")}`
   );
 
@@ -177,11 +190,17 @@ test("the walker scanned every source file, with POSIX separators", () => {
     "migrations/0001_init.sql",
     // Plan 2a's three new AREAS, one sentinel each. The floor alone cannot catch
     // a walker that silently stops descending into one of them -- the count would
-    // still clear 22 on the strength of the others, and C9 and C14 would go back
-    // to comparing [] to [] exactly as C9 did for the whole of Plan 1.
+    // still clear the floor on the strength of the others, and C9 and C14 would
+    // go back to comparing [] to [] exactly as C9 did for the whole of Plan 1.
     "lib/tokens.js",
     "repositories/auth/audit.js",
-    "migrations/0002_identity.sql"
+    "migrations/0002_identity.sql",
+    // epaper/ is the fourth AREA, and its sentinel is the one that matters most:
+    // C16 asserts "exactly one file requires the SDK" as a deepEqual against
+    // ["epaper/hub-client.js"]. A walker that stopped descending into epaper/
+    // would compare [] to [] -- and C16 would report the boundary intact at the
+    // exact moment the file defining it had gone missing.
+    "epaper/hub-client.js"
   ]) {
     assert.ok(SOURCE_FILES.includes(sentinel), `sentinel ${sentinel} was not scanned`);
   }
@@ -267,6 +286,39 @@ function walk(directory, prefix = "") {
 }
 
 const SOURCE_FILES = walk(appRoot).sort();
+
+// --- repository walker ---------------------------------------------------
+// C16's second half. Every other rule here is scoped to apps/core-api because
+// every other rule is about this app's internals; the SDK boundary is about who
+// in the REPOSITORY may drive a display, so it needs a walker that leaves.
+//
+// test/ and testing/ are excluded for the same reason walk() excludes them, plus
+// one specific to this rule: THIS FILE would otherwise match its own C16
+// fixture. The spliced SDK_SPECIFIER already stops that, and the exclusion means
+// the rule does not depend on the splice staying spliced.
+//
+// Restricted to apps/ and packages/. docs/ carries design prose that names the
+// specifier deliberately, and .worktrees/ is gitignored scratch that is not part
+// of the tree the boundary describes.
+const REPOSITORY_ROOTS = ["apps", "packages"];
+
+function walkRepository() {
+  const found = [];
+  for (const root of REPOSITORY_ROOTS) {
+    for (const relative of walk(path.join(repoRoot, root), `${root}/`)) {
+      found.push(relative);
+    }
+  }
+  return found.sort();
+}
+
+const REPOSITORY_FILES = walkRepository();
+
+function repositoryFilesMatching(pattern) {
+  return REPOSITORY_FILES.filter((file) =>
+    pattern.test(stripComments(readText(repoRoot, ...file.split("/")), extensionOf(file)))
+  ).sort();
+}
 
 function extensionOf(file) {
   return file.endsWith(".sql") ? ".sql" : ".js";
@@ -361,6 +413,47 @@ test("C3: only http/router.js requires express or registers a route", () => {
   assert.deepEqual(filesMatching(ROUTE_REGISTRATION, (file) => file !== "http/router.js"), []);
 });
 
+test("C16: epaper/hub-client.js is the only file in this app that requires the SDK", () => {
+  assert.deepEqual(filesMatching(SDK_REQUIRE), ["epaper/hub-client.js"]);
+});
+
+test("C16: and it is the only one in the REPOSITORY, which is the half that matters", () => {
+  // The clause the app-local walker cannot reach, and the only one that states
+  // spec 11.7's actual claim. Every other rule in this file is scoped to
+  // apps/core-api, which is correct for pg and express -- they are this app's
+  // internals. The SDK is not: the caller this boundary was built to remove
+  // lived in apps/customer-order, and a rule that only ever looked inside
+  // core-api would have been GREEN for the whole of the period the violation
+  // existed. That is not hypothetical -- it is the state of the tree at the
+  // commit before this one.
+  //
+  // deepEqual against a one-element list, not a subset: a second requirer is a
+  // finding, not a warning. Adding a file here is always the wrong repair --
+  // core-api is the controlling API and no other app drives a display.
+  assert.deepEqual(repositoryFilesMatching(SDK_REQUIRE), ["apps/core-api/epaper/hub-client.js"]);
+});
+
+test("the repository walker really scanned the other apps, with POSIX separators", () => {
+  // The anti-vacuity floor for the rule above, and it is the same lesson C9
+  // learned the expensive way: a walker returning [] makes "no file matches X"
+  // pass forever. These four sentinels sit in the three apps and the one package
+  // the rule has to be able to see -- apps/customer-order most of all, since it
+  // is the app the boundary was moved OUT of.
+  for (const sentinel of [
+    "apps/core-api/epaper/hub-client.js",
+    "apps/customer-order/server.js",
+    "apps/epaper-hub/server.js",
+    "packages/epaper-hub-sdk/index.js"
+  ]) {
+    assert.ok(REPOSITORY_FILES.includes(sentinel), `sentinel ${sentinel} was not scanned`);
+  }
+
+  assert.ok(
+    REPOSITORY_FILES.every((file) => !file.includes("\\")),
+    "a scanned repository path contains a backslash: path.sep was not normalised"
+  );
+});
+
 test("C4: withUnscopedConnection has nine sanctioned callers and no others", () => {
   // The budget itself, so the list cannot be padded without a visible diff.
   assert.equal(UNSCOPED_ALLOWLIST.length, 9);
@@ -422,6 +515,26 @@ const ROUTE_REGISTRATION = rule(
   /\bapp\.(?:get|post|put|patch|delete|use)\s*\(|\bexpress\.Router\s*\(/,
   "app.use('/api/terminal', mw);",
   "// app.use('/api/terminal', mw);"
+);
+
+// C16 -- spec 11.7, stated as an exclusive: "@restaurant/epaper-hub-sdk has
+// exactly one permitted caller, and it is core-api." The SDK reaches twelve
+// physical panels and renders the QR from a URL that IS the table's visit
+// credential, so "which process may drive a display" is an authorisation
+// question, not a layering preference.
+//
+// The specifier is SPLICED for the same reason C5's needle is: the two proofs
+// this rule is graded by are `grep -rn 'epaper-hub-sdk' apps/` and the deepEqual
+// below, and a test file carrying the literal makes the first of them report a
+// violation that is really its own scanner. Verified by mutation both ways --
+// adding the require to another file turns C16 red, removing it turns it green.
+const SDK_SPECIFIER = "@restaurant/epaper-hub" + "-sdk";
+
+const SDK_REQUIRE = rule(
+  "C16 require epaper-hub-sdk",
+  new RegExp(`require\\(\\s*["']${SDK_SPECIFIER}["']\\s*\\)`),
+  `const { createEpaperHubSdk } = require("${SDK_SPECIFIER}");`,
+  `// const { createEpaperHubSdk } = require("${SDK_SPECIFIER}");`
 );
 
 // C4 -- the unscoped-connection allowlist: nine entries, under db/ and

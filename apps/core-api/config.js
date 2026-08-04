@@ -43,6 +43,11 @@ const DEFAULTS = Object.freeze({
   PORT: "3200",
   HOST: "0.0.0.0",
   TERMINAL_ALLOWED_ORIGINS: "",
+  // The compose service name of apps/epaper-hub, reached over the `default` bridge that
+  // core-api and the hub share. Defaulted rather than required because it is not a secret
+  // and there is exactly one right value on the box; the two CREDENTIALS that go with it
+  // (EPAPER_API_KEY, TABLE_DISPLAY_SERVICE_TOKEN) are not defaulted anywhere.
+  EPAPER_HUB_URL: "http://epaper-hub:3000",
   SESSION_IDLE_SECONDS: "28800",
   SESSION_ABSOLUTE_SECONDS: "604800",
   PAIRING_CODE_TTL_SECONDS: "900",
@@ -204,6 +209,34 @@ function parseOriginList(name, raw) {
   return Object.freeze(origins);
 }
 
+// NOT parseOrigin. The e-paper hub is another container on the compose `default` bridge
+// and is addressed as http://epaper-hub:3000 -- plaintext, and a hostname that is neither
+// https nor loopback, so parseOrigin refuses it in every environment. That hop is
+// container-to-container on a network Docker owns, and it is the SAME hop
+// apps/customer-order has made since Phase 1; this change moves which container makes it,
+// not what it crosses. A path IS allowed, unlike an origin: the SDK appends
+// /api/epapers/<id> to whatever base it is given.
+function parseHubUrl(name, raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ConfigurationError(name, `must be an absolute http or https URL, got "${raw}"`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new ConfigurationError(name, `must be an absolute http or https URL, got "${raw}"`);
+  }
+  if (url.username !== "" || url.password !== "") {
+    throw new ConfigurationError(name, `must not carry a username or password, got "${raw}"`);
+  }
+  // The SDK refuses both, and refusing them here names the variable instead of failing
+  // later inside a display update.
+  if (url.search !== "" || url.hash !== "") {
+    throw new ConfigurationError(name, `must not carry a query string or fragment, got "${raw}"`);
+  }
+  return raw.replace(/\/$/, "");
+}
+
 function parseBindAddress(name, raw) {
   if (!BIND_ADDRESSES.includes(raw)) {
     throw new ConfigurationError(name, `must be one of ${BIND_ADDRESSES.join(", ")}, got "${raw}"`);
@@ -272,6 +305,32 @@ function startupConfiguration(env) {
   }
   const trustedProxyHops = parseInteger("TRUSTED_PROXY_HOPS", trustedProxyHopsRaw ?? "0", 0, UNBOUNDED);
 
+  // --- the e-paper display path (spec §11.7, §11.9) --------------------------------
+  //
+  // BOTH CREDENTIALS ARE OPTIONAL, IN EVERY ENVIRONMENT, AND THAT IS THE DECISION rather
+  // than an omission. Making them required would mean a box whose ~/core-api.env has not
+  // yet gained them refuses to listen -- and this process migrates the database BEFORE it
+  // listens, so the refusal lands after the schema has changed and fails the deploy's
+  // 90-second readiness gate. Spec §9.5 treats that shape as the thing to design away.
+  // Unconfigured, POST /api/terminal/table-displays/:tableNumber answers 503 and nothing
+  // else in the service notices. The failure is still loud, from the other end:
+  // apps/customer-order refuses to start without its half of the pair, so a half-configured
+  // deploy presents as one crash-looping container rather than as silence.
+  const epaperApiKey = readSecret(env, "EPAPER_API_KEY");
+  const tableDisplayServiceToken = readSecret(env, "TABLE_DISPLAY_SERVICE_TOKEN");
+
+  // Checked only when SET. A variable nobody has filled in yet is a 503; a variable
+  // somebody filled in with "changeme" is a shared bearer credential for a route that
+  // drives twelve physical panels, and that is worth refusing to listen over. The floor is
+  // the same 32 bytes of entropy lib/tokens.js mints its own credentials at, expressed as
+  // characters because an operator pastes text.
+  if (tableDisplayServiceToken !== undefined && tableDisplayServiceToken.length < 32) {
+    throw new ConfigurationError(
+      "TABLE_DISPLAY_SERVICE_TOKEN",
+      "must be at least 32 characters when it is set"
+    );
+  }
+
   const sessionIdleSeconds = readInteger(env, "SESSION_IDLE_SECONDS", 1, UNBOUNDED);
   const sessionAbsoluteSeconds = readInteger(env, "SESSION_ABSOLUTE_SECONDS", 1, UNBOUNDED);
   if (sessionAbsoluteSeconds <= sessionIdleSeconds) {
@@ -310,6 +369,13 @@ function startupConfiguration(env) {
       readValue(env, "TERMINAL_ALLOWED_ORIGINS") ?? DEFAULTS.TERMINAL_ALLOWED_ORIGINS
     ),
     trustedProxyHops,
+
+    epaperHubUrl: parseHubUrl(
+      "EPAPER_HUB_URL",
+      readValue(env, "EPAPER_HUB_URL") ?? DEFAULTS.EPAPER_HUB_URL
+    ),
+    epaperApiKey,
+    tableDisplayServiceToken,
 
     sessionIdleSeconds,
     sessionAbsoluteSeconds,

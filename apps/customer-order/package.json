@@ -1,14 +1,11 @@
 {
   "name": "customer-order",
   "version": "1.0.0",
-  "description": "Mobile-first restaurant customer ordering app.",
+  "description": "Mobile-first restaurant customer ordering app. Zero runtime dependencies: spec 11.7 moved the e-paper hub SDK to apps/core-api, which is now its only permitted caller, and this app reaches a display through core-api's HTTP API instead.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node --test"
-  },
-  "dependencies": {
-    "@restaurant/epaper-hub-sdk": "file:../../packages/epaper-hub-sdk"
   },
   "engines": {
     "node": ">=20"

@@ -72,19 +72,37 @@ test("customer environment example documents rollover configuration and server-o
   assert.match(environment, /^BUSINESS_DAY_ROLLOVER_HOUR=6$/m);
 });
 
-test("Customer order Docker image includes its local SDK runtime dependency", () => {
-  const dockerfile = fs.readFileSync(
+test("the local SDK runtime dependency ships in the core-api image, not the customer one", () => {
+  // Was "Customer order Docker image includes its local SDK runtime dependency".
+  // Spec 11.7 made apps/core-api the ONLY permitted caller of @restaurant/epaper-hub-sdk,
+  // so the COPY-and-install pair moved with the require. Asserted as a PAIR, in one test,
+  // because the failure that matters is the half-move: leave the lines in
+  // customer-order's Dockerfile and the SDK is shipped to a container that cannot use it;
+  // drop them from core-api's and the image builds, boots, passes /health/ready and then
+  // dies at the first display update with MODULE_NOT_FOUND on qrcode-generator.
+  const customer = fs.readFileSync(
     path.join(repoRoot, "apps", "customer-order", "Dockerfile"),
     "utf8",
   );
+  const core = fs.readFileSync(path.join(repoRoot, "apps", "core-api", "Dockerfile"), "utf8");
 
-  assert.match(dockerfile, /FROM node:20-alpine/);
-  assert.match(dockerfile, /COPY packages\/epaper-hub-sdk \.\/packages\/epaper-hub-sdk/);
-  assert.match(dockerfile, /COPY apps\/customer-order \.\/apps\/customer-order/);
-  assert.match(dockerfile, /npm --prefix packages\/epaper-hub-sdk install --omit=dev/);
-  assert.match(dockerfile, /npm --prefix apps\/customer-order install --omit=dev --workspaces=false/);
-  assert.match(dockerfile, /EXPOSE 3100/);
-  assert.match(dockerfile, /CMD \["node", "apps\/customer-order\/server\.js"\]/);
+  assert.match(customer, /FROM node:20-alpine/);
+  assert.match(customer, /COPY apps\/customer-order \.\/apps\/customer-order/);
+  assert.match(customer, /npm --prefix apps\/customer-order install --omit=dev --workspaces=false/);
+  assert.match(customer, /EXPOSE 3100/);
+  assert.match(customer, /CMD \["node", "apps\/customer-order\/server\.js"\]/);
+
+  // Scoped to the lines that EXECUTE: this Dockerfile explains in a comment directly
+  // above the COPY why the SDK is deliberately absent, and a document-wide doesNotMatch
+  // would be red against the correct file.
+  const customerInstructions = customer
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+  assert.doesNotMatch(customerInstructions, /epaper-hub-sdk/);
+
+  assert.match(core, /COPY packages\/epaper-hub-sdk \.\/packages\/epaper-hub-sdk/);
+  assert.match(core, /npm --prefix packages\/epaper-hub-sdk ci --omit=dev/);
 });
 
 test("operations docs describe automatic twelve-table startup readiness", () => {

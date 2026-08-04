@@ -625,10 +625,13 @@ test("startup rejects invalid attempt counts before display updates", async () =
 test("default startup rejects missing production configuration before updates or listening", async () => {
   const originalEnvironment = { ...process.env };
   const originalFetch = globalThis.fetch;
+  // Spec 11.7: the display path now runs through core-api, so the two variables this
+  // app must have are WHERE core-api is and the shared service token it presents there.
+  // EPAPER_HUB_URL and EPAPER_API_KEY are core-api's now and are deliberately absent --
+  // the loop below would be vacuous if a variable it deletes were one nothing reads.
   const configuredEnvironment = {
-    EPAPER_HUB_URL: "https://epaper-hub.example.test",
-    EPAPER_API_KEY: "epaper-key",
-    API_KEY: "hub-key",
+    CORE_API_URL: "https://api.example.test",
+    TABLE_DISPLAY_SERVICE_TOKEN: "service-token",
     ORDER_BASE_URL: "https://order.yeyintlwin.com",
     SHOP_ID: "1",
     CHECKOUT_API_KEY,
@@ -639,11 +642,26 @@ test("default startup rejects missing production configuration before updates or
     let fetchCalls = 0;
     globalThis.fetch = async () => {
       fetchCalls += 1;
-      throw new Error("unexpected e-paper request");
+      throw new Error("unexpected table display request");
     };
+    // POSITIVE CONTROL, and it is load-bearing: without it this test passes even when
+    // the loop deletes variables nothing reads, because an environment missing ALL of
+    // them throws the same message. The full configuration must get PAST the check and
+    // reach the network -- and it does so with no epaperClient injected, since injecting
+    // one skips createConfiguredEpaperClient(true) and the check with it.
+    Object.assign(process.env, configuredEnvironment);
+    await assert.rejects(() => startCustomer({
+      server: {},
+      listen: () => {},
+      attempts: 1,
+      sleep: async () => {}
+    }), /Failed to initialize e-paper table/);
+    assert.ok(fetchCalls > 0, "the fully configured startup never reached core-api");
+    fetchCalls = 0;
+
     for (const { missing } of [
-      { missing: ["EPAPER_HUB_URL"] },
-      { missing: ["EPAPER_API_KEY", "API_KEY"] },
+      { missing: ["CORE_API_URL"] },
+      { missing: ["TABLE_DISPLAY_SERVICE_TOKEN"] },
       { missing: ["ORDER_BASE_URL"] }
     ]) {
       Object.assign(process.env, configuredEnvironment);
@@ -722,9 +740,8 @@ test("startup reads the exact business configuration from the environment", asyn
 test("startup accepts an injected e-paper client without production configuration", async () => {
   const originalEnvironment = { ...process.env };
   try {
-    delete process.env.EPAPER_HUB_URL;
-    delete process.env.EPAPER_API_KEY;
-    delete process.env.API_KEY;
+    delete process.env.CORE_API_URL;
+    delete process.env.TABLE_DISPLAY_SERVICE_TOKEN;
     delete process.env.ORDER_BASE_URL;
     let updates = 0;
     let listened = false;
@@ -1241,10 +1258,28 @@ test("checkout and an already-authenticated order follow the same table queue", 
   assert.equal(store.getSession(7).slipNumber, null);
 });
 
-test("server can reuse epaper hub API_KEY when EPAPER_API_KEY is not set", () => {
+test("this app no longer reads, or can reach, the e-paper hub", () => {
+  // Replaces "server can reuse epaper hub API_KEY when EPAPER_API_KEY is not set".
+  // Spec 11.7 moved the e-paper hub SDK to apps/core-api and made it that package's one
+  // permitted caller, so the hub's URL and the hub's key are core-api's configuration now
+  // and this process has no business holding either.
+  //
+  // Asserted as an ABSENCE over the source, which is the only shape that can see this:
+  // every behavioural test here injects an epaperClient, so a leftover
+  // `process.env.EPAPER_API_KEY` would sit in server.js unread and unnoticed, and the
+  // hub's key would keep being shipped to a container with no reason to have it.
   const source = require("node:fs").readFileSync(require.resolve("../server"), "utf8");
 
-  assert.match(source, /process\.env\.EPAPER_API_KEY \|\| process\.env\.API_KEY/);
+  for (const name of ["EPAPER_HUB_URL", "EPAPER_API_KEY"]) {
+    assert.doesNotMatch(source, new RegExp(`process\\.env\\.${name}\\b`), name);
+  }
+  // API_KEY was the hub's fallback name. Word-bounded so TABLE_DISPLAY_API_KEY -- this
+  // app's own INBOUND provisioning bearer, which is unrelated and stays -- is not caught.
+  assert.doesNotMatch(source, /process\.env\.API_KEY\b/);
+
+  // ...and the two it reads instead.
+  assert.match(source, /process\.env\.CORE_API_URL\b/);
+  assert.match(source, /process\.env\.TABLE_DISPLAY_SERVICE_TOKEN\b/);
 });
 
 test("provisioning compares SHA-256 token digests with timingSafeEqual", () => {

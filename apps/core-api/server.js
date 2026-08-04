@@ -13,11 +13,14 @@ const {
 } = require("./db");
 const { checkReadiness, waitForDatabase } = require("./db/health");
 const { createApp } = require("./http/router");
+const { createEpaperHubClient } = require("./epaper/hub-client");
+const { appendAuditEvent } = require("./repositories/auth/audit");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
 // module that exists but is never required cannot ship as a silently unserved route.
 require("./http/routes/health");
+require("./http/routes/table-displays");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -73,7 +76,20 @@ async function start(options = {}) {
   await openRuntime({ connectionString: config.databaseUrl, max: config.dbPoolMax });
   await waitForDb({ attempts: 10, delayMs: 1000 });
 
-  const app = createApp({ checkReadiness: readiness, log: options.log });
+  // Spec §11.7: this is the only place in the repository that builds an e-paper client, and
+  // epaper/hub-client.js is the only file that requires the SDK. Built AFTER the database is
+  // up so an unconfigured hub can never delay the readiness gate -- it is a plain object
+  // that opens no socket until a request arrives.
+  const app = createApp({
+    checkReadiness: readiness,
+    log: options.log,
+    tableDisplay:
+      options.tableDisplay ||
+      createEpaperHubClient({ hubUrl: config.epaperHubUrl, apiKey: config.epaperApiKey }),
+    tableDisplayServiceToken: config.tableDisplayServiceToken,
+    appendAuditEvent: options.appendAuditEvent || appendAuditEvent,
+    trustedProxyHops: config.trustedProxyHops
+  });
   return listen(app, config.port, config.host);
 }
 
