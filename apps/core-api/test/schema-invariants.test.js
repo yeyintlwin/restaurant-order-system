@@ -15,7 +15,16 @@ const TENANT_COLUMN_EXCEPTIONS = [
   "users"
 ];
 
-const CONTAINMENT_COLUMNS = ["shop_id", "terminal_id", "shop_table_id", "user_id", "pairing_code_id"];
+// CONTAINMENT_COLUMNS is deliberately gone. It was a hand-written list of child
+// column names -- shop_id, terminal_id, shop_table_id, user_id, pairing_code_id --
+// and S2 filtered on it before testing for company_id. Two things were wrong with
+// that. Every NEW table was exempt by default, because its foreign keys name
+// columns nobody had added to the list yet; and the list had already rotted, since
+// shop_table_id matched no column anywhere in the schema. Eleven of the fourteen
+// COMPOSITE_FK_EXCEPTIONS below were decorative as a result: the filter could never
+// have reached them. Containment is now derived from the catalogue -- does the
+// PARENT carry company_id -- so the rule self-maintains the way S1 does, and every
+// exception is load-bearing.
 
 // S2. Keyed by "<child table>.<ordered child columns>". Every entry states WHY.
 const COMPOSITE_FK_EXCEPTIONS = {
@@ -79,22 +88,54 @@ test("S2's rule rejects a synthetic containment FK that omits company_id", () =>
         name: "shop_tables_shop_fkey",
         key: "shop_tables.shop_id,company_id",
         childColumns: ["shop_id", "company_id"],
+        parentIsTenantOwned: true,
         deleteAction: "r"
       },
       {
         name: "menu_items_shop_fkey",
         key: "menu_items.shop_id",
         childColumns: ["shop_id"],
+        parentIsTenantOwned: true,
         deleteAction: "r"
       },
       {
         name: "menu_items_terminal_fkey",
         key: "menu_items.terminal_id",
         childColumns: ["terminal_id"],
+        parentIsTenantOwned: true,
+        deleteAction: "r"
+      },
+      // The case a hand-written child-column list could never have caught, and
+      // the reason this rule now reads the catalogue. Neither order_id nor
+      // menu_item_id would have appeared in such a list, so BOTH edges fell out
+      // of the filter before the company_id test ran -- and Phase 2 adds exactly
+      // this table.
+      {
+        name: "order_items_order_fkey",
+        key: "order_items.order_id",
+        childColumns: ["order_id"],
+        parentIsTenantOwned: true,
+        deleteAction: "r"
+      },
+      // A parent with no tenant column of its own is not a containment edge.
+      // companies is the root, so shops.company_id -> companies must NOT be
+      // flagged for omitting the column it IS.
+      {
+        name: "shops_company_fkey",
+        key: "shops.company_id",
+        childColumns: ["company_id"],
+        parentIsTenantOwned: false,
+        deleteAction: "r"
+      },
+      {
+        name: "users_created_by_fkey",
+        key: "users.created_by_user_id",
+        childColumns: ["created_by_user_id"],
+        parentIsTenantOwned: false,
         deleteAction: "r"
       }
     ]),
-    ["menu_items_shop_fkey", "menu_items_terminal_fkey"]
+    ["menu_items_shop_fkey", "menu_items_terminal_fkey", "order_items_order_fkey"]
   );
 });
 
@@ -158,6 +199,12 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
              con.contype,
              con.confdeltype,
              child.relname AS child_table,
+             parent.relname AS parent_table,
+             -- Does the PARENT carry a tenant column? That, not a hand-written list of
+             -- child column names, is what makes a foreign key a containment edge.
+             EXISTS (SELECT 1 FROM pg_attribute pa
+                      WHERE pa.attrelid = con.confrelid AND pa.attname = 'company_id'
+                        AND NOT pa.attisdropped) AS parent_is_tenant_owned,
              -- attname is "name", so array_agg yields name[] (OID 1003), which
              -- node-postgres has no parser for: it hands back the raw string
              -- "{id,company_id}" and every .join() below is a TypeError. The
@@ -169,6 +216,7 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
         FROM pg_constraint con
         JOIN pg_class child ON child.oid = con.conrelid
         JOIN pg_namespace n ON n.oid = child.relnamespace
+        LEFT JOIN pg_class parent ON parent.oid = con.confrelid
        WHERE n.nspname = 'public'`);
 
     for (const row of constraints.rows) {
@@ -179,6 +227,8 @@ describe("schema invariants", { skip: skipDatabaseTests() }, () => {
           key: `${row.child_table}.${row.child_columns.join(",")}`,
           childTable: row.child_table,
           childColumns: row.child_columns,
+          parentTable: row.parent_table,
+          parentIsTenantOwned: row.parent_is_tenant_owned,
           deleteAction: row.confdeltype
         });
       }
@@ -351,7 +401,16 @@ function tablesMissingTenantColumn(tables) {
 function foreignKeysMissingTenantColumn(foreignKeys) {
   return foreignKeys
     .filter((fk) => !COMPOSITE_FK_EXCEPTIONS[fk.key])
-    .filter((fk) => fk.childColumns.some((column) => CONTAINMENT_COLUMNS.includes(column)))
+    // Containment is derived from the CATALOGUE, not from a hand-written list of
+    // child column names. A name list exempts every new table by default: an
+    // order_items(order_id, menu_item_id) would have named neither, so both FKs
+    // fell out of the filter before the company_id test ran, and a row stamped
+    // company A could reference an order owned by company B -- the exact thing
+    // 0001_init.sql claims Postgres prevents rather than discipline.
+    //
+    // If the parent carries company_id, the child is pointing at tenant-owned
+    // data and must anchor that reference with its own company_id.
+    .filter((fk) => fk.parentIsTenantOwned)
     .filter((fk) => !fk.childColumns.includes("company_id"))
     .map((fk) => fk.name)
     .sort();
