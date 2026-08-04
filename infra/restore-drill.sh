@@ -280,12 +280,35 @@ BEGIN
     RAISE EXCEPTION 'GRANTS: role core_api_app does not exist - see infra/README.md, Scenario B';
   END IF;
 
-  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  -- ONE PRIVILEGE PER ROW, deliberately. has_table_privilege() treats a comma list
+  -- as OR, not AND: it returns true when the role holds ANY of the named
+  -- privileges. So the earlier form -- NOT has_table_privilege(c.oid,
+  -- 'SELECT, INSERT, UPDATE, DELETE') -- fired only when core_api_app had lost all
+  -- FOUR, and a table that silently lost INSERT while keeping SELECT sailed
+  -- through the one check that exists to catch exactly that. Measured, not
+  -- assumed: a role holding SELECT alone returns true for that list.
+  --
+  -- schema_migrations is the one deliberate asymmetry. 0002_identity.sql REVOKEs
+  -- INSERT/UPDATE/DELETE on the ledger so a compromised app role cannot forge or
+  -- delete a migration row and make the next deploy skip or re-apply one. It is
+  -- expected to hold SELECT and nothing else.
+  SELECT string_agg(c.relname || ' (' || p.priv || ')', ', ' ORDER BY c.relname, p.priv) INTO bad
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p(priv)
    WHERE n.nspname = 'public' AND c.relkind = 'r'
-     AND NOT has_table_privilege('core_api_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE');
+     AND NOT (c.relname = 'schema_migrations' AND p.priv <> 'SELECT')
+     AND NOT has_table_privilege('core_api_app', c.oid, p.priv);
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'GRANTS: core_api_app is missing DML on: %', bad;
+  END IF;
+
+  -- And the ledger lockdown POSITIVELY, since the block above can only prove a
+  -- privilege is present. A restore that predates 0002_identity.sql, or one taken
+  -- with --no-privileges, hands the app role its INSERT back and nothing else here
+  -- would notice.
+  IF has_table_privilege('core_api_app', 'public.schema_migrations', 'INSERT') THEN
+    RAISE EXCEPTION 'GRANTS: core_api_app can INSERT into schema_migrations - 0002_identity.sql''s REVOKE did not survive the restore';
   END IF;
 
   SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO bad
