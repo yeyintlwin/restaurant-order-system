@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 1 of 11 tasks done.**
+**Status: 2 of 11 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -36,6 +36,7 @@ steps are ticked and its commit exists.
 | 2026-08-04 | Task 1. `0002_identity.sql` plus its content test. Two review rounds: spec compliance passed first pass; code quality found four Important and three Minor gaps, ALL of which were plan/spec gaps rather than executor errors, and all seven are fixed. The migration now repeats `SET LOCAL lock_timeout`/`statement_timeout` (SET LOCAL is transaction-scoped and the runner opens a fresh BEGIN per file, so 0001s are NOT inherited -- and this is the first migration to ALTER a pre-existing table), names the `users` row as the one to lock at every mint site, carries the two end-state CHECKs 0001 enforces on both sibling credential tables, adds the sweep index, and bounds `sent_to_email`. Reviewer retracted one of its own claims -- REVOKE takes no lock on its target relation -- and I measured that myself before removing the clause. Plan and spec reconciled to the committed files. | **1/11** | `7fa8861`, `ab2e25b`, `947c258`, (this commit) | Task 2 |
 
 ---
+| 2026-08-04 | Task 2. The migration-set pins. The plan said five sites; there are SIX -- `assert.equal(ledger.rowCount, 1)` is the only one that is not an array literal, so a grep for the literal finds five of six. The implementer escalated rather than guessing. Confirming that escalation surfaced a worse defect the plan had introduced: both multi-row ledger queries had NO `ORDER BY`, while the new two-element deepEqual and three `rows[0]` accesses had just made row order load-bearing. It would have passed every run until a HOT update or autovacuum reordered the heap. Review found one further real hole -- the pending-migration stderr assertion matched only the first filename, so it had stopped verifying that 0002 is reported at all. 23 pass, 0 fail. | **2/11** | `9d268e6`, (this commit) | Task 3 |
 
 ## How to pick this up
 
@@ -345,15 +346,20 @@ git commit -m "feat(core-api): 0002_identity - verification column, token table,
 
 ---
 
-### Task 2: Widen the five single-migration pins
+### Task 2: Widen the single-migration pins and order the ledger query
 
 **Files:**
 
-- Modify: `apps/core-api/test/migrate.test.js:104`, `:358`, `:365`, `:372`, `:599`
+- Modify: `apps/core-api/test/migrate.test.js:104`, `:358`, `:364`, `:365`, `:372`, `:599`
+- Modify: the two multi-row ledger queries at `:362` and `:601`
 
-Five assertions encode "there is exactly one migration". Every one fails on file
+**Six** assertions encode "there is exactly one migration". Every one fails on file
 existence alone. They are not a bug — they are what stops a migration arriving
 unnoticed — so they widen deliberately, in one commit.
+
+The sixth, `assert.equal(ledger.rowCount, 1)` at `:364`, is easy to miss because it
+is the only one that is not an array literal, so a `grep` for `["0001_init.sql"]`
+finds five of the six.
 
 > **Line numbers are post-Task-1.** Task 1 inserts 63 lines near the top of this
 > file, so `:104` is unmoved but the other four shifted. If they have drifted
@@ -361,7 +367,7 @@ unnoticed — so they widen deliberately, in one commit.
 > the file:
 > `grep -n '\["0001_init.sql"\]' apps/core-api/test/migrate.test.js`
 
-- [ ] **Step 1: Confirm exactly which assertions fail**
+- [x] **Step 1: Confirm exactly which assertions fail**
 
 Run: `node --test apps/core-api/test/migrate.test.js 2>&1 | grep "^not ok"`
 
@@ -371,7 +377,7 @@ re-runs as a no-op`, `sends each file as ONE string, so dollar-quoted bodies
 survive`, `a ledger row with no file on disk is a WARNING, not a failure`, and
 `node db/migrate.js applies the migration set and exits 0`.
 
-- [ ] **Step 2: Widen each literal**
+- [x] **Step 2: Widen each literal**
 
 Line 104 — the on-disk set:
 
@@ -410,7 +416,58 @@ Line 599 — the CLI's resulting ledger:
     );
 ```
 
-- [ ] **Step 3: Run the suite to verify it passes**
+Line 364 — the sixth site, and the only one a `grep` for the array literal misses:
+
+```js
+      assert.equal(ledger.rowCount, 2);
+```
+
+Keep it rather than deleting it as now-redundant: it checks the driver's result
+metadata, which is a different thing from the array contents asserted below it.
+
+- [x] **Step 2b: Order the two multi-row ledger queries**
+
+This is the part of Task 2 that is not bookkeeping.
+
+`:362` and `:601` both `SELECT … FROM schema_migrations` with **no `ORDER BY`**,
+and PostgreSQL guarantees no row order without one. That was harmless while a
+single row could not be misordered. It stops being harmless the moment `:365`
+asserts a two-element `deepEqual` over `rows.map(…)` — and the three assertions
+below it index `rows[0]` expecting `0001` for the checksum, the duration and
+`applied_at`.
+
+A two-row table scanned in physical order returns insertion order on every run,
+which is exactly what makes this dangerous: it would pass until a HOT update, an
+autovacuum or a plan change reordered it, then surface as an inexplicable flake
+long after anyone remembered this change.
+
+```js
+      // ORDER BY is load-bearing now that there is more than one row: the
+      // assertions below index rows[0] expecting 0001, and Postgres guarantees no
+      // order without it.
+      const ledger = await database.unscoped(
+        "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations ORDER BY filename"
+      );
+```
+
+```js
+    // ORDER BY is load-bearing now that there is more than one row: the deepEqual
+    // below is order-sensitive, and Postgres guarantees no order without it.
+    const ledger = await database.unscoped("SELECT filename FROM schema_migrations ORDER BY filename");
+```
+
+**Leave the other four ledger queries alone**, identified by content because line
+numbers in this file have already drifted twice: the one filtered
+`WHERE filename = '0001_init.sql'`, and the three `SELECT count(*)::int AS n`
+aggregates. None can be order-dependent, and all three counts assert **zero** —
+after a rolled-back file, and twice after check mode applied nothing — so they are
+invariant to the size of the migration set and cannot go stale as it grows.
+
+```bash
+grep -n "FROM schema_migrations" apps/core-api/test/migrate.test.js
+```
+
+- [x] **Step 3: Run the suite to verify it passes**
 
 Run: `node --test apps/core-api/test/migrate.test.js`
 
@@ -422,7 +479,7 @@ before `0002` existed — drop it and let `pretest` rebuild:
 npm --prefix apps/core-api run db:reset
 ```
 
-- [ ] **Step 4: Verify the schema actually landed**
+- [x] **Step 4: Verify the schema actually landed**
 
 Run:
 
@@ -432,7 +489,7 @@ node --test apps/core-api/test/schema-invariants.test.js 2>&1 | grep "^not ok"
 
 Expected: failures naming `user_email_tokens` in S1, S2 and S2b. That is Task 3.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/test/migrate.test.js

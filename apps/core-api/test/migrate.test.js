@@ -350,7 +350,7 @@ test("waits for the lock, refuses inside the bound, and releases it", { skip: sk
 
 // --- applying ---------------------------------------------------------------
 
-test("applies 0001_init.sql once and re-runs as a no-op", { skip: skipDatabaseTests() }, async () => {
+test("applies the migration set once and re-runs as a no-op", { skip: skipDatabaseTests() }, async () => {
   await withDatabase("migrate_apply", async (database) => {
     await withSession(database, async (session) => {
       const log = collectLog();
@@ -358,8 +358,9 @@ test("applies 0001_init.sql once and re-runs as a no-op", { skip: skipDatabaseTe
       assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql"]);
       assert.deepEqual(first.skipped, []);
 
-      // ORDER BY is load-bearing now that there are two rows: the assertions below
-      // index rows[0] expecting 0001, and Postgres guarantees no order without it.
+      // ORDER BY is load-bearing now that there is more than one row: the
+      // assertions below index rows[0] expecting 0001, and Postgres guarantees no
+      // order without it.
       const ledger = await database.unscoped(
         "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations ORDER BY filename"
       );
@@ -583,7 +584,13 @@ test("node db/migrate.js --check exits 1 on a pending file and applies nothing",
       encoding: "utf8"
     });
     assert.equal(result.status, 1, `expected exit 1, got ${result.status}: ${result.stderr}`);
-    assert.match(result.stderr, /pending migration\(s\) never applied: 0001_init\.sql/);
+    // BOTH filenames. Matching only the first stops this verifying that 0002 is
+    // reported at all -- the runner could regress to naming one pending file and
+    // stay green -- and the gap widens with every migration added after it.
+    assert.match(
+      result.stderr,
+      /pending migration\(s\) never applied: 0001_init\.sql, 0002_identity\.sql/
+    );
 
     const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
     assert.equal(probe.rows[0].present, null);
@@ -600,8 +607,8 @@ test("node db/migrate.js applies the migration set and exits 0", { skip: skipDat
     });
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
 
-    // ORDER BY is load-bearing now that there are two rows: Postgres guarantees
-    // no order without it.
+    // ORDER BY is load-bearing now that there is more than one row: the deepEqual
+    // below is order-sensitive, and Postgres guarantees no order without it.
     const ledger = await database.unscoped("SELECT filename FROM schema_migrations ORDER BY filename");
     assert.deepEqual(
       ledger.rows.map((row) => row.filename),
