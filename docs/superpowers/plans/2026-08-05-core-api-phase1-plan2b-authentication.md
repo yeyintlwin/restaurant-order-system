@@ -1,35 +1,30 @@
 # Core API Phase 1 — Plan 2b: Authentication, Sessions and the Request Pipeline
 
-> ## ⚠️ THIS PLAN IS INCOMPLETE — DO NOT EXECUTE IT YET
+> ## ⚠️ WRITTEN IN FULL, NOT YET REVIEWED, NOT YET EXECUTED
 >
-> Writing stopped mid-document when the authoring session was cut off by an API
-> error. **Tasks 1–9 are written and appear complete; Part 4 ("The pipeline") has
-> its heading and nothing under it.** Nothing has been implemented and nothing here
-> has been reviewed.
+> All 17 tasks are written. **Nothing here has been implemented and nothing has been
+> through the adversarial review Plans 1 and 2a got**, which is the one thing that
+> has caught a real defect in every plan this project has produced so far.
 >
-> **What is missing**, from the brief this was written against:
+> An earlier banner on this file said Part 4 was empty and the plan stopped at Task
+> 9. That was stale by two commits — Tasks 10 and 11 were already written under it.
+> The lesson is the plan's own standing rule turned on itself: **a status line is a
+> mirror like any other, and this one had drifted.** Trust the checkboxes and the
+> execution log below, never a prose summary.
 >
-> - Part 4 — the §6.3.5 pipeline: `http/authenticate.js`, and wiring `lib/semaphore.js`
->   into the scrypt path.
-> - The six routes: `POST /api/admin/auth/{login,logout,logout-all,password}`,
->   `GET /api/admin/auth/me`, `POST /api/admin/scope`.
-> - **The deploy tripwire.** Registering `POST /api/admin/auth/login` trips
->   `deploy-config.test.js`, because the deploy's block-4 probe expects a 404 there.
->   `deploy.yml`, that test and the route must move in ONE commit or the deploy
->   aborts *after* the migration has applied. This is the single most dangerous task
->   in the plan and it is not written.
-> - `scripts/create-platform-admin.js` (§5.6).
-> - The §5.7 limiter roster and the `limit.name` boot check — §5.7 claims `route()`
->   already rejects unknown limiter names and **it does not**.
-> - The audit-vocabulary membership check (see spec §11.6 for why it was written,
->   reverted, and is waiting).
-> - The `TRUSTED_PROXY_HOPS` cross-file assertion — spec §11.5 marks it **required**.
-> - The whole-plan self-review: spec coverage, type consistency across tasks.
+> **The single most dangerous task is Task 12**, and it is dangerous in a specific,
+> bounded way rather than a vague one. Registering `POST /api/admin/auth/login`
+> trips `deploy-config.test.js`, because the deploy's block-4 probe expects a 404 at
+> that path. The route, `deploy.yml` and that test move in **ONE commit** or a real
+> deploy aborts *after* the migration has applied. The tripwire is red for the whole
+> of that task; that is it working, not it breaking.
 >
-> **To finish it:** read Tasks 1–9 first so you do not duplicate them, then continue
-> from Part 4. The spec sections are named in each bullet above.
-
-
+> **Three departures from what Parts 1–4 assume** are stated at the top of Part 5,
+> before the task that acts on each. Read them before Task 15: one new file
+> (`lib/authorization.js`), one pipeline step that Task 11 did not wire
+> (`options.roles` is decorative until then), and one deliberate re-ordering inside
+> §6.3.5 step 10.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the platform usable by a human. At the end of this plan a platform
@@ -49,10 +44,15 @@ widens for them. `http/authenticate.js` orchestrates and issues no SQL of its ow
 `http/router.js` grows the pipeline; it stays the only file that touches express.
 
 **Tech Stack:** Node 20 (CommonJS, plain JavaScript), `node:crypto`, `node:net`
-(`isIP`, supplied to `lib/client-ip.js` from `http/`), `node:readline` (the
-bootstrap CLI's echo-off prompt), PostgreSQL 16, `node --test` +
+(`isIP`, supplied to `lib/client-ip.js` from `http/`), `process.stdin.setRawMode()`
+(the bootstrap CLI's echo-off prompt), PostgreSQL 16, `node --test` +
 `node:assert/strict`. **No new npm dependency, and no new configuration variable** —
 see "Why 2b adds no config" below.
+
+> An earlier draft of this line named `node:readline`. Task 16 does not use it: the
+> readline recipe for echo-off overrides `_writeToOutput`, an underscore-prefixed
+> Node internal, and this service does not put a credential prompt on a private API.
+> `setRawMode` is the documented one.
 
 **Spec:** [2026-08-04-core-api-identity-slice-design.md](../specs/2026-08-04-core-api-identity-slice-design.md),
 whose §11.5–§11.9 are the amendments this plan carries out. Bare section
@@ -63,7 +63,8 @@ references (§5.1, §6.3.5, §8.5) point at the **parent**,
 
 ## Execution log
 
-**Status: 0 of 17 tasks done. NOT STARTED.**
+**Status: 0 of 17 tasks done. NOT STARTED.** The plan text is complete; the code is
+not written.
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -101,7 +102,14 @@ PowerShell:
 $env:CORE_API_TEST_DATABASE_URL = 'postgres://core_api_owner:devpassword@127.0.0.1:5433/postgres'
 ```
 
-Tasks 1–6 and 10 need no database. Tasks 7, 8, 9 and 11–17 do.
+Tasks 1–6 and 10 need no database. Tasks 7, 8, 9 and 11 do.
+
+**Tasks 12–17 drive stubs and need no database of their own** — the six routes are
+tested against injected repositories, the bootstrap CLI's three guards all fire
+before a pool is opened, and Task 17 edits documentation. That is not a licence to
+skip Postgres: every task ends with `npm test`, which runs the database-backed suites
+and **throws** without one, and Task 16 carries a manual end-to-end check that needs
+both a database and a real terminal.
 
 ### Standing rule: every list in this repository is mirrored somewhere
 
@@ -203,17 +211,21 @@ that arrives with shops, in Plan 2c.
 | File | Responsibility | Task |
 | --- | --- | --- |
 | `apps/core-api/lib/rate-limit.js` | The §5.7 roster + fixed-window buckets, injected clock | 1 |
-| `apps/core-api/http/router.js` | Roster boot check; vocabulary boot check; the §6.3.5 pipeline | 2, 3, 11 |
+| `apps/core-api/http/router.js` | Roster boot check; vocabulary boot check; the §6.3.5 pipeline; the step-10 role gate | 2, 3, 11, 15 |
 | `apps/core-api/lib/audit-vocabulary.js` | The nine actions 2b's routes and CLI emit | 3 |
 | `apps/core-api/test/nginx-config.test.js` | §11.5's `TRUSTED_PROXY_HOPS` ↔ proxy-depth assertion | 4 |
 | `apps/core-api/http/cookies.js` | Collect every value for a name; build the `__Host-` cookie | 5 |
 | `apps/core-api/http/csrf.js` | The amended §5.3 rule, gated on the channel | 6 |
-| `apps/core-api/repositories/auth/users.js` | Login lookup, atomic backoff, password write | 7 |
+| `apps/core-api/repositories/auth/users.js` | Login lookup, atomic backoff, password write, the sessions_valid_from lever | 7, 13 |
 | `apps/core-api/repositories/auth/sessions.js` | create / resolve / renew / delete / acting company | 8 |
 | `apps/core-api/repositories/auth/scope-materialize.js` | `shopIds` and `administeredShopIds` | 9 |
 | `apps/core-api/http/authenticate.js` | Cookie resolution, strict channel binding, read-only | 10 |
-| `apps/core-api/http/routes/auth.js` | The six routes | 12–15 |
+| `apps/core-api/http/routes/auth.js` | The six routes, and the me-document they share | 12–15 |
+| `.github/workflows/deploy.yml` | Block 4 becomes the behavioural forged-XFF gate | 12 |
+| `apps/core-api/lib/authorization.js` | §5.4's alias table — the half of `lib/authorization.js` this plan builds | 15 |
 | `apps/core-api/scripts/create-platform-admin.js` | §5.6/§9.10 bootstrap CLI | 16 |
+| `apps/core-api/server.js` | Route requires, the new collaborators, the platform-admin boot warning | 12, 16 |
+| `infra/README.md`, both specs | Retire every deferral marker this plan made false | 17 |
 
 Test files mirror these under `apps/core-api/test/`, one per module.
 
@@ -3591,7 +3603,2718 @@ git commit -m "feat(core-api): the 6.3.5 pipeline, inside the wrapper where 404 
 
 ## Part 5 — The routes
 
-<!-- PART-BREAK -->
+All six routes live in **one file**, `apps/core-api/http/routes/auth.js`, and they
+share three helpers that only exist because they are shared: the me-document
+builder, the login time-budget pad, and the ISO date coercion. Splitting them
+across six files would mean six copies of the me-document, which §6.2 defines once
+and four routes return.
 
+`POST /api/admin/scope` lives there too, despite its path. It is an
+authentication-state change — it writes `user_sessions.acting_company_id` — and it
+returns the me-document. `http/routes/scope.js` would be a file whose only content
+is a route that imports every helper from `auth.js`.
 
+### Three departures from what Parts 1–4 wrote down, stated before they surprise anybody
 
+**(a) `lib/authorization.js` is new, and it is not in the file-structure table
+above.** The table was written before Task 15 existed. §5.4 says *"privilege rules
+live in one module, unit-tested by name"* and §6.2 names that module
+`lib/authorization.js`; this plan builds the **alias half** of it and nothing else.
+Plan 2c adds the rank lattice, shop containment and the self-modification rules to
+the same file. The table at the top of this plan is amended in Task 17.
+
+**(b) `runPipeline` stops at step 7 today, so `options.roles` is decorative.**
+Task 11's comment says *"steps 3 through 7"* and it is accurate. Nothing enforces
+`roles`. That is harmless for five of this plan's six routes — they declare
+`anyUser`, which admits every tenant role — and it is **not** harmless for
+`POST /api/admin/scope`, nor for the twenty-odd routes Plan 2c registers against a
+gate that was never wired. Task 15 lands it.
+
+**(c) The role gate runs at step 7.5, not at step 10, and the split is deliberate.**
+§6.3.5 step 10 reads *"AUTHORIZATION: route roles → 403; then each path resource
+resolved in path order"*. Those are two halves with different inputs. The first
+depends on the credential alone and on nothing the caller can vary, so it can run
+the moment the credential is resolved. The second depends on step 9's path
+parameters and must run after them — and it is Plan 2c's, with the first route that
+has a path parameter. Running the static half early costs nothing and buys the one
+thing that matters: it is in the pipeline, once, rather than a line every handler
+has to remember. Task 15 writes the comment that says so, because a reader
+comparing the code to §6.3.5 will otherwise think a step was skipped.
+
+### One finding to report rather than fix
+
+`http/body.js` answers **`400 invalid_json`** for a body that parses but is not an
+object (`readJsonBody`, the `Array.isArray(parsed)` branch). §6.3.4 assigns that
+condition **`400 invalid_request`**, and `db/errors.js` declares the code. Both are
+400, so nothing observable breaks and no test is red.
+
+It is a shipped file this plan does not otherwise touch, and the standing rule at
+the top says a site the plan does not mention is **a finding to report, not a
+decision to make**. Report it; do not fix it here. It belongs in a commit of its
+own with `body.test.js` moving alongside.
+
+---
+
+### Task 12: `POST /api/admin/auth/login` — and the deploy tripwire, in ONE commit
+
+**Read "Six things this plan will NOT let you do", item 6, before starting.** The
+tripwire is not incidental to this task; it *is* this task's second half.
+`deploy-config.test.js` scans every file under `http/routes/` for the literal
+`"/api/admin/auth/login"` and fails the moment one appears. It is red for the whole
+of this task and green only when `deploy.yml` has moved too. Committing the route
+without the deploy edit aborts a real deploy **after the migration has applied**.
+
+**Files:**
+
+- Create: `apps/core-api/http/routes/auth.js`
+- Create: `apps/core-api/test/auth-routes.test.js`
+- Modify: `apps/core-api/server.js`
+- Modify: `apps/core-api/test/route-auth.test.js`
+- Modify: `.github/workflows/deploy.yml`
+- Modify: `apps/core-api/test/deploy-config.test.js`
+
+**The mirrors.** Four lists move, and none of them is in the file being edited:
+
+```bash
+grep -rn "GET /health/ready" apps/core-api/test/route-auth.test.js   # the public set
+grep -rn "ORIGIN_GATED_PUBLIC_KEYS" apps/core-api                    # Task 6's list, already correct
+grep -rn "xff-probe@invalid.test" .github/workflows apps/core-api    # the probe, both ends
+grep -rn "the settled four" apps/core-api docs                       # router.js:75 and two specs
+```
+
+`ORIGIN_GATED_PUBLIC_KEYS` already reads `["POST /api/admin/auth/login"]` — Task 6
+wrote it that way on purpose, so it needs no edit here and the census in
+`route-auth.test.js` should already agree the moment the route registers. If it does
+not, the census is what is wrong.
+
+`router.js:75`'s comment and the two specs say *"the settled four"* about the public
+set. This plan takes it from two to **three**; it reaches four when Plan 2c or the
+terminal plan adds `POST /api/terminal/pair`. Update the comment to say three-of-four
+with the fourth named, rather than deleting the count.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `apps/core-api/test/auth-routes.test.js`:
+
+```js
+"use strict";
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const { createApp } = require("../http/router");
+const { createRateLimiter } = require("../lib/rate-limit");
+const { createSemaphore } = require("../lib/semaphore");
+const { hashPassword } = require("../lib/password");
+const { SESSION_COOKIE_NAME } = require("../http/cookies");
+
+require("../http/routes/auth");
+
+const ORIGIN = "https://api.yeyintlwin.com";
+const USER = "aaaaaaaa-0003-4000-8000-000000000001";
+const COMPANY = "aaaaaaaa-0001-4000-8000-000000000001";
+const SESSION_ID = "aaaaaaaa-0008-4000-8000-000000000001";
+const PASSWORD = "correct-horse-battery";
+
+// Hashed ONCE for the whole file. scrypt at N=32768 costs ~100 ms, and a fixture
+// rebuilt per test turns this suite into a minute of CPU for no coverage.
+let storedHash;
+
+function activeUser(overrides = {}) {
+  return {
+    id: USER,
+    email: "till@example.test",
+    displayName: "Till",
+    role: "company_admin",
+    companyId: COMPANY,
+    passwordHash: storedHash,
+    mustChangePassword: false,
+    status: "active",
+    lockedUntil: null,
+    failedLoginCount: 0,
+    companyStatus: "active",
+    ...overrides
+  };
+}
+
+function harness(overrides = {}) {
+  const audits = [];
+  const bumped = [];
+  const cleared = [];
+  const deps = {
+    log: () => {},
+    apiPublicOrigin: ORIGIN,
+    trustedProxyHops: 1,
+    sessionIdleSeconds: 28800,
+    sessionAbsoluteSeconds: 604800,
+    loginRatePerMinute: 30,
+    // Small on purpose. The pad is asserted by call ordering, never by wall clock:
+    // a timing assertion is the flakiest test a CI box can run.
+    loginTimeBudgetMs: 250,
+    passwordAbuseThreshold: 5,
+    adminMintRatePer10min: 20,
+    pairingMintRatePer10min: 30,
+    pairRatePerMinute: 20,
+    rotateRatePerHour: 5,
+    rateLimiter: createRateLimiter({ now: () => 1_700_000_000_000 }),
+    scryptSemaphore: createSemaphore({ slots: 2 }),
+    users: {
+      findByEmailForLogin: async () => activeUser(),
+      recordFailedLogin: async (id) => { bumped.push(id); return { failedLoginCount: 1, lockedUntil: null }; },
+      recordSuccessfulLogin: async (id) => { cleared.push(id); }
+    },
+    sessions: {
+      createSession: async () => ({
+        id: SESSION_ID,
+        expiresAt: new Date("2026-08-05T08:00:00.000Z"),
+        absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z")
+      })
+    },
+    scopes: {
+      materialiseScope: async (input) => ({
+        kind: "tenant",
+        userId: input.userId,
+        sessionId: input.sessionId,
+        companyId: input.companyId,
+        role: input.role,
+        shopIds: [],
+        administeredShopIds: []
+      })
+    },
+    appendAuditEvent: async (event) => { audits.push(event); return "1"; },
+    ...overrides
+  };
+  return { deps, audits, bumped, cleared };
+}
+
+async function withServer(deps, run) {
+  const app = createApp(deps);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  try {
+    await run(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function login(base, body, headers = {}) {
+  return fetch(`${base}/api/admin/auth/login`, {
+    method: "POST",
+    headers: { Origin: ORIGIN, "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.7", ...headers },
+    body: JSON.stringify(body)
+  });
+}
+
+test.before(async () => { storedHash = await hashPassword(PASSWORD); });
+
+test("a correct password returns the me-document and a __Host- cookie", async () => {
+  const { deps, cleared } = harness();
+  await withServer(deps, async (base) => {
+    const response = await login(base, { email: "Till@Example.test", password: PASSWORD });
+    assert.equal(response.status, 200);
+
+    const cookie = response.headers.get("set-cookie");
+    assert.ok(cookie.startsWith(`${SESSION_COOKIE_NAME}=`), cookie);
+    assert.match(cookie, /; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=28800$/);
+
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body).sort(), ["scope", "session", "user"]);
+    assert.deepEqual(body.user, {
+      id: USER,
+      email: "till@example.test",
+      displayName: "Till",
+      role: "company_admin",
+      companyId: COMPANY,
+      mustChangePassword: false
+    });
+    assert.deepEqual(body.scope.shopIds, []);
+    assert.deepEqual(body.scope.administeredShopIds, []);
+    assert.equal(body.session.expiresAt, "2026-08-05T08:00:00.000Z");
+    assert.deepEqual(cleared, [USER]);
+  });
+});
+
+test("the response carries no password hash anywhere in it", async () => {
+  // The login lookup selects password_hash, so the row that reaches the handler
+  // holds it. A me-document built by spreading that row would ship a scrypt PHC
+  // string to the client, and the 6.3.6 leak scanner does not read 200 bodies.
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const text = await (await login(base, { email: "till@example.test", password: PASSWORD })).text();
+    assert.doesNotMatch(text, /scrypt\$/);
+    assert.doesNotMatch(text, /passwordHash/);
+  });
+});
+
+test("every failure cause produces a byte-identical 401", async () => {
+  // Spec 6.2: "401 invalid_credentials (uniform: unknown email, wrong password,
+  // locked, suspended user, suspended company)". Compared as TEXT with the
+  // requestId stripped -- requestId is per-request random and is the only field
+  // that legitimately differs.
+  const causes = {
+    unknown: { findByEmailForLogin: async () => null },
+    wrongPassword: { findByEmailForLogin: async () => activeUser() },
+    suspendedUser: { findByEmailForLogin: async () => activeUser({ status: "suspended" }) },
+    suspendedCompany: { findByEmailForLogin: async () => activeUser({ companyStatus: "suspended" }) },
+    locked: { findByEmailForLogin: async () => activeUser({ lockedUntil: new Date(Date.now() + 600_000) }) }
+  };
+
+  const seen = new Set();
+  for (const [name, users] of Object.entries(causes)) {
+    const { deps } = harness();
+    deps.users = { ...deps.users, ...users };
+    await withServer(deps, async (base) => {
+      const response = await login(base, { email: "till@example.test", password: "wrong-password-here" });
+      assert.equal(response.status, 401, name);
+      assert.equal(response.headers.get("set-cookie"), null, `${name} must not set a cookie`);
+      const text = (await response.text()).replace(/"requestId":"[^"]+"/, '"requestId":"X"');
+      seen.add(text);
+    });
+  }
+  assert.equal(seen.size, 1, `the five failure causes produced ${seen.size} distinct bodies`);
+});
+
+test("an unknown address still writes auth.login_failed with the derived source_ip", async () => {
+  // THE ROW THE DEPLOY GATE READS. Spec 5.7: the audit row "is the only externally
+  // observable evidence of what the server derived as the client IP, and the deploy
+  // gate in 9.5 asserts against it". Its probe uses an address that matches NO user,
+  // so a handler that writes the row only when the user exists makes the gate assert
+  // on nothing and pass whatever TRUSTED_PROXY_HOPS is set to.
+  const { deps, audits, bumped } = harness({
+    users: { findByEmailForLogin: async () => null, recordFailedLogin: async () => null, recordSuccessfulLogin: async () => {} }
+  });
+  await withServer(deps, async (base) => {
+    await login(base, { email: "xff-probe@invalid.test", password: "x" }, { "X-Forwarded-For": "203.0.113.99, 10.0.0.1" });
+  });
+
+  assert.equal(audits.length, 1);
+  assert.deepEqual(audits[0], {
+    actorKind: "anonymous",
+    action: "auth.login_failed",
+    outcome: "failure",
+    sourceIp: "10.0.0.1",
+    detail: { email: "xff-probe@invalid.test" }
+  });
+  // No user row, so nothing to bump -- and recordFailedLogin(null) would be an
+  // UPDATE ... WHERE id = NULL, which matches nothing and hides the mistake.
+  assert.deepEqual(bumped, []);
+});
+
+test("only a wrong password on an otherwise-eligible account bumps the counter", async () => {
+  // A locked account must NOT bump: one request every 14 minutes would then hold
+  // the 15-minute cap forever, which is the permanent-DoS shape spec 5.8(a) rejects
+  // on the password route for the same reason. A suspended user and a suspended
+  // company have no login to throttle.
+  for (const [name, user] of Object.entries({
+    locked: activeUser({ lockedUntil: new Date(Date.now() + 600_000) }),
+    suspendedUser: activeUser({ status: "suspended" }),
+    suspendedCompany: activeUser({ companyStatus: "suspended" })
+  })) {
+    const { deps, bumped } = harness();
+    deps.users = { ...deps.users, findByEmailForLogin: async () => user };
+    await withServer(deps, async (base) => {
+      await login(base, { email: "till@example.test", password: PASSWORD });
+    });
+    assert.deepEqual(bumped, [], `${name} bumped failed_login_count`);
+  }
+
+  const { deps, bumped } = harness();
+  await withServer(deps, async (base) => {
+    await login(base, { email: "till@example.test", password: "wrong-password-here" });
+  });
+  assert.deepEqual(bumped, [USER]);
+});
+
+test("the scrypt slot is released on the failure path too", async () => {
+  // A `finally`-less release leaks one slot per failed login, and with SCRYPT_SLOTS
+  // at 2 the service stops answering login after two wrong passwords -- as a 503,
+  // which reads as a database problem.
+  const semaphore = createSemaphore({ slots: 1, queueDepth: 0 });
+  const { deps } = harness({ scryptSemaphore: semaphore });
+  await withServer(deps, async (base) => {
+    await login(base, { email: "till@example.test", password: "wrong-password-here" });
+    assert.deepEqual(semaphore.stats(), { running: 0, queued: 0, slots: 1, queueDepth: 0 });
+    const second = await login(base, { email: "till@example.test", password: PASSWORD });
+    assert.equal(second.status, 200, "the second login was shed: the first never released");
+  });
+});
+
+test("a missing field is 422 and names both fields at once", async () => {
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await login(base, {});
+    assert.equal(response.status, 422);
+    const body = await response.json();
+    assert.equal(body.error.code, "validation_failed");
+    assert.deepEqual(body.error.errors, [
+      { field: "email", code: "required" },
+      { field: "password", code: "required" }
+    ]);
+  });
+});
+
+test("login is origin-gated and content-type-gated, and Origin is answered first", async () => {
+  // The one public route that carries the gate (Task 6's ORIGIN_GATED_PUBLIC_KEYS).
+  // Origin before Content-Type: answering 415 to a request from evil.test would
+  // confirm the origin was acceptable.
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const wrongOrigin = await fetch(`${base}/api/admin/auth/login`, {
+      method: "POST",
+      headers: { Origin: "https://evil.test", "Content-Type": "text/plain" },
+      body: "{}"
+    });
+    assert.equal(wrongOrigin.status, 403);
+    assert.equal((await wrongOrigin.json()).error.code, "origin_not_allowed");
+
+    const wrongType = await fetch(`${base}/api/admin/auth/login`, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "text/plain" },
+      body: "{}"
+    });
+    assert.equal(wrongType.status, 415);
+  });
+});
+
+test("login's 429 carries NO Retry-After, on the real route", async () => {
+  // Spec 6.2 marks login and pair as the two 429s that must not carry the header:
+  // it would confirm to an attacker that their probes are landing in a bucket.
+  // pipeline.test.js proves the roster honours that on a SCRATCH route; this proves
+  // the shipped route declares the right limiter, which is the half that can regress.
+  const { deps } = harness({ loginRatePerMinute: 2 });
+  await withServer(deps, async (base) => {
+    await login(base, { email: "till@example.test", password: "wrong-password-here" });
+    await login(base, { email: "till@example.test", password: "wrong-password-here" });
+    const shed = await login(base, { email: "till@example.test", password: "wrong-password-here" });
+    assert.equal(shed.status, 429);
+    assert.equal(shed.headers.get("retry-after"), null);
+  });
+});
+```
+
+And widen the public set in `apps/core-api/test/route-auth.test.js` — find it with
+`grep -n 'GET /health/ready' apps/core-api/test/route-auth.test.js`:
+
+```js
+  // Set EQUALITY, not containment: adding a fourth fails and so does removing one.
+  // Three of spec 6.1's settled four. The fourth is POST /api/terminal/pair, which
+  // arrives with the terminal plan; widen this literal in the same commit as that route.
+  assert.deepEqual(
+    publicKeys,
+    new Set(["GET /health", "GET /health/ready", "POST /api/admin/auth/login"])
+  );
+```
+
+Add the origin-gating census beside it, which is the mirror identity spec §6.3 asks
+for:
+
+```js
+test("the origin-gated set is derived and pinned, so a new public POST cannot skip the gate", () => {
+  const { requiresOriginCheck } = require("../http/csrf");
+  const gated = new Set(entries.filter(requiresOriginCheck).map((entry) => entry.key));
+
+  // Identity spec 6.3's amended rule, asserted as a CENSUS rather than declared as a
+  // route option: 8.5 is exactly ten rules and adding an `origin:` option would be a
+  // design change rather than a repair. Plan 2d adds forgot-password, reset-password
+  // and verify-email; the auth routes below arrive across Tasks 12-15.
+  assert.deepEqual(gated, new Set([
+    "POST /api/admin/auth/login"
+  ]));
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js
+```
+
+Expected: `auth-routes.test.js` fails with `Cannot find module '../http/routes/auth'`;
+`route-auth.test.js` fails its public-set `deepEqual` in the other direction (two
+where three are now expected).
+
+```bash
+node --test apps/core-api/test/deploy-config.test.js
+```
+
+Expected: **PASS**, because `http/routes/auth.js` does not exist yet. It goes red in
+Step 3 and comes back in Step 4. That sequence is the tripwire working.
+
+- [ ] **Step 3: Write the route**
+
+Create `apps/core-api/http/routes/auth.js`:
+
+```js
+"use strict";
+
+// The six routes of spec 6.2's authentication block, in one file because they share
+// the me-document -- which 6.2 defines once and four of them return.
+//
+// WHAT IS NOT HERE: any SQL. Every statement lives in repositories/auth/*, which are
+// the files rule C4's nine-entry allowlist sanctions to call withUnscopedConnection.
+// Rule C2's second needle bans a `.query(` in this file whatever the handle is called.
+
+const { route } = require("../router");
+const { readJsonBody } = require("../body");
+const { sendJson } = require("../respond");
+const { ApiError } = require("../../db/errors");
+const { verifyPassword } = require("../../lib/password");
+const { mintToken, hashToken } = require("../../lib/tokens");
+const { buildSessionCookie } = require("../cookies");
+
+// ---------------------------------------------------------------------------
+// The me-document (spec 6.2), built by NAMING every field rather than by spreading
+// a row. The login lookup selects password_hash, so a spread would put a scrypt PHC
+// string in a 200 body -- and the 6.3.6 leak scanner reads error bodies only.
+// ---------------------------------------------------------------------------
+
+// pg hands timestamptz back as a Date; a stub in a test may hand back a string.
+// Both become the same ISO-8601 text, so the response shape cannot depend on which.
+function iso(value) {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function meDocument({ user, scope, session }) {
+  const document = {
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      // null for an unscoped platform admin, and 6.2 says so: scope.kind is what
+      // the Phase-2 UI branches on to show the company selector.
+      companyId: user.companyId ?? null,
+      mustChangePassword: user.mustChangePassword
+    },
+    scope: {
+      kind: scope.kind,
+      companyId: scope.companyId ?? null,
+      // ALWAYS an array, never null. Spec 6.2: this is what exercises the 3.3(c)
+      // materialised-scope rule end to end, so a regression is visible from outside
+      // the process. A platform scope carries no shopIds at all, and [] is the
+      // honest rendering of "reaches no shop", not a stand-in for "reaches all".
+      shopIds: [...(scope.shopIds ?? [])]
+    },
+    session: {
+      expiresAt: iso(session.expiresAt),
+      absoluteExpiresAt: iso(session.absoluteExpiresAt)
+    }
+  };
+  // Present ONLY for company_admin and scoped platform_admin -- db/scope.js throws
+  // if any other role is handed one, so its absence here is the same fact.
+  if (scope.administeredShopIds !== undefined) {
+    document.scope.administeredShopIds = [...scope.administeredShopIds];
+  }
+  return document;
+}
+
+// ---------------------------------------------------------------------------
+// The login time budget (spec 5.1)
+// ---------------------------------------------------------------------------
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// MEASURED FROM SLOT ACQUISITION, not from request arrival -- spec 5.1 in as many
+// words. Queue wait sits outside the budget, which is exactly why
+// LOGIN_RATE_PER_MINUTE sheds BEFORE the queue rather than lengthening it: if queue
+// time counted, a burst would stretch every login past the budget and the
+// byte-identical-outcome property would leak through timing.
+//
+// Paid on the SUCCESS path too. Padding only failures makes success the fast answer,
+// which is the same oracle wearing the other hat.
+async function payTimeBudget(startedAt, budgetMs) {
+  const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+  if (elapsedMs < budgetMs) await sleep(budgetMs - elapsedMs);
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/login
+// ---------------------------------------------------------------------------
+
+// Returns { ok, bumpUserId }. Written as one function so the five uniform failure
+// causes of 6.2 are visibly ONE list rather than five early returns scattered
+// through a handler, and so the "which failures bump the counter" question has a
+// single place to be answered.
+//
+// A LOCKED ACCOUNT DOES NOT BUMP, and that is the same argument spec 5.8(a) makes
+// about the password route: bumping while locked lets one request every fourteen
+// minutes hold the fifteen-minute cap forever, so a lockout designed to expire
+// becomes permanent and the victim reads their own uniform 401 as a typo.
+// A suspended user and a suspended company have no login to throttle at all.
+async function evaluateLogin(user, password, now) {
+  if (user === null) return { ok: false, bumpUserId: null };
+  if (user.status !== "active") return { ok: false, bumpUserId: null };
+  if (user.companyId !== null && user.companyStatus !== "active") return { ok: false, bumpUserId: null };
+  if (user.lockedUntil !== null && new Date(user.lockedUntil).getTime() > now) {
+    return { ok: false, bumpUserId: null };
+  }
+  // Reached only for an eligible account, so this is the ONLY path that spends
+  // scrypt. Every other cause is a comparison, and the budget pad is what keeps
+  // that difference off the wire.
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    return { ok: false, bumpUserId: user.id };
+  }
+  return { ok: true, bumpUserId: null };
+}
+
+route(
+  "POST",
+  "/api/admin/auth/login",
+  {
+    auth: "public",
+    body: { email: "string", password: "string" },
+    // ONE declared action, because `audit` is one string. The handler also writes
+    // auth.login_failed, which is in the vocabulary and is what the deploy gate
+    // reads. Nothing asserts that a route emits ONLY its declared action -- the
+    // declaration is a boot-time membership check, not a runtime contract.
+    audit: "auth.login",
+    // Credential-independent, consumed by the pipeline at step 4a before any scrypt
+    // is queued. NO Retry-After: spec 5.7 says the header would confirm the bucket.
+    limit: { key: "ip", name: "login-global" },
+    sample: { body: { email: "sample@example.test", password: "not-a-real-password" } }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const body = await readJsonBody(req);
+
+    // Shape, not semantics. A missing field says nothing about any account, so 422
+    // here is not the oracle a 422-versus-401 split would be further down.
+    const errors = [];
+    if (typeof body.email !== "string" || body.email.trim() === "") {
+      errors.push({ field: "email", code: "required" });
+    }
+    if (typeof body.password !== "string" || body.password === "") {
+      errors.push({ field: "password", code: "required" });
+    }
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    // Folded the way the users.email CHECK folds it -- lower(btrim(...)). The
+    // repository folds again in SQL; doing it here as well is what makes the audit
+    // row's detail.email the same string the lookup used.
+    const email = body.email.trim().toLowerCase();
+
+    // Acquired BEFORE the lookup, so the budget clock covers every path and the
+    // 503 shed happens before anything credential-dependent has been read.
+    await deps.scryptSemaphore.acquire();
+    const startedAt = process.hrtime.bigint();
+    try {
+      const user = await deps.users.findByEmailForLogin(email);
+      const verdict = await evaluateLogin(user, body.password, Date.now());
+
+      if (!verdict.ok) {
+        if (verdict.bumpUserId !== null) await deps.users.recordFailedLogin(verdict.bumpUserId);
+        // WRITTEN FOR EVERY FAILURE, INCLUDING AN ADDRESS THAT MATCHES NO ROW.
+        // Spec 5.7: this row is the only externally observable evidence of what the
+        // server derived as the client IP, and deploy.yml block 4 selects it by
+        // detail.email for an address no user has. Skip it when the user is unknown
+        // and the deploy gate asserts on nothing.
+        await deps.appendAuditEvent({
+          actorKind: "anonymous",
+          action: "auth.login_failed",
+          outcome: "failure",
+          sourceIp: req.core.clientIp,
+          detail: { email }
+        });
+        await payTimeBudget(startedAt, deps.loginTimeBudgetMs);
+        throw new ApiError(401, "invalid_credentials");
+      }
+
+      await deps.users.recordSuccessfulLogin(user.id);
+
+      const token = mintToken();
+      const session = await deps.sessions.createSession({
+        userId: user.id,
+        tokenHash: hashToken(token),
+        idleSeconds: deps.sessionIdleSeconds,
+        absoluteSeconds: deps.sessionAbsoluteSeconds
+      });
+      // A FRESH session selects no company. A platform admin therefore signs in
+      // unscoped every time and chooses again through POST /api/admin/scope, which
+      // is the property that keeps an acting company from outliving a sign-out.
+      const scope = await deps.scopes.materialiseScope({
+        userId: user.id,
+        sessionId: session.id,
+        role: user.role,
+        companyId: user.companyId,
+        actingCompanyId: null
+      });
+
+      await deps.appendAuditEvent({
+        actorKind: "user",
+        actorUserId: user.id,
+        companyId: user.companyId,
+        action: "auth.login",
+        outcome: "success",
+        targetKind: "user",
+        targetId: user.id,
+        sourceIp: req.core.clientIp
+      });
+
+      // The request log's actor. The pipeline sets these for auth:'user' routes at
+      // step 5; login is public, so this is the one route that has to say who it
+      // turned out to be.
+      req.core.actorKind = "user";
+      req.core.actorId = user.id;
+
+      await payTimeBudget(startedAt, deps.loginTimeBudgetMs);
+      sendJson(res, 200, meDocument({ user, scope, session }), {
+        // Max-Age tracks the IDLE window, not the absolute one: a cookie outliving
+        // its session leaves the browser presenting a credential the server has
+        // already stopped honouring, which reads as a broken sign-out.
+        "Set-Cookie": buildSessionCookie(token, deps.sessionIdleSeconds)
+      });
+    } finally {
+      // Without this, one slot leaks per failed login and the service stops
+      // answering login after SCRYPT_SLOTS wrong passwords -- as a 503, which
+      // reads as a database problem.
+      deps.scryptSemaphore.release();
+    }
+  }
+);
+
+module.exports = { meDocument, evaluateLogin, payTimeBudget };
+```
+
+In `apps/core-api/server.js`, add the route require beside the other two — find it
+with `grep -n 'require("./http/routes/' apps/core-api/server.js`:
+
+```js
+require("./http/routes/auth");
+```
+
+and the users repository, which Task 11 did not add because nothing called it yet:
+
+```js
+const usersRepository = require("./repositories/auth/users");
+```
+
+then inside the `createApp({ … })` call:
+
+```js
+    users: options.users || usersRepository,
+```
+
+- [ ] **Step 4: Move the deploy tripwire, in this same commit**
+
+**(a)** In `.github/workflows/deploy.yml`, block 4. Find it with
+`grep -n "xff-probe@invalid.test" .github/workflows/deploy.yml`.
+
+Change the two expectations:
+
+```sh
+          test "$probe_status" = "401" || { echo "login probe: expected 401 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
+          grep -q '"code":"invalid_credentials"' /tmp/xff-probe.body || { echo 'login probe: that 401 did not come from core-api'; cat /tmp/xff-probe.body; exit 1; }
+```
+
+Delete the whole `# PLAN 2: restore the full forgeability assertion here …` comment
+block and put the assertion it describes in its place, immediately after the `hops`
+check:
+
+```sh
+          # THE FORGEABILITY ASSERTION. Two locally-correct files can still be a wrong
+          # PAIR, and nothing inside core-api can tell: a forged `X-Forwarded-For:
+          # 1.2.3.4` under one proxy produces a header byte-identical to a legitimate
+          # two-proxy deployment whose real client IS 1.2.3.4. Only the deployed chain
+          # can answer, and this is where it is asked.
+          #
+          # Selected by THIS probe's address, never by recency: a shed request writes
+          # nothing at all, and block 5's burst leaves a row that would satisfy both
+          # tests whatever the hop count is.
+          probe=$(docker compose exec -T core-db sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -tAq -U core_api_owner -d core -c \"SELECT coalesce(host(source_ip), 'null') FROM audit_events WHERE detail->>'email' = 'xff-probe@invalid.test' ORDER BY id DESC LIMIT 1\"" </dev/null)
+          test -n "$probe"                || { echo 'XFF probe wrote no audit row - it never reached core-api'; exit 1; }
+          test "$probe" != "203.0.113.99" || { echo 'FORGEABLE X-Forwarded-For: TRUSTED_PROXY_HOPS is wrong'; exit 1; }
+          test "$probe" != "null"         || { echo 'client IP derivation collapsed; check TRUSTED_PROXY_HOPS'; exit 1; }
+```
+
+**Three traps in that one line, and all three have a test behind them.**
+
+1. **Do not paste spec §9.5's recipe.** The appendix writes the curl as
+   `curl -fsS … || true`, and `deploy-config.test.js` bans that literal in
+   `deploy.yml`. Keep the existing `-w '%{http_code}'` capture form — that is
+   precisely why it tolerates a 401 without `-f`.
+2. **Do not paste spec §9.5's psql quoting either.** The appendix wraps the SQL in a
+   single-quoted `sh -c` and escapes every inner quote as `'"'"'`, which spells
+   `detail->>'"'"'email'"'"'` — and `deploy-config.test.js` matches the literal
+   `detail->>'email' = 'xff-probe@invalid.test'`. The double-quoted `sh -c` above
+   keeps the SQL readable and byte-identical to what the test looks for.
+   The appendix should be corrected too; Task 17 does it.
+3. **`</dev/null`.** Every command in this heredoc that could read stdin carries it,
+   because the heredoc *is* the shell's stdin — a `docker compose exec` without it
+   eats the rest of the deploy script.
+
+**(b)** In `apps/core-api/test/deploy-config.test.js`, inside
+`test("deploy heredoc probes the login path before it exhausts the limit_req bucket")`.
+Find it with `grep -n 'probe_status' apps/core-api/test/deploy-config.test.js`.
+
+Change the two expectations, and **replace the deferral marker with an assertion on
+the claim that is now true** — a `match` on a deferral literal goes red only when the
+literal is removed, which is the very edit it exists to compel:
+
+```js
+  assert.match(workflow, /test "\$probe_status" = "401"/);
+  assert.match(workflow, /grep -q '"code":"invalid_credentials"' \/tmp\/xff-probe\.body/);
+  assert.doesNotMatch(workflow, /xff-probe@invalid\.test[^\n]*\|\| true/);
+
+  // The forgeability half, which used to be a PLAN 2 marker. All three assertions,
+  // because each catches a different wrong answer: no row means the probe never
+  // reached core-api, 203.0.113.99 means the header is forgeable, and null means the
+  // derivation collapsed into the shared "unknown" bucket.
+  assert.match(workflow, /detail->>'email' = 'xff-probe@invalid\.test'/);
+  assert.match(workflow, /test -n "\$probe"/);
+  assert.match(workflow, /test "\$probe" != "203\.0\.113\.99"/);
+  assert.match(workflow, /test "\$probe" != "null"/);
+  assert.doesNotMatch(workflow, /PLAN 2: restore the full forgeability assertion/);
+```
+
+Then **delete the `routesDir` loop entirely** — the whole `const routesDir = …` block
+through its closing brace. It existed for exactly one purpose, to make this commit
+impossible to forget, and it has now done it. Leaving it in place fails forever.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js \
+            apps/core-api/test/deploy-config.test.js apps/core-api/test/csrf.test.js \
+            apps/core-api/test/pipeline.test.js apps/core-api/test/table-displays.test.js \
+            apps/core-api/test/source-structure.test.js apps/core-api/test/server-bootstrap.test.js
+```
+
+Expected: all pass. Then the whole suite, because this is the commit that changes
+what the deploy asserts:
+
+```bash
+npm test
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/core-api/http/routes/auth.js apps/core-api/test/auth-routes.test.js \
+        apps/core-api/server.js apps/core-api/test/route-auth.test.js \
+        .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js
+git commit -m "feat(core-api): sign in, and make the deploy assert that X-Forwarded-For is not forgeable"
+```
+
+---
+
+### Task 13: `me`, `logout` and `logout-all`
+
+Three routes, one commit, because two of them are four lines and the third is the
+only in-band lever against a stolen session in Phase 1 (§6.2) — and that third one
+needs a column writer that does not exist yet.
+
+**Files:**
+
+- Modify: `apps/core-api/http/routes/auth.js`
+- Modify: `apps/core-api/repositories/auth/users.js`
+- Modify: `apps/core-api/test/auth-users.test.js`
+- Modify: `apps/core-api/test/auth-routes.test.js`
+- Modify: `apps/core-api/test/route-auth.test.js`
+
+**The mirrors.** `route-auth.test.js` rule 3 needs **no edit** and that is the point:
+it computes `SETTLED_EXEMPT.filter((key) => keys.includes(key))`, so registering
+`POST /api/admin/auth/logout` **without** `exemptFromPasswordChange: true` turns it
+red by itself. Do not "fix" it by widening the literal.
+
+```bash
+grep -n "SETTLED_EXEMPT" apps/core-api/test/route-auth.test.js
+grep -n "sessions_valid_from" apps/core-api --include=*.js --include=*.sql
+```
+
+**Why `logout-all` needs a second statement, and why the ORDER of the two is the
+whole correctness argument.** A bare `DELETE FROM user_sessions WHERE user_id = $1`
+does not sign anybody out everywhere: a session created between the DELETE and the
+response survives it, which Task 8's own comment states about this exact table.
+§5.2 names `users.sessions_valid_from` as the bulk-invalidation lever, *"bumped on
+password change, suspension and sign out everywhere"* — and this route is the third
+of those three, with no writer for it yet.
+
+**DELETE first, then bump.** Not the other way round, and not because it reads
+better:
+
+- Bump, then delete → a session created in the gap has `created_at > sessions_valid_from`, so the resolver **accepts** it and the DELETE has already run. It survives. That is the attacker's session surviving the button that exists to kill it.
+- Delete, then bump → a session created in the gap has `created_at < sessions_valid_from`, so the resolver **rejects** it. Anything created after the bump is a deliberate new sign-in and is meant to live.
+
+So the ordering makes the pair fail closed without a transaction, which is worth
+more than a transaction would be: the bump is a monotonic cutoff and cannot miss a
+row. The only cost is that `revokedSessionCount` under-reports by whatever was
+created in the gap — an informational number, and the plan says so rather than
+pretending the count is exact.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `apps/core-api/test/auth-users.test.js`:
+
+```js
+test("bumpSessionsValidFrom moves the lever and touches nothing else", async () => {
+  const { userId } = await seedUser();
+
+  const before = await readUser(userId);
+  await users.bumpSessionsValidFrom(userId);
+  const after = await readUser(userId);
+
+  assert.ok(after.sessions_valid_from > before.sessions_valid_from);
+  // The login credential's columns are NOT this route's to write -- spec 5.8(a).
+  assert.equal(after.failed_login_count, before.failed_login_count);
+  assert.equal(after.locked_until?.getTime() ?? null, before.locked_until?.getTime() ?? null);
+  assert.equal(after.password_hash, before.password_hash);
+});
+```
+
+> `seedUser()` and `readUser()` are this file's existing helpers from Task 7. If they
+> are named differently there, use whatever Task 7 actually wrote — do not add a
+> second pair.
+
+Add to `apps/core-api/test/auth-routes.test.js`:
+
+```js
+const SESSION_ROW = {
+  sessionId: SESSION_ID,
+  userId: USER,
+  actingCompanyId: null,
+  expiresAt: new Date("2026-08-05T08:00:00.000Z"),
+  absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z"),
+  lastSeenAt: new Date("2026-08-05T00:00:00.000Z"),
+  email: "till@example.test",
+  displayName: "Till",
+  role: "company_admin",
+  companyId: COMPANY,
+  mustChangePassword: false,
+  actingCompanyStatus: null
+};
+
+// A harness whose session resolver answers, for the five authenticated routes.
+// `calls` records the ORDER of repository writes, which is the only way to assert
+// "delete before bump" without a clock.
+function signedIn(overrides = {}) {
+  const calls = [];
+  const base = harness();
+  const deps = {
+    ...base.deps,
+    sessions: {
+      ...base.deps.sessions,
+      resolveSession: async () => ({ ...SESSION_ROW, ...(overrides.session || {}) }),
+      renewSession: async () => null,
+      deleteSession: async (id) => { calls.push(["deleteSession", id]); return 1; },
+      deleteAllSessionsForUser: async (id) => { calls.push(["deleteAllSessionsForUser", id]); return 3; }
+    },
+    users: {
+      ...base.deps.users,
+      findById: async () => activeUser(),
+      writePasswordHash: async (id, hash, options) => { calls.push(["writePasswordHash", id, options]); },
+      bumpSessionsValidFrom: async (id) => { calls.push(["bumpSessionsValidFrom", id]); }
+    },
+    ...(overrides.deps || {})
+  };
+  return { deps, calls, audits: base.audits };
+}
+
+const COOKIE = { cookie: `${SESSION_COOKIE_NAME}=AAAAAAAAAAAAAAAAAAAAAA` };
+const POST_HEADERS = { Origin: ORIGIN, "Content-Type": "application/json", ...COOKIE };
+
+test("GET me returns the same document login returned", async () => {
+  const { deps } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.user.id, USER);
+    assert.equal(body.user.mustChangePassword, false);
+    assert.equal(body.scope.kind, "tenant");
+    assert.deepEqual(body.scope.shopIds, []);
+    assert.equal(body.session.expiresAt, "2026-08-05T08:00:00.000Z");
+  });
+});
+
+test("me is NOT exempt from the password-change gate; logout is", async () => {
+  // Spec 6.2 states both, and gives the reason for the asymmetry: me's 403 is
+  // self-describing and login already returned mustChangePassword, while a user who
+  // cannot sign out has no way to abandon a session they must not use.
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  await withServer(deps, async (base) => {
+    const me = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(me.status, 403);
+    assert.equal((await me.json()).error.code, "password_change_required");
+
+    const out = await fetch(`${base}/api/admin/auth/logout`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(out.status, 200);
+  });
+});
+
+test("logout deletes the presenting session and clears the cookie", async () => {
+  const { deps, calls, audits } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
+    // The SAME attributes as the setting cookie: a browser matches the cookie to
+    // delete on name + path + domain, so a clearing header with a different Path
+    // deletes nothing and the stale cookie comes back on the next request.
+    assert.match(response.headers.get("set-cookie"), /^__Host-core_session=; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=0$/);
+  });
+  assert.deepEqual(calls, [["deleteSession", SESSION_ID]]);
+  assert.equal(audits[0].action, "auth.logout");
+  assert.equal(audits[0].actorUserId, USER);
+});
+
+test("logout-all deletes THEN bumps, and reports the count it deleted", async () => {
+  // The ordering IS the correctness argument. Bump-then-delete leaves a session
+  // created in the gap with created_at > sessions_valid_from, so the resolver
+  // accepts it and it survives the one button that exists to kill it.
+  const { deps, calls, audits } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout-all`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, revokedSessionCount: 3 });
+    assert.match(response.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+  assert.deepEqual(calls, [
+    ["deleteAllSessionsForUser", USER],
+    ["bumpSessionsValidFrom", USER]
+  ]);
+  assert.deepEqual(audits[0].detail, { revokedSessionCount: 3 });
+});
+
+test("logout-all IS gated by the password-change requirement", async () => {
+  // Only logout and password are exempt -- spec 8.5 rule 3 fixes the set at two, and
+  // route-auth.test.js asserts it by set equality. Adding a third here would be a
+  // design change, not a convenience.
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout-all`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 403);
+  });
+});
+
+test("no cookie is 401 and sets no clearing header; a bad cookie is 401 and does", async () => {
+  // Spec 6.3.4: the clearing Set-Cookie goes out "only when one was presented".
+  // Unconditional, it would let any unauthenticated request instruct a browser to
+  // drop a cookie it never sent.
+  const { deps } = signedIn({ deps: { sessions: { resolveSession: async () => null, renewSession: async () => null } } });
+  await withServer(deps, async (base) => {
+    const none = await fetch(`${base}/api/admin/auth/me`);
+    assert.equal(none.status, 401);
+    assert.equal(none.headers.get("set-cookie"), null);
+
+    const stale = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(stale.status, 401);
+    assert.match(stale.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users.test.js
+```
+
+Expected: the route tests 404 (`not_found`) because none of the three paths is
+registered; the repository test fails with
+`users.bumpSessionsValidFrom is not a function`.
+
+- [ ] **Step 3: Implement**
+
+**(a)** In `apps/core-api/repositories/auth/users.js`, beside `writePasswordHash`:
+
+```js
+// The THIRD writer of sessions_valid_from. Spec 5.2 names all three -- password
+// change, suspension, and "sign out everywhere" -- and writePasswordHash owns the
+// first. This one exists because a DELETE over user_sessions is not a revocation:
+// a session created between the DELETE and the response survives it, and the whole
+// point of this route is that nothing survives it.
+//
+// failed_login_count and locked_until are DELIBERATELY NOT TOUCHED. They belong to
+// the unauthenticated login credential (spec 5.8(a)); signing out everywhere is not
+// a failed login and must not push anybody toward a lockout.
+const BUMP_SESSIONS_VALID_FROM = `
+  UPDATE users
+     SET sessions_valid_from = now(),
+         updated_at = now()
+   WHERE id = $1
+`;
+
+async function bumpSessionsValidFrom(userId) {
+  // `connection`, never `client` -- see the note at the top of this file.
+  await withUnscopedConnection(async (connection) => {
+    await connection.query(BUMP_SESSIONS_VALID_FROM, [userId]);
+  });
+}
+```
+
+and add `bumpSessionsValidFrom` to `module.exports`.
+
+**(b)** In `apps/core-api/http/routes/auth.js`, add the two requires that were not
+needed by login:
+
+```js
+const { buildClearingCookie } = require("../cookies");
+```
+
+(merge it into the existing `require("../cookies")` destructure rather than adding a
+second require of the same module.)
+
+Add the session→user adapter beside `meDocument`:
+
+```js
+// resolveSession returns the joined user columns under different names than the
+// login lookup does (userId, not id), and every route except login builds its
+// me-document from a resolved session. One adapter, so the shape cannot drift
+// between four routes.
+//
+// user.companyId is the user's OWN company and is null for every platform_admin --
+// users_platform_admin_has_no_company makes that a constraint. The ACTING company
+// lives in scope.companyId, which is exactly the distinction spec 6.2 draws when it
+// says scope.kind is what the UI branches on.
+function userFromSession(session) {
+  return {
+    id: session.userId,
+    email: session.email,
+    displayName: session.displayName,
+    role: session.role,
+    companyId: session.companyId,
+    mustChangePassword: session.mustChangePassword
+  };
+}
+```
+
+Then the three routes:
+
+```js
+// ---------------------------------------------------------------------------
+// GET /api/admin/auth/me
+// ---------------------------------------------------------------------------
+
+// DELIBERATELY NOT exempt from the password-change gate (spec 6.2): the 403 is
+// self-describing, and login already told the caller mustChangePassword.
+route(
+  "GET",
+  "/api/admin/auth/me",
+  { auth: "user", roles: ["anyUser"], sample: {} },
+  async (req, res) => {
+    sendJson(
+      res,
+      200,
+      meDocument({
+        user: userFromSession(req.core.session),
+        scope: req.core.scope,
+        session: req.core.session
+      })
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/logout
+// ---------------------------------------------------------------------------
+
+route(
+  "POST",
+  "/api/admin/auth/logout",
+  {
+    auth: "user",
+    roles: ["anyUser"],
+    body: null,
+    audit: "auth.logout",
+    // One of exactly two exemptions (spec 8.5 rule 3). A user who must change their
+    // password and cannot sign out is stuck holding a session they must not use.
+    exemptFromPasswordChange: true,
+    sample: {}
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    await deps.sessions.deleteSession(session.sessionId);
+    await deps.appendAuditEvent({
+      actorKind: "user",
+      actorUserId: session.userId,
+      companyId: session.companyId,
+      action: "auth.logout",
+      outcome: "success",
+      targetKind: "user",
+      targetId: session.userId,
+      sourceIp: req.core.clientIp
+    });
+
+    // Step 14 runs after this handler and will try to renew a session that no longer
+    // exists. That is a zero-row UPDATE, not an error, and renewSession is written to
+    // treat zero rows as the ordinary case. Do not "fix" it by clearing
+    // req.core.session -- the pipeline reads it to decide whether to renew at all,
+    // and a handler reaching back into the pipeline's state is worse than one
+    // harmless statement.
+    sendJson(res, 200, { ok: true }, { "Set-Cookie": buildClearingCookie() });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/logout-all
+// ---------------------------------------------------------------------------
+
+route(
+  "POST",
+  "/api/admin/auth/logout-all",
+  { auth: "user", roles: ["anyUser"], body: null, audit: "auth.logout_all", sample: {} },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    // DELETE FIRST, THEN BUMP, and the order is the correctness argument rather than
+    // a style choice. Bump-then-delete leaves a session created in the gap with
+    // created_at > sessions_valid_from, so the resolver accepts it and the DELETE has
+    // already run -- the stolen session survives the one button that exists to kill
+    // it. This way round, anything created in the gap has created_at <
+    // sessions_valid_from and is rejected, so the pair fails closed with no
+    // transaction. The residual is that the COUNT under-reports by whatever landed in
+    // the gap; it is an informational number, not a guarantee.
+    const revokedSessionCount = await deps.sessions.deleteAllSessionsForUser(session.userId);
+    await deps.users.bumpSessionsValidFrom(session.userId);
+
+    await deps.appendAuditEvent({
+      actorKind: "user",
+      actorUserId: session.userId,
+      companyId: session.companyId,
+      action: "auth.logout_all",
+      outcome: "success",
+      targetKind: "user",
+      targetId: session.userId,
+      sourceIp: req.core.clientIp,
+      detail: { revokedSessionCount }
+    });
+
+    sendJson(res, 200, { ok: true, revokedSessionCount }, { "Set-Cookie": buildClearingCookie() });
+  }
+);
+```
+
+Extend the export at the bottom of the file:
+
+```js
+module.exports = { meDocument, userFromSession, evaluateLogin, payTimeBudget };
+```
+
+**(c)** Widen the origin-gating census in `apps/core-api/test/route-auth.test.js`.
+Every non-GET `auth:'user'` route is origin-gated by `requiresOriginCheck`, so both
+new POSTs join the set the moment they register — the census is a `deepEqual` and
+will say so:
+
+```js
+  assert.deepEqual(gated, new Set([
+    "POST /api/admin/auth/login",
+    "POST /api/admin/auth/logout",
+    "POST /api/admin/auth/logout-all"
+  ]));
+```
+
+It grows again in Tasks 14 and 15. That is the census doing its job: a new
+browser-facing POST cannot land without a line in it.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users.test.js \
+            apps/core-api/test/route-auth.test.js apps/core-api/test/pipeline.test.js
+```
+
+Expected: all pass. **`route-auth.test.js` is the one that matters** — its rule 3
+arms itself the moment `POST /api/admin/auth/logout` registers, and it is what
+catches a missing `exemptFromPasswordChange`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/http/routes/auth.js apps/core-api/repositories/auth/users.js \
+        apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users.test.js \
+        apps/core-api/test/route-auth.test.js
+git commit -m "feat(core-api): me, logout, and a sign-out-everywhere that deletes before it bumps"
+```
+
+---
+
+### Task 14: `POST /api/admin/auth/password`
+
+The route that clears `must_change_password`, and the one place §5.8(a)'s correction
+becomes code: it must **not** write `users.failed_login_count` or
+`users.locked_until`.
+
+**Files:**
+
+- Modify: `apps/core-api/http/routes/auth.js`
+- Modify: `apps/core-api/test/auth-routes.test.js`
+- Modify: `apps/core-api/test/route-auth.test.js`
+
+**The mirrors.**
+
+```bash
+grep -n "password-change-abuse" apps/core-api            # roster, pipeline, this route
+grep -n "SETTLED_EXEMPT" apps/core-api/test/route-auth.test.js
+grep -n "origin-gated" apps/core-api/test/route-auth.test.js
+```
+
+**The abuse counter, with the arithmetic written down.** `password-change-abuse` is
+the roster's only `consume: "failure"` limiter, so `consumeLimit` in the pipeline
+returns early for it and **the handler owns it**. §5.7 words the ceiling as *"5
+consecutive `current_password_invalid`, then the presenting session is deleted"*,
+which admits an off-by-one; this plan fixes it as:
+
+| `verdict.count` | Response | Session |
+| --- | --- | --- |
+| `< PASSWORD_ABUSE_THRESHOLD` | `403 current_password_invalid` | untouched |
+| `>= PASSWORD_ABUSE_THRESHOLD` | `429 rate_limited` + `Retry-After` + clearing cookie | deleted, `user.password_change_abuse` written |
+
+A correct current password calls `rateLimiter.reset(…)` — §5.8(a): *"reset by a
+correct password"* — so the count is **consecutive**, not cumulative.
+
+This is also what makes §6.2's error list for this route true as written. It lists
+both `403 current_password_invalid` and `429 rate_limited (+Retry-After)`, and the
+429 is reachable exactly as the table above says: sign in again after the breach and
+try a sixth wrong current password inside the same hour.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `apps/core-api/test/auth-routes.test.js`:
+
+```js
+function changePassword(base, body) {
+  return fetch(`${base}/api/admin/auth/password`, {
+    method: "POST",
+    headers: POST_HEADERS,
+    body: JSON.stringify(body)
+  });
+}
+
+test("a correct current password rewrites the hash, kills every session and mints one", async () => {
+  const { deps, calls } = signedIn();
+  const created = [];
+  deps.sessions = {
+    ...deps.sessions,
+    createSession: async (input) => {
+      created.push(input);
+      return {
+        id: "aaaaaaaa-0008-4000-8000-000000000002",
+        expiresAt: new Date("2026-08-05T09:00:00.000Z"),
+        absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z")
+      };
+    }
+  };
+
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("set-cookie"), /^__Host-core_session=[A-Za-z0-9_-]{22}; Path=\/; Secure/);
+    const body = await response.json();
+    assert.equal(body.user.mustChangePassword, false);
+    assert.equal(body.session.expiresAt, "2026-08-05T09:00:00.000Z");
+  });
+
+  // WRITE, THEN DELETE, THEN CREATE. writePasswordHash bumps sessions_valid_from, so
+  // creating before deleting would delete the session just minted, and creating
+  // before writing would mint one the bump then invalidates.
+  assert.deepEqual(calls, [
+    ["writePasswordHash", USER, { mustChangePassword: false }],
+    ["deleteAllSessionsForUser", USER]
+  ]);
+  assert.equal(created.length, 1);
+});
+
+test("a wrong current password is 403, and never touches the login credential", async () => {
+  // Spec 5.8(a)/6.3.7(a): writing users.locked_until here lets a STOLEN SESSION drive
+  // the legitimate owner's LOGIN lockout -- three 403s, then one request every
+  // fourteen minutes holds the fifteen-minute cap forever while the victim reads
+  // their own uniform 401 as a typo.
+  const { deps, calls } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: "not-the-password", newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "current_password_invalid");
+    assert.equal(response.headers.get("set-cookie"), null);
+  });
+  assert.deepEqual(calls, [], "a failed attempt wrote something");
+});
+
+test("the Nth consecutive failure destroys the presenting session, not the account", async () => {
+  const { deps, calls, audits } = signedIn();
+  deps.passwordAbuseThreshold = 3;
+
+  await withServer(deps, async (base) => {
+    for (let n = 0; n < 2; n += 1) {
+      const response = await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" });
+      assert.equal(response.status, 403, `attempt ${n + 1}`);
+    }
+    const breach = await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" });
+    assert.equal(breach.status, 429);
+    assert.equal((await breach.json()).error.code, "rate_limited");
+    assert.ok(Number(breach.headers.get("retry-after")) >= 1);
+    assert.match(breach.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+
+  assert.deepEqual(calls, [["deleteSession", SESSION_ID]]);
+  const abuse = audits.find((event) => event.action === "user.password_change_abuse");
+  assert.equal(abuse.outcome, "failure");
+  assert.equal(abuse.detail.consecutiveFailures, 3);
+});
+
+test("a correct password resets the consecutive count", async () => {
+  // Spec 5.8(a): the ceiling counts CONSECUTIVE failures. Without the reset, a user
+  // who mistypes twice a month is eventually signed out for succeeding.
+  const { deps } = signedIn();
+  deps.passwordAbuseThreshold = 2;
+  deps.sessions = { ...deps.sessions, createSession: async () => ({ id: SESSION_ID, expiresAt: new Date(), absoluteExpiresAt: new Date() }) };
+
+  await withServer(deps, async (base) => {
+    assert.equal((await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" })).status, 403);
+    assert.equal((await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" })).status, 200);
+    assert.equal((await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" })).status, 403);
+  });
+});
+
+test("a policy violation on the new password is 422 on that field", async () => {
+  const { deps } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "short" });
+    assert.equal(response.status, 422);
+    assert.deepEqual((await response.json()).error.errors, [{ field: "newPassword", code: "too_short" }]);
+  });
+});
+
+test("a user who must change their password can reach this route and only this route", async () => {
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  deps.sessions = { ...deps.sessions, createSession: async () => ({ id: SESSION_ID, expiresAt: new Date(), absoluteExpiresAt: new Date() }) };
+  await withServer(deps, async (base) => {
+    // Spec 6.2: currentPassword is required in ALL cases, including the forced-change
+    // flow -- the server-minted initialPassword IS the current password.
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 200);
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js
+```
+
+Expected: every new test 404s — the route is not registered.
+
+- [ ] **Step 3: Implement**
+
+In `apps/core-api/http/routes/auth.js`, extend the requires:
+
+```js
+const { sendJson, sendError } = require("../respond");
+const { hashPassword, verifyPassword, PasswordPolicyError } = require("../../lib/password");
+```
+
+(merge into the existing destructures; do not add second requires of the same
+modules).
+
+Then:
+
+```js
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/password
+// ---------------------------------------------------------------------------
+
+// Responds in place rather than throwing, for the same reason the pipeline does:
+// both branches may need to set a header, and ApiError cannot carry one.
+async function refuseCurrentPassword(req, res, deps, session) {
+  // The roster's only consume:"failure" limiter, so the pipeline skipped it -- a
+  // per-request decrement would lock a user out of their own password-change route
+  // for SUCCEEDING at it.
+  const verdict = deps.rateLimiter.consume(
+    "password-change-abuse",
+    session.userId,
+    deps.passwordAbuseThreshold
+  );
+
+  if (verdict.count < deps.passwordAbuseThreshold) {
+    // 403, not 401, and spec 6.3.7(a) is explicit about why: the session credential
+    // IS valid, and a client's global "401 -> drop the session and redirect" handler
+    // would otherwise let a stolen session grief the real user out of theirs.
+    sendError(res, { status: 403, code: "current_password_invalid" }, req.core.requestId);
+    return;
+  }
+
+  // Punish the credential ACTUALLY being abused. Writing users.locked_until instead
+  // -- the obvious move -- hands a stolen session a permanent denial of service
+  // against the legitimate owner's login, which is the whole of spec 5.8(a).
+  await deps.sessions.deleteSession(session.sessionId);
+  await deps.appendAuditEvent({
+    actorKind: "user",
+    actorUserId: session.userId,
+    companyId: session.companyId,
+    action: "user.password_change_abuse",
+    outcome: "failure",
+    targetKind: "user",
+    targetId: session.userId,
+    sourceIp: req.core.clientIp,
+    detail: { consecutiveFailures: verdict.count }
+  });
+
+  const headers = { "Set-Cookie": buildClearingCookie() };
+  // Retry-After IS sent here, unlike on login and pair. This bucket is keyed on a
+  // principal the caller has already authenticated as, so the header confirms
+  // nothing they did not already know -- which is the exact test spec 5.7 applies.
+  if (verdict.retryAfterSeconds !== null) headers["Retry-After"] = String(verdict.retryAfterSeconds);
+  sendError(res, { status: 429, code: "rate_limited" }, req.core.requestId, headers);
+}
+
+route(
+  "POST",
+  "/api/admin/auth/password",
+  {
+    auth: "user",
+    roles: ["anyUser"],
+    body: { currentPassword: "string", newPassword: "string" },
+    audit: "auth.password_changed",
+    // The second of exactly two exemptions (spec 8.5 rule 3). Without it, the only
+    // route that can clear must_change_password is gated on must_change_password.
+    exemptFromPasswordChange: true,
+    limit: { key: "user", name: "password-change-abuse" },
+    sample: {
+      body: { currentPassword: "not-a-real-password", newPassword: "not-a-real-password-either" }
+    }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+    const body = await readJsonBody(req);
+
+    const errors = [];
+    if (typeof body.currentPassword !== "string" || body.currentPassword === "") {
+      errors.push({ field: "currentPassword", code: "required" });
+    }
+    if (typeof body.newPassword !== "string" || body.newPassword === "") {
+      errors.push({ field: "newPassword", code: "required" });
+    }
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    // ONE slot for BOTH scrypt calls on this path -- the verify and the hash. Taking
+    // two would let a caller hold half the service's CPU budget with one request.
+    await deps.scryptSemaphore.acquire();
+    try {
+      const user = await deps.users.findById(session.userId);
+      // The resolver already proved the session live and the user active, so null
+      // here means the row went away mid-request. 401, never a 500.
+      if (user === null) throw new ApiError(401, "unauthenticated");
+
+      if (!(await verifyPassword(body.currentPassword, user.passwordHash))) {
+        await refuseCurrentPassword(req, res, deps, session);
+        return;
+      }
+      // CONSECUTIVE, not cumulative (spec 5.8(a)).
+      deps.rateLimiter.reset("password-change-abuse", session.userId);
+
+      let passwordHash;
+      try {
+        passwordHash = await hashPassword(body.newPassword);
+      } catch (error) {
+        // PasswordPolicyError carries `code` but deliberately NOT `status`: the same
+        // policy failure is a 400 on a create route and a 422 here, so the route
+        // decides. Anything else is a real fault and belongs in the 500 tail.
+        if (!(error instanceof PasswordPolicyError)) throw error;
+        throw new ApiError(422, "validation_failed", [{ field: "newPassword", code: error.code }]);
+      }
+
+      // WRITE, DELETE, CREATE -- in that order, and none of the three is
+      // interchangeable. writePasswordHash bumps sessions_valid_from, so a session
+      // minted before it would be invalidated by it; and the DELETE has to run before
+      // the mint or it takes out the session this response is about to hand back.
+      //
+      // writePasswordHash does NOT touch failed_login_count or locked_until, by
+      // construction -- see its own comment in repositories/auth/users.js.
+      await deps.users.writePasswordHash(session.userId, passwordHash, { mustChangePassword: false });
+      await deps.sessions.deleteAllSessionsForUser(session.userId);
+
+      const token = mintToken();
+      const fresh = await deps.sessions.createSession({
+        userId: session.userId,
+        tokenHash: hashToken(token),
+        idleSeconds: deps.sessionIdleSeconds,
+        absoluteSeconds: deps.sessionAbsoluteSeconds
+      });
+
+      // actingCompanyId is null because acting_company_id is a per-SESSION column and
+      // this is a new row. A platform admin who changes their password re-selects
+      // their company, which is the same thing that happens after any sign-in.
+      const scope = await deps.scopes.materialiseScope({
+        userId: session.userId,
+        sessionId: fresh.id,
+        role: session.role,
+        companyId: session.companyId,
+        actingCompanyId: null
+      });
+
+      await deps.appendAuditEvent({
+        actorKind: "user",
+        actorUserId: session.userId,
+        companyId: session.companyId,
+        action: "auth.password_changed",
+        outcome: "success",
+        targetKind: "user",
+        targetId: session.userId,
+        sourceIp: req.core.clientIp
+      });
+
+      sendJson(
+        res,
+        200,
+        meDocument({
+          // They just chose it themselves, so the gate is cleared -- and the document
+          // must say so or the client re-prompts forever.
+          user: { ...userFromSession(session), mustChangePassword: false },
+          scope,
+          session: fresh
+        }),
+        { "Set-Cookie": buildSessionCookie(token, deps.sessionIdleSeconds) }
+      );
+    } finally {
+      deps.scryptSemaphore.release();
+    }
+  }
+);
+```
+
+Then widen the origin-gating census in `apps/core-api/test/route-auth.test.js` again:
+
+```js
+  assert.deepEqual(gated, new Set([
+    "POST /api/admin/auth/login",
+    "POST /api/admin/auth/logout",
+    "POST /api/admin/auth/logout-all",
+    "POST /api/admin/auth/password"
+  ]));
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js \
+            apps/core-api/test/rate-limit.test.js apps/core-api/test/source-structure.test.js
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/http/routes/auth.js apps/core-api/test/auth-routes.test.js \
+        apps/core-api/test/route-auth.test.js
+git commit -m "feat(core-api): change your own password, without handing a stolen session a login lockout"
+```
+
+---
+
+### Task 15: the role gate, and `POST /api/admin/scope`
+
+Two things in one commit because neither is testable without the other. The gate has
+nothing to refuse until a route declares roles narrower than `anyUser`, and the route
+cannot be written safely while `options.roles` is decorative.
+
+**Read departures (b) and (c) at the top of Part 5 before starting.**
+
+**Files:**
+
+- Create: `apps/core-api/lib/authorization.js`
+- Create: `apps/core-api/test/authorization.test.js`
+- Modify: `apps/core-api/http/router.js`
+- Modify: `apps/core-api/http/routes/auth.js`
+- Modify: `apps/core-api/test/pipeline.test.js`
+- Modify: `apps/core-api/test/auth-routes.test.js`
+- Modify: `apps/core-api/test/route-auth.test.js`
+
+**The mirrors.**
+
+```bash
+grep -rn "ROLE_ALIASES" apps/core-api                      # router.js's list of names
+grep -rn "origin-gated" apps/core-api/test/route-auth.test.js
+grep -n "scope_required\|scope_selected" apps/core-api docs/superpowers/specs
+```
+
+`router.js` already exports `ROLE_ALIASES` — the four **names**. `lib/authorization.js`
+owns the four **memberships**. They are different facts and both are needed: `route()`
+rejects an unknown alias at registration, and the gate decides admission at request
+time. Task 15 adds an assertion that the two key sets are equal, because a fifth alias
+added to one and not the other is a route that boots and admits nobody.
+
+**Why `POST /api/admin/scope` declares two aliases and then narrows in the handler.**
+§6.2 gives its roles as *"role === 'platform_admin' (scoped or unscoped)"*, and §5.4's
+four aliases cannot say that:
+
+| Alias | Unscoped platform admin | Scoped platform admin | company_admin |
+| --- | --- | --- | --- |
+| `platform` | ✅ | ❌ | ❌ |
+| `companyAdmin` | ❌ | ✅ | ✅ |
+
+So `["platform", "companyAdmin"]` is the narrowest static declaration that admits both
+platform-admin states — and it also admits a real `company_admin`, who must be
+refused. A fifth alias would be a design change: `ROLE_ALIASES` is frozen at four,
+§5.4's table is pinned, and §8.5 is exactly ten rules.
+
+The precedent for closing that last gap in the handler is already in the spec. §6.2
+says of `PATCH /api/admin/users/:userId` that a body carrying `role` or `shopIds`
+*"additionally requires companyAdmin — that is a **body-dependent** check performed at
+pipeline step 10 by `lib/authorization.js` raising 403 forbidden, not a static route
+declaration."* This is the same shape with a simpler input.
+
+**The check reads `session.role`, never `scope.role`.** A scoped platform admin
+materialises `scope.role = 'platform_admin'` and a company admin materialises
+`scope.role = 'company_admin'` — so reading the scope would work by accident today and
+break the moment §5.4's *"the rank lattice does the work"* is extended.
+`session.role` is the `users.role` column, which is the fact being tested.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `apps/core-api/test/authorization.test.js`:
+
+```js
+"use strict";
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+
+const { TENANT_ALIAS_MEMBERS, permits } = require("../lib/authorization");
+const { ROLE_ALIASES } = require("../http/router");
+
+const platform = { kind: "platform", userId: "u", sessionId: "s" };
+const tenant = (role) => ({ kind: "tenant", role, userId: "u", sessionId: "s", companyId: "c", shopIds: [] });
+
+test("the alias NAMES and the alias MEMBERSHIPS are the same four", () => {
+  // Two files hold two halves of one fact: router.js rejects an unknown alias at
+  // registration, lib/authorization.js decides admission. A fifth added to one and
+  // not the other is a route that boots and admits nobody.
+  assert.deepEqual(Object.keys(TENANT_ALIAS_MEMBERS).sort(), [...ROLE_ALIASES].sort());
+});
+
+test("an UNSCOPED platform admin is admitted by `platform` and by nothing else", () => {
+  // Their scope carries no companyId, so a tenant route reached by them would have no
+  // company to bind. 6.3.2 answers that with 409 scope_required -- a state to change,
+  // not a permission to grant -- which only works if the gate lets them nowhere near it.
+  assert.equal(permits(platform, ["platform"]), true);
+  assert.equal(permits(platform, ["companyAdmin"]), false);
+  assert.equal(permits(platform, ["manager"]), false);
+  assert.equal(permits(platform, ["anyUser"]), false);
+});
+
+test("a SCOPED platform admin is admitted everywhere EXCEPT `platform`", () => {
+  // Rank 3, above company_admin, so the lattice does the work (spec 5.4) -- and NOT by
+  // `platform`, whose whole meaning is "has not chosen a company". This pair is what
+  // makes the documented tenant bootstrap executable: select scope, then create the
+  // company's first company_admin through the ordinary user route.
+  const scoped = tenant("platform_admin");
+  assert.equal(permits(scoped, ["platform"]), false);
+  assert.equal(permits(scoped, ["companyAdmin"]), true);
+  assert.equal(permits(scoped, ["manager"]), true);
+  assert.equal(permits(scoped, ["anyUser"]), true);
+});
+
+test("the other three roles match spec 5.4's table exactly", () => {
+  assert.deepEqual(
+    ["company_admin", "shop_manager", "staff"].map((role) =>
+      ["platform", "companyAdmin", "manager", "anyUser"].filter((alias) => permits(tenant(role), [alias]))
+    ),
+    [
+      ["companyAdmin", "manager", "anyUser"],
+      ["manager", "anyUser"],
+      ["anyUser"]
+    ]
+  );
+});
+
+test("a declaration that is empty or names an unknown alias throws rather than admitting", () => {
+  // Fail loud, never fail open. A gate that returned false for an unknown alias would
+  // turn a typo into a route nobody can reach, which is diagnosed as a permissions bug
+  // for a week; a gate that returned true would be the other thing.
+  assert.throws(() => permits(tenant("staff"), []), /non-empty roles array/);
+  assert.throws(() => permits(tenant("staff"), ["superuser"]), /unknown role alias/);
+});
+```
+
+Add to `apps/core-api/test/pipeline.test.js`, and register one more scratch route
+beside the others at the top of that file:
+
+```js
+route(
+  "POST",
+  "/__pipe/platform-only",
+  { auth: "user", roles: ["platform"], body: null, audit: "auth.logout", sample: {} },
+  (req, res) => sendJson(res, 200, { ok: true })
+);
+```
+
+```js
+test("step 10's first half: a role the route does not admit is 403 forbidden", async () => {
+  // The harness resolves a company_admin, whom `platform` does not admit.
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/platform-only`, { method: "POST", headers: jsonPost });
+    assert.equal(response.status, 403);
+    // The GENERIC code. Spec 6.3.2: specific 403 codes exist only where the client
+    // must take a different UI action, and "you are the wrong role" is not one.
+    assert.equal((await response.json()).error.code, "forbidden");
+  });
+});
+
+test("the role gate runs AFTER the credential and the password gate, not before", async () => {
+  // Ordering, asserted by the status a request with two problems gets. An
+  // unauthenticated caller must learn 401 and not "the role you do not have is
+  // wrong", which would be a route-shape oracle available without a credential.
+  const { deps } = harness({ sessions: { resolveSession: async () => null, renewSession: async () => null } });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/platform-only`, { method: "POST", headers: jsonPost });
+    assert.equal(response.status, 401);
+  });
+});
+```
+
+Add to `apps/core-api/test/auth-routes.test.js`:
+
+```js
+function selectScope(base, body) {
+  return fetch(`${base}/api/admin/scope`, { method: "POST", headers: POST_HEADERS, body: JSON.stringify(body) });
+}
+
+function platformAdmin(overrides = {}) {
+  const { deps, calls, audits } = signedIn({
+    session: { role: "platform_admin", companyId: null, actingCompanyId: null }
+  });
+  deps.sessions = {
+    ...deps.sessions,
+    findCompanyForScopeSelection: async () => ({ id: COMPANY, status: "active" }),
+    setActingCompany: async (sessionId, companyId) => { calls.push(["setActingCompany", sessionId, companyId]); return 1; },
+    ...(overrides.sessions || {})
+  };
+  deps.scopes = {
+    materialiseScope: async (input) =>
+      input.actingCompanyId === null
+        ? { kind: "platform", userId: input.userId, sessionId: input.sessionId }
+        : {
+            kind: "tenant", userId: input.userId, sessionId: input.sessionId,
+            companyId: input.actingCompanyId, role: "platform_admin",
+            shopIds: [], administeredShopIds: [], auditCrossTenant: true
+          }
+  };
+  return { deps, calls, audits };
+}
+
+test("selecting a company writes acting_company_id and returns the new scope", async () => {
+  const { deps, calls, audits } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: COMPANY });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.scope.kind, "tenant");
+    assert.equal(body.scope.companyId, COMPANY);
+    // The user's OWN company stays null -- users_platform_admin_has_no_company makes
+    // that a constraint, and the acting company is a session fact, not a user fact.
+    assert.equal(body.user.companyId, null);
+    assert.deepEqual(body.scope.administeredShopIds, []);
+  });
+  assert.deepEqual(calls, [["setActingCompany", SESSION_ID, COMPANY]]);
+  assert.equal(audits[0].action, "scope.selected");
+  assert.equal(audits[0].companyId, COMPANY);
+});
+
+test("clearing returns the platform scope and writes scope.cleared with no target", async () => {
+  const { deps, calls, audits } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: null });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.scope.kind, "platform");
+    assert.equal(body.scope.companyId, null);
+    // ALWAYS an array. A platform scope reaches no shop, and [] is the honest
+    // rendering of that -- never a missing key the client has to guess about.
+    assert.deepEqual(body.scope.shopIds, []);
+    assert.equal("administeredShopIds" in body.scope, false);
+  });
+  assert.deepEqual(calls, [["setActingCompany", SESSION_ID, null]]);
+  assert.equal(audits[0].action, "scope.cleared");
+  // audit_events_target_pair is (target_kind IS NULL) = (target_id IS NULL), so a
+  // uniform-looking target_kind:'company' with a null id is a CHECK violation.
+  assert.equal(audits[0].targetKind, undefined);
+  assert.equal(audits[0].targetId, undefined);
+});
+
+test("a missing companyId key is 422; an explicit null is not", async () => {
+  // Spec 6.2 makes the key required and explicitly nullable, so {} and
+  // {"companyId": null} are two different requests and must not collapse into one.
+  const { deps } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const missing = await selectScope(base, {});
+    assert.equal(missing.status, 422);
+    assert.deepEqual((await missing.json()).error.errors, [{ field: "companyId", code: "required" }]);
+
+    assert.equal((await selectScope(base, { companyId: null })).status, 200);
+  });
+});
+
+test("an unknown company is 404 and a suspended one is 409, and both are audited", async () => {
+  for (const [company, status, code] of [
+    [null, 404, "not_found"],
+    [{ id: COMPANY, status: "suspended" }, 409, "company_suspended"]
+  ]) {
+    const { deps, audits } = platformAdmin({ sessions: { findCompanyForScopeSelection: async () => company } });
+    await withServer(deps, async (base) => {
+      const response = await selectScope(base, { companyId: COMPANY });
+      assert.equal(response.status, status);
+      assert.equal((await response.json()).error.code, code);
+    });
+    assert.equal(audits[0].outcome, "failure");
+    // The probed id goes in target_id, which is text with NO foreign key. The
+    // company_id COLUMN references companies, so an id that matches no row would
+    // raise 23503 inside the failure path and turn a 404 into a 500.
+    assert.equal(audits[0].targetId, COMPANY);
+    assert.equal(audits[0].companyId, undefined);
+  }
+});
+
+test("a real company_admin is refused even though `companyAdmin` admits them", async () => {
+  // The gap the four aliases cannot close. Without the handler's narrowing, every
+  // company admin on the platform could set their own session's acting_company_id.
+  const { deps } = signedIn();
+  deps.sessions = { ...deps.sessions, setActingCompany: async () => 1, findCompanyForScopeSelection: async () => ({ id: COMPANY, status: "active" }) };
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: COMPANY });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "forbidden");
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+node --test apps/core-api/test/authorization.test.js apps/core-api/test/pipeline.test.js \
+            apps/core-api/test/auth-routes.test.js
+```
+
+Expected: `Cannot find module '../lib/authorization'`; the pipeline's role test
+answers 200 because nothing enforces `roles`; the scope tests 404.
+
+- [ ] **Step 3: Implement**
+
+**(a)** Create `apps/core-api/lib/authorization.js`:
+
+```js
+"use strict";
+
+// PURE (spec 8.8, Tier 1): no requires at all, so C9 and C14 are satisfied by
+// construction.
+//
+// Spec 5.4: "privilege rules live in one module, unit-tested by name", and spec 6.2
+// names that module lib/authorization.js. This is the ALIAS half and nothing else.
+// Plan 2c adds the rank lattice, shop containment and the self-modification rules to
+// THIS file -- which is why it is not called lib/role-aliases.js.
+
+// Spec 5.4's table. The membership that is easy to get wrong and impossible to see
+// afterwards is platform_admin's, because it appears twice with opposite answers:
+//
+//   - An UNSCOPED platform admin is admitted by `platform` and by NOTHING else. They
+//     are not in any list below, because they have no tenant role at all; scope.kind
+//     is the whole answer for them.
+//   - A SCOPED platform admin materialises role 'platform_admin' at rank 3 and IS in
+//     three of the lists -- and deliberately not in `platform`, whose entire meaning
+//     is "has not chosen a company".
+const TENANT_ALIAS_MEMBERS = Object.freeze({
+  platform: Object.freeze([]),
+  companyAdmin: Object.freeze(["company_admin", "platform_admin"]),
+  manager: Object.freeze(["shop_manager", "company_admin", "platform_admin"]),
+  anyUser: Object.freeze(["staff", "shop_manager", "company_admin", "platform_admin"])
+});
+
+// THROWS on a malformed declaration rather than returning false, and the direction
+// matters. Returning false would turn a typo'd alias into a route nobody can reach,
+// which is diagnosed as a permissions bug for a week; returning true would be the
+// other thing. route() already refuses an unknown alias at registration, so reaching
+// either throw means the two lists have drifted.
+function permits(scope, roles) {
+  if (!Array.isArray(roles) || roles.length === 0) {
+    throw new Error("permits(): a route with auth:'user' must declare a non-empty roles array");
+  }
+  for (const alias of roles) {
+    if (!Object.prototype.hasOwnProperty.call(TENANT_ALIAS_MEMBERS, alias)) {
+      throw new Error(`permits(): unknown role alias ${JSON.stringify(alias)}`);
+    }
+  }
+  if (scope.kind === "platform") return roles.includes("platform");
+  return roles.some((alias) => TENANT_ALIAS_MEMBERS[alias].includes(scope.role));
+}
+
+module.exports = { TENANT_ALIAS_MEMBERS, permits };
+```
+
+**(b)** In `apps/core-api/http/router.js`, add the require:
+
+```js
+const { permits } = require("../lib/authorization");
+```
+
+and add the gate to `runPipeline`, **after** the Origin/Content-Type block and
+immediately before `return true` — find it with
+`grep -n "requiresOriginCheck(entry)" apps/core-api/http/router.js`:
+
+```js
+  // Step 10, FIRST HALF. Spec 6.3.5 writes step 10 as "AUTHORIZATION: route roles ->
+  // 403; then each path resource resolved in path order". Those are two halves with
+  // different inputs, and only the second one has an ordering constraint.
+  //
+  // This half depends on the resolved credential and on NOTHING the caller can vary,
+  // so it runs as soon as the credential exists rather than after steps 8 and 9. The
+  // second half needs step 9's path parameters -- it is what makes "exists but not
+  // yours" and "does not exist" the same zero-row result -- and it arrives with the
+  // first route that HAS a path parameter, in Plan 2c.
+  //
+  // It is here, once, rather than a line in every handler, for the same reason route()
+  // exists at all: one place where authorization can be forgotten.
+  if (entry.options.auth === "user" && !permits(req.core.scope, entry.options.roles)) {
+    sendError(res, { status: 403, code: "forbidden" }, req.core.requestId);
+    return false;
+  }
+```
+
+**(c)** In `apps/core-api/http/routes/auth.js`, add the scope route.
+
+```js
+// ---------------------------------------------------------------------------
+// POST /api/admin/scope
+// ---------------------------------------------------------------------------
+
+// Lives in this file despite its path: it changes AUTHENTICATION state -- it writes
+// user_sessions.acting_company_id -- and it returns the me-document. A
+// http/routes/scope.js would import every helper above and add nothing.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Materialised AFTER the write, never reused from req.core.scope: the pipeline's
+// scope was built from the session as it was when this request arrived, so it is one
+// selection out of date by construction.
+async function respondWithScope(req, res, deps, session, actingCompanyId) {
+  const scope = await deps.scopes.materialiseScope({
+    userId: session.userId,
+    sessionId: session.sessionId,
+    role: session.role,
+    companyId: session.companyId,
+    actingCompanyId
+  });
+  sendJson(res, 200, meDocument({ user: userFromSession(session), scope, session }));
+}
+
+route(
+  "POST",
+  "/api/admin/scope",
+  {
+    auth: "user",
+    // BOTH, because spec 5.4's four aliases cannot express "platform_admin, scoped or
+    // unscoped": `platform` admits only the unscoped one, `companyAdmin` admits the
+    // scoped one AND every real company admin. This is the narrowest static
+    // declaration available; the handler closes the rest.
+    roles: ["platform", "companyAdmin"],
+    body: { companyId: "uuid|null" },
+    // The handler writes scope.cleared for a null body. `audit` is one string, and
+    // this is the route's principal action.
+    audit: "scope.selected",
+    sample: { body: { companyId: null } }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    // session.role is users.role -- the fact being tested. scope.role would work by
+    // accident today (a scoped platform admin materialises 'platform_admin' and a
+    // company admin materialises 'company_admin') and stop working the moment spec
+    // 5.4's rank lattice is extended.
+    if (session.role !== "platform_admin") throw new ApiError(403, "forbidden");
+
+    const body = await readJsonBody(req);
+
+    // REQUIRED and explicitly NULLABLE (spec 6.2). hasOwnProperty rather than an
+    // `=== undefined` test, because {} and {"companyId": null} are two different
+    // requests: one is a mistake and the other clears the selection.
+    if (!Object.prototype.hasOwnProperty.call(body, "companyId")) {
+      throw new ApiError(422, "validation_failed", [{ field: "companyId", code: "required" }]);
+    }
+    const companyId = body.companyId;
+    if (companyId !== null && (typeof companyId !== "string" || !UUID_PATTERN.test(companyId))) {
+      // 422, and the "422 never describes a path segment" rule does not apply: that
+      // rule is about PATH parameters, where a malformed segment cannot name a
+      // resource. This is a body field and step 11 owns it.
+      throw new ApiError(422, "validation_failed", [{ field: "companyId", code: "invalid_uuid" }]);
+    }
+
+    if (companyId === null) {
+      await deps.sessions.setActingCompany(session.sessionId, null);
+      await deps.appendAuditEvent({
+        actorKind: "user",
+        actorUserId: session.userId,
+        action: "scope.cleared",
+        outcome: "success",
+        sourceIp: req.core.clientIp
+      });
+      await respondWithScope(req, res, deps, session, null);
+      return;
+    }
+
+    // Read BEFORE the write, and separately, because 6.2 distinguishes 404 not_found
+    // from 409 company_suspended and one zero-row UPDATE cannot produce both.
+    const company = await deps.sessions.findCompanyForScopeSelection(companyId);
+
+    // THE PROBED ID GOES IN target_id, NOT IN company_id. audit_events.company_id
+    // REFERENCES companies (0001_init.sql), so an id matching no row raises 23503
+    // inside the failure path and turns a 404 into a 500 -- reachable by anyone who
+    // can reach this route, with any uuid at all. target_id is text with no FK, and
+    // 0001's own comment says why: "a target may legitimately be gone".
+    const attempt = {
+      actorKind: "user",
+      actorUserId: session.userId,
+      action: "scope.selected",
+      outcome: "failure",
+      targetKind: "company",
+      targetId: companyId,
+      sourceIp: req.core.clientIp
+    };
+
+    if (company === null) {
+      await deps.appendAuditEvent(attempt);
+      throw new ApiError(404, "not_found");
+    }
+    if (company.status !== "active") {
+      await deps.appendAuditEvent(attempt);
+      throw new ApiError(409, "company_suspended");
+    }
+
+    await deps.sessions.setActingCompany(session.sessionId, companyId);
+    await deps.appendAuditEvent({
+      ...attempt,
+      outcome: "success",
+      // Only now that the row is known to exist can the tenant column carry it --
+      // which is what makes "everything done inside this company" a query.
+      companyId
+    });
+    await respondWithScope(req, res, deps, session, companyId);
+  }
+);
+```
+
+**(d)** Widen the origin-gating census in `apps/core-api/test/route-auth.test.js` to
+its final Plan 2b value — every non-GET `auth:'user'` route plus login:
+
+```js
+  assert.deepEqual(gated, new Set([
+    "POST /api/admin/auth/login",
+    "POST /api/admin/auth/logout",
+    "POST /api/admin/auth/logout-all",
+    "POST /api/admin/auth/password",
+    "POST /api/admin/scope"
+  ]));
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/authorization.test.js apps/core-api/test/pipeline.test.js \
+            apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js \
+            apps/core-api/test/table-displays.test.js apps/core-api/test/source-structure.test.js
+```
+
+Expected: all pass. **`table-displays.test.js` again** — it is `auth: 'terminal'`, so
+the gate must skip it entirely; a gate written as "if `options.roles` exists" instead
+of "if `auth === 'user'`" passes every test above and 500s that route on
+`permits(undefined, undefined)`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/lib/authorization.js apps/core-api/test/authorization.test.js \
+        apps/core-api/http/router.js apps/core-api/http/routes/auth.js \
+        apps/core-api/test/pipeline.test.js apps/core-api/test/auth-routes.test.js \
+        apps/core-api/test/route-auth.test.js
+git commit -m "feat(core-api): make declared roles mean something, and let a platform admin choose a company"
+```
+
+---
+
+## Part 6 — Bootstrap
+
+### Task 16: `scripts/create-platform-admin.js`, and the boot warning that must not be a refusal
+
+Everything above is unreachable until one account exists, and §5.6 settles how:
+**CLI only.** No bootstrap HTTP endpoint, no bootstrap token, no seeded row in a
+migration, and no `BOOTSTRAP_ADMIN_PASSWORD` variable. The environment-variable
+variant was rejected outright because `DATABASE_URL` is exploitable only from inside
+the host — Postgres publishes no port — while an email/password pair is a
+cross-tenant credential usable from any browser on the internet.
+
+**Files:**
+
+- Create: `apps/core-api/scripts/create-platform-admin.js`
+- Modify: `apps/core-api/test/scripts.test.js`
+- Modify: `apps/core-api/server.js`
+- Modify: `apps/core-api/test/server-bootstrap.test.js`
+
+**The mirrors.**
+
+```bash
+grep -rn "create-platform-admin" apps/core-api infra docs .github
+grep -n "deepEqual(calls" apps/core-api/test/server-bootstrap.test.js
+grep -n "countActivePlatformAdmins" apps/core-api
+```
+
+`countActivePlatformAdmins` was written in Task 7 and **nothing has called it since**.
+This is its caller. Its own comment says what it is for: *"Read by server.js at boot
+to WARN, never to refuse."*
+
+**The one deliberate exception to this repository's refuse-to-start convention, and
+the mechanism that forces it.** §9.10 has the CLI run through
+`docker compose exec` — so the container must already be up. A service that refused
+to listen while no platform admin exists could therefore never be bootstrapped: the
+only way to create the first admin requires a running container, and the container
+will not run until the admin exists. It is a deadlock, not a policy preference, and
+that is why the check is a log line.
+
+**`docker compose exec`, never `exec -T`.** The script refuses when
+`process.stdin.isTTY` is false. Without that refusal
+`echo 'pw' | docker compose exec -T …` works, and the password lands in shell
+history — which is exactly what "never from argv" exists to prevent. The refusal is
+the enforcement; the documentation is not.
+
+**One departure from this plan's own Tech Stack line.** It names `node:readline` for
+the echo-off prompt. The readline recipe for echo-off overrides `_writeToOutput`, an
+underscore-prefixed Node internal, and this service does not put a credential path on
+a private API. `process.stdin.setRawMode()` is the public one and is what the script
+uses; `node:readline` is not required at all. The Tech Stack line is corrected in
+Task 17.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `apps/core-api/test/scripts.test.js`, reusing that file's existing
+`runScript` helper:
+
+```js
+const BOOTSTRAP_SCRIPT = path.join(__dirname, "..", "scripts", "create-platform-admin.js");
+
+// A complete, valid configuration that reaches NO database: every guard under test
+// fires before the pool is opened, so these cases need no Postgres.
+const BOOTSTRAP_ENV = {
+  NODE_ENV: "development",
+  POSTGRES_PASSWORD: "devpassword",
+  DATABASE_MIGRATION_URL: "postgres://core_api_owner:devpassword@127.0.0.1:5433/core",
+  DATABASE_URL: "postgres://core_api_app:apppassword@127.0.0.1:5433/core",
+  API_PUBLIC_ORIGIN: "http://localhost:3200"
+};
+
+test("the bootstrap CLI refuses a piped password and exits non-zero", () => {
+  // THE GUARD THE WHOLE DESIGN RESTS ON. spawnSync gives the child a pipe, never a
+  // TTY, so this is the `docker compose exec -T` case exactly. Without the refusal,
+  // `echo 'pw' | docker compose exec -T ...` works and the password is in shell
+  // history -- which is the thing "never from argv" exists to prevent.
+  const { status, output } = runScript(BOOTSTRAP_SCRIPT, {
+    env: BOOTSTRAP_ENV,
+    argv: ["ops@example.test"]
+  });
+  assert.notEqual(status, 0);
+  assert.match(output, /interactive terminal/i);
+  // And it names the fix, because the operator's next move is to drop one flag.
+  assert.match(output, /docker compose exec/);
+  assert.doesNotMatch(output, /exec -T/);
+});
+
+test("the bootstrap CLI refuses a missing or malformed email before opening a pool", () => {
+  // Checked against the users.email CHECK's own shape. Reaching the database to be
+  // told 23514 would surface a constraint name to an operator, and the message would
+  // be about DDL rather than about what they typed.
+  for (const argv of [[], ["not-an-email"], ["two words@example.test"]]) {
+    const { status, output } = runScript(BOOTSTRAP_SCRIPT, { env: BOOTSTRAP_ENV, argv });
+    assert.notEqual(status, 0, JSON.stringify(argv));
+    assert.match(output, /email/i);
+  }
+});
+
+test("the bootstrap CLI has no --force", () => {
+  // Spec 9.10, stated as an absence. A --force would mean "overwrite the account that
+  // is already there", and the remedy for a forgotten password is scripts/set-password.js.
+  const source = fs.readFileSync(BOOTSTRAP_SCRIPT, "utf8");
+  assert.doesNotMatch(source, /--force/);
+  // And it never reads the password from argv, which is the same rule seen from the
+  // other side.
+  assert.doesNotMatch(source, /argv\[3\]|argv\.slice\(3\)/);
+});
+```
+
+> `fs` is not required by `scripts.test.js` today. Add `const fs = require("node:fs");`
+> at the top rather than inlining a second read helper.
+
+Add to `apps/core-api/test/server-bootstrap.test.js`:
+
+```js
+test("an empty platform_admin set warns and still listens", () => {
+  // The ONE deliberate exception to this repository's refuse-to-start convention, and
+  // it is forced by mechanism rather than chosen: spec 9.10 runs the bootstrap CLI
+  // through `docker compose exec`, so the container must already be up. Refusing here
+  // would make the platform unbootstrappable -- the admin needs the container and the
+  // container would need the admin.
+  const lines = [];
+  // ... start() with countActivePlatformAdmins: async () => 0 and log: (line) => lines.push(line)
+  assert.ok(lines.some((line) => /platform administrator/i.test(line)));
+});
+
+test("a failed platform-admin count warns and still listens", () => {
+  // It runs after waitForDatabase, so a throw here means the database went away in
+  // the gap. Turning that into a refusal to listen would fail the deploy's 90-second
+  // readiness gate AFTER the migration applied -- the failure shape spec 9.5 spends a
+  // page designing away.
+});
+```
+
+> Write both against whatever injection shape `server-bootstrap.test.js` already uses
+> for `start()`'s collaborators. Do **not** invent a second one.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+node --test apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstrap.test.js
+```
+
+Expected: the script tests fail with `Cannot find module`; the bootstrap tests fail
+because nothing counts platform admins.
+
+- [ ] **Step 3: Write the script**
+
+Create `apps/core-api/scripts/create-platform-admin.js`:
+
+```js
+"use strict";
+
+// Spec 5.6 and 9.10. The ONLY way the first account comes into existence.
+//
+//   cd ~/restaurant-order-system
+//   CORE_ENV_FILE=../core-api.env docker compose exec core-api \
+//     node apps/core-api/scripts/create-platform-admin.js you@example.com
+//
+// `docker compose exec`, NEVER `exec -T`: this reads the password from a TTY with
+// echo disabled and REFUSES a pipe. The path inside the container is
+// apps/core-api/scripts/... because WORKDIR is /app and the Dockerfile copies into
+// ./apps/core-api.
+//
+// It connects with DATABASE_URL -- core_api_app, the RUNTIME role -- and not with the
+// owner. It performs pure DML, so the superuser credential stays unused.
+//
+// There is no --force. Creating the same address twice is a no-op (ON CONFLICT DO
+// NOTHING in the repository) that exits non-zero, and the remedy for a forgotten
+// password is scripts/set-password.js, not a second row.
+
+const { startupConfiguration } = require("../config");
+const { loadDotEnv } = require("../env-file");
+const { openRuntimePool, closeAllPools } = require("../db");
+const { hashPassword, PasswordPolicyError, PASSWORD_MIN_LENGTH } = require("../lib/password");
+const users = require("../repositories/auth/users");
+const { appendAuditEvent } = require("../repositories/auth/audit");
+
+// The users.email CHECK, mirrored. Reaching the database to be told 23514 would put a
+// constraint name in front of an operator and describe DDL rather than what they typed.
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// users.display_name is CHECK (length(btrim(display_name)) BETWEEN 1 AND 80).
+const DISPLAY_NAME_MAX = 80;
+
+function usage() {
+  return [
+    "usage: node apps/core-api/scripts/create-platform-admin.js <email> [display name]",
+    "",
+    "Run it through an interactive session -- `docker compose exec`, without -T:",
+    "  CORE_ENV_FILE=../core-api.env docker compose exec core-api \\",
+    "    node apps/core-api/scripts/create-platform-admin.js you@example.com"
+  ].join("\n");
+}
+
+// PUBLIC API, deliberately. readline's echo-off recipe overrides _writeToOutput, an
+// underscore-prefixed internal, and a credential prompt is the last place to depend on
+// one. setRawMode is documented and stable.
+function promptSecret(question) {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(question);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+
+    let value = "";
+    const finish = (error, answer) => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener("data", onData);
+      process.stdout.write("\n");
+      if (error) reject(error);
+      else resolve(answer);
+    };
+
+    function onData(chunk) {
+      // Compared by CODE POINT, never against string literals. The three that matter
+      // -- EOT, ETX and DEL -- have no printable spelling, so source carrying them raw
+      // is one careless editor, diff tool or copy-paste away from silent repair.
+      const ENTER = 13;
+      const NEWLINE = 10;
+      const EOT = 4;
+      const ETX = 3;
+      const DEL = 127;
+      const BACKSPACE = 8;
+
+      for (const character of chunk) {
+        const code = character.codePointAt(0);
+
+        // EOT is here because raw mode delivers Ctrl-D as a BYTE rather than as
+        // end-of-stream, so without it the prompt hangs on the key an operator who
+        // wants to abandon it is most likely to reach for.
+        if (code === ENTER || code === NEWLINE || code === EOT) {
+          finish(null, value);
+          return;
+        }
+        // Raw mode also suppresses SIGINT, so this is the only way out.
+        if (code === ETX) {
+          finish(new Error("cancelled"));
+          return;
+        }
+        // Terminals disagree about which byte the backspace key sends.
+        if (code === DEL || code === BACKSPACE) {
+          value = value.slice(0, -1);
+          continue;
+        }
+        value += character;
+      }
+    }
+
+    process.stdin.on("data", onData);
+  });
+}
+
+async function main(argv) {
+  const email = typeof argv[0] === "string" ? argv[0].trim().toLowerCase() : "";
+  // btrim + a bound, matching the column. Defaulting to the local part means the
+  // one-argument invocation spec 9.10 documents actually works.
+  const displayName = (typeof argv[1] === "string" && argv[1].trim() !== ""
+    ? argv[1].trim()
+    : email.split("@")[0]
+  ).slice(0, DISPLAY_NAME_MAX);
+
+  if (email === "" || !EMAIL_PATTERN.test(email) || email.length > 254) {
+    throw new Error(`a valid email address is required\n\n${usage()}`);
+  }
+
+  // THE GUARD. A pipe means `docker compose exec -T`, which means the password came
+  // from a shell command and is now in that shell's history.
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "this script will not read a password from a pipe: run it on an interactive terminal " +
+        `(\`docker compose exec\`, without -T)\n\n${usage()}`
+    );
+  }
+
+  loadDotEnv(undefined, process.env);
+  const config = startupConfiguration(process.env);
+
+  const password = await promptSecret(`Password for ${email} (min ${PASSWORD_MIN_LENGTH} characters): `);
+  const again = await promptSecret("Repeat it: ");
+  // Typed blind, twice, because the cost of a typo here is an account nobody can sign
+  // in to and no way to tell that from a wrong password at the login screen.
+  if (password !== again) throw new Error("the two passwords did not match");
+
+  let passwordHash;
+  try {
+    passwordHash = await hashPassword(password);
+  } catch (error) {
+    if (!(error instanceof PasswordPolicyError)) throw error;
+    throw new Error(`the password was rejected: ${error.code}`);
+  }
+
+  // max: 1. This process issues two statements and exits; a pool sized for the server
+  // would open connections against max_connections=40 for no reason.
+  await openRuntimePool({ connectionString: config.databaseUrl, max: 1 });
+  try {
+    const created = await users.insertPlatformAdmin({ email, displayName, passwordHash });
+    // ON CONFLICT DO NOTHING, so null means the address is already taken. Exiting 0
+    // here would let a bootstrap script report success while creating nothing.
+    if (created === null) {
+      throw new Error(`${email} already exists; use scripts/set-password.js to change its password`);
+    }
+
+    // 'system': audit_events_actor_arc requires actor_user_id for 'user' and
+    // actor_terminal_id for 'terminal', and there is no authenticated actor at the
+    // moment the first account comes into existence. platform.admin_created declares
+    // both 'user' and 'system' for exactly this reason -- POST /api/platform/admins
+    // (Plan 2c) writes the same action as 'user'.
+    await appendAuditEvent({
+      actorKind: "system",
+      actorLabel: "create-platform-admin",
+      action: "platform.admin_created",
+      outcome: "success",
+      targetKind: "user",
+      targetId: created.id,
+      detail: { email: created.email }
+    });
+
+    process.stdout.write(`created platform administrator ${created.email} (${created.id})\n`);
+  } finally {
+    await closeAllPools();
+  }
+}
+
+main(process.argv.slice(2)).catch((error) => {
+  process.stderr.write(`${error && error.message ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});
+```
+
+**(b)** Wire the boot warning in `apps/core-api/server.js`.
+
+Add the require beside the other repositories:
+
+```js
+const usersRepository = require("./repositories/auth/users");   // already added in Task 12
+```
+
+and, inside `start()`, **after `waitForDb(...)` and before `createApp(...)`**:
+
+```js
+  // Spec 9.10's one deliberate exception to refuse-to-start, and it is forced rather
+  // than chosen: the bootstrap CLI runs through `docker compose exec`, so the
+  // container must be up before the first admin can exist. Refusing here is a
+  // deadlock -- the admin needs the container and the container would need the admin.
+  //
+  // Wrapped, because a throw would turn a transient database blip in the gap after
+  // waitForDatabase into a process that never listens, which fails the deploy's
+  // 90-second readiness gate AFTER the migration applied.
+  const countAdmins = options.countActivePlatformAdmins || usersRepository.countActivePlatformAdmins;
+  try {
+    if ((await countAdmins()) === 0) {
+      logLine(
+        "WARNING: no active platform administrator exists. Create one with: " +
+          "docker compose exec core-api node apps/core-api/scripts/create-platform-admin.js <email>"
+      );
+    }
+  } catch (error) {
+    logLine("WARNING: could not count platform administrators; continuing to listen");
+  }
+```
+
+> `logLine` is whatever `start()` already uses to write a line — reuse it. If `start()`
+> has no logger of its own and only passes `options.log` into `createApp`, hoist it:
+> `const logLine = options.log || ((line) => process.stdout.write(`${line}\n`));` and
+> pass the same function to `createApp` so there is one logger, not two.
+
+**`server-bootstrap.test.js` asserts `start()`'s collaborator order with a `deepEqual`
+on an array of strings.** This adds a step, so that array moves. Find it with
+`grep -n "deepEqual(calls" apps/core-api/test/server-bootstrap.test.js` and insert the
+new name in the position the code actually calls it — after `waitForDatabase`.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+node --test apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstrap.test.js \
+            apps/core-api/test/source-structure.test.js apps/core-api/test/deploy-config.test.js
+```
+
+Expected: all pass. `deploy-config.test.js` matters because the Dockerfile's single
+`COPY` is what carries `scripts/` into the image — its comment already says so — and
+this is the first script the runbook tells an operator to run inside the container.
+
+Then, with a database, run it end to end. This is the only task in the plan whose
+proof is a human at a terminal:
+
+```bash
+node apps/core-api/scripts/create-platform-admin.js ops@example.test
+# type a password twice; it must not echo
+# then, in another shell, curl the login route and expect 200
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/core-api/scripts/create-platform-admin.js apps/core-api/server.js \
+        apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstrap.test.js
+git commit -m "feat(core-api): the first account, from a terminal that refuses a pipe"
+```
+
+---
+
+## Part 7 — Reconciliation
+
+### Task 17: retire every deferral marker this plan has made false
+
+Sixteen tasks have made a set of documented claims wrong. They are wrong in the
+**safe** direction — every one of them under-states what the service now does — which
+is exactly why they will survive indefinitely if this task is skipped: nothing goes
+red, and the next reader plans around a gap that closed months earlier.
+
+**The rule this task follows, from "How to pick this up":** *an `assert.match` on a
+deferred-plan literal cannot detect staleness. A `match` goes red only when the
+literal is removed — which is the very edit it is meant to compel. Replace deferral
+markers with assertions on the claim that is now TRUE.*
+
+**Files:**
+
+- Modify: `infra/README.md`
+- Modify: `apps/core-api/README.md`
+- Modify: `apps/core-api/test/operations-docs.test.js`
+- Modify: `apps/core-api/test/source-structure.test.js`
+- Modify: `docs/superpowers/specs/2026-07-29-core-api-phase1-design.md`
+- Modify: `docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md`
+
+**The mirrors — run all four and reconcile every hit, not just the ones listed here:**
+
+```bash
+grep -rn "Plan 2" infra apps/core-api --include=*.md --include=*.js | grep -v node_modules
+grep -rn "runs a forged-XFF probe as a gate" .
+grep -rn "the settled four\|exactly four entries" apps docs
+grep -rn "SOURCE_FILES.length >=" apps/core-api/test/source-structure.test.js
+```
+
+**Not every `Plan 2` is this plan.** `infra/README.md`'s `AUDIT_RETENTION_DAYS`
+sentence points at `scripts/sweep-expired.js`, which is **Plan 2d** and is not built
+here. Retarget that one to say `Plan 2d` rather than deleting it — "Plan 2" was
+unambiguous when it was written and stopped being so the day 2a shipped.
+
+- [ ] **Step 1: Retarget the documentation tripwires**
+
+In `apps/core-api/test/operations-docs.test.js`, three assertions currently pin
+deferrals. Find them with `grep -n "Plan 2\|forged-XFF" apps/core-api/test/operations-docs.test.js`.
+
+```js
+  // WAS: assert.match(chain, /Plan 2/) plus a doesNotMatch on the gate sentence.
+  // The behavioural probe now exists, so the assertion is on the claim itself: the
+  // runbook must describe a gate that reads an audit_events row back, because that
+  // is what deploy.yml block 4 does.
+  assert.match(chain, /audit_events/);
+  assert.match(chain, /203\.0\.113\.99/);
+```
+
+```js
+  // WAS: assert.match(cutover, /Plan 2/) on the bootstrap step.
+  // The script exists; the checklist must name the path an operator can actually run.
+  assert.match(cutover, /scripts\/create-platform-admin\.js/);
+  assert.match(cutover, /docker compose exec/);
+  // ...and must NOT tell them to use -T, which the script refuses by design.
+  assert.doesNotMatch(cutover, /docker compose exec -T[^\n]*create-platform-admin/);
+```
+
+Then **delete both `assert.doesNotMatch(…, /runs a forged-XFF probe as a gate/)`**
+— one is inside the client-IP test and one is document-wide in
+`"no section of infra/README.md over-states what the pipeline proves"`. That sentence
+was banned because it was false. It is now true, and a ban on a true sentence is a
+tripwire pointing backwards.
+
+**The trap in this step, and it is a hard one.** `operations-docs.test.js` caps
+`## The client-IP chain` at **40 lines** and the section is **39** today. There is one
+line of headroom for a change that wants three or four. Do not raise the cap: the cap
+exists because the nginx area already carries the detailed breaker list, and the whole
+point of the section is that it is a summary and a pointer rather than a second copy.
+Rewrite within the budget — the sentences being replaced are longer than the ones
+replacing them, because "this arrives in Plan 2" plus its explanation is longer than
+"the deploy asserts it".
+
+Measure before and after:
+
+```bash
+awk '/^## The client-IP chain$/,/^## /' infra/README.md | wc -l
+```
+
+- [ ] **Step 2: Update `infra/README.md` and `apps/core-api/README.md`**
+
+Every site the greps found. The four that carry real operator consequences:
+
+| What it says today | What is true now |
+| --- | --- |
+| *"`create-platform-admin.js` … **That script ships in Plan 2.** Until it does, a fresh instance has no way to create the first user"* | It ships. Give the invocation, and say `docker compose exec` **without `-T`** and why the script refuses one. |
+| *"the forged-XFF probe … arrives with Plan 2"* (three sites) | It is block 4 of the deploy and it is a gate. It POSTs a login with `X-Forwarded-For: 203.0.113.99` and reads the `audit_events` row back. |
+| Cutover step 7, *"Bootstrap the first platform administrator — **Plan 2**"* | A runnable command. This is the step that turns a deployed service into a usable one. |
+| The reconciliation table row *"The deploy proves `X-Forwarded-For` is unforgeable → It does not."* | It does, and the row should now say **how** — the three assertions of block 4 — rather than being deleted. A reconciliation table that only ever removes rows stops being read. |
+
+`apps/core-api/README.md` already matches `/create-platform-admin/` (spec §12's grep),
+so that test stays green either way — which is precisely why the entry has to be
+checked by eye rather than by grep. Make it a runbook entry with the real command.
+
+- [ ] **Step 3: Raise the walker floor, with one sentinel per load-bearing new file**
+
+In `apps/core-api/test/source-structure.test.js`. The floor is `>=`, so nothing has
+gone red while ten files landed — and a walker that silently stopped descending would
+go on comparing `[]` to `[]`, which is the failure C9 lived with for the whole of
+Plan 1.
+
+**Measure, do not estimate.** Break the floor deliberately and read the number back:
+
+```bash
+# set the floor to something absurd, run, and read "scanned only N files"
+node --test apps/core-api/test/source-structure.test.js 2>&1 | grep "scanned only"
+```
+
+Set the floor to exactly that N, then add the sentinels — the floor alone cannot catch
+a walker that stops descending into ONE area, because the count clears on the strength
+of the others:
+
+```js
+    // Plan 2b. One per file that a rule would silently stop checking if the walker
+    // lost it: C9 and C14 scan lib/, C2 and C4 scan repositories/auth/, and the two
+    // http/ files below are the entire credential path.
+    "lib/rate-limit.js",
+    "lib/authorization.js",
+    "http/cookies.js",
+    "http/csrf.js",
+    "http/authenticate.js",
+    "http/routes/auth.js",
+    "repositories/auth/users.js",
+    "repositories/auth/sessions.js",
+    "repositories/auth/scope-materialize.js",
+    "scripts/create-platform-admin.js"
+```
+
+Then **mutation-test the floor** the way Plan 2a's Task 11 did: set it to `N + 1`,
+confirm the test fails, set it back to `N`, confirm it passes. A floor nobody has seen
+fail is a floor nobody has seen work.
+
+If `scripts/create-platform-admin.js` is **not** in `SOURCE_FILES`, the walker does not
+descend into `scripts/` — report that as a finding rather than dropping the sentinel.
+It would mean C7, C8 and C9 have never seen a script, and the one this plan just added
+handles a plaintext password.
+
+- [ ] **Step 4: Amend both specs**
+
+`docs/superpowers/specs/2026-07-29-core-api-phase1-design.md` (the parent):
+
+| Section | Amendment |
+| --- | --- |
+| §5.7 | *"`route()` rejects at boot any route whose `limit` names a limiter absent from it"* was false when written. Task 2 made it true. Note that it is now enforced, and where. |
+| §5.9 | Same for the vocabulary membership check, landed in Task 3. |
+| §6.1 / §8.5 rule 2 | *"exactly four entries"* / *"the settled four"* → the three that exist, with `POST /api/terminal/pair` named as the fourth and the plan it arrives in. |
+| §6.3.5 | Step 10 is two halves. The static route-roles half runs at step 7.5 and the per-resource half arrives in Plan 2c — see Part 5 departure (c). |
+| §9.5 | **The block-4 appendix is wrong twice** and must be corrected or the next reader copies it: it writes the curl as `curl -fsS … \|\| true`, which `deploy-config.test.js` bans, and it writes the psql with `'"'"'`-style quoting that no longer matches what the test asserts. Replace both with what `deploy.yml` actually carries after Task 12. |
+| §9.12 | The semaphore-occupancy sentence names `LOGIN_RATE_PER_MINUTE` as *"the control"*. With `login-global` in a roster and `core_login` at the edge it is one of two, and identity spec §7.3 already says so. |
+
+`docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md` (this slice):
+
+- **§11.5** — the `TRUSTED_PROXY_HOPS` cross-file assertion is marked **required**. Task 4 landed it. Mark it shipped and name the test.
+- **§11.6** — *"two boot checks Plan 2b must land, and one false claim to settle"*. Both landed, in Tasks 2 and 3. Mark it shipped; the section's reasoning about *why* they waited is worth keeping.
+- Add a short **§11.10** in the shape of §11.9, recording what 2b shipped: the pipeline, the six routes, the bootstrap CLI, and the two things it deliberately did **not** do — `lib/authorization.js` holds the alias half only, and step 10's per-resource half is Plan 2c's.
+
+- [ ] **Step 5: Run everything, then close the plan**
+
+```bash
+npm test
+```
+
+Expected: green across all four suites, with the counts recorded in the execution log
+row. Then append that row: the date, what the session did, the last task finished, the
+commits, and the next plan.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add infra/README.md apps/core-api/README.md \
+        apps/core-api/test/operations-docs.test.js apps/core-api/test/source-structure.test.js \
+        docs/superpowers/specs docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md
+git commit -m "docs(core-api): retire the Plan 2 markers, because Plan 2b made all of them false"
+```
+
+---
