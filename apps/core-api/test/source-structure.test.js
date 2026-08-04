@@ -452,6 +452,43 @@ test("C8: no string-literal fallback for a credential-shaped environment variabl
 
 test("C9: nothing under lib/ touches the filesystem, the network or the database", () => {
   assert.deepEqual(filesMatching(IMPURE_REQUIRE, (file) => file.startsWith("lib/")), []);
+
+  // The forms the single rule() fixture never exercised. It only ever proved the
+  // `node:fs` branch, which is why the mandatory-prefix and no-subpath holes
+  // survived: the rule LOOKED mutation-tested. `require("net")` is the specific
+  // one that matters -- lib/client-ip.js's whole signature exists to avoid it.
+  for (const banned of [
+    'require("net")',
+    "require('net')",
+    'require("fs")',
+    'require("http")',
+    'require("https")',
+    'require("node:fs/promises")',
+    'require("node:dns")',
+    'require("dns/promises")',
+    'require("node:tls")',
+    'require("child_process")',
+    'require("node:child_process")',
+    'require( "node:net" )',
+    'require("../db")',
+    'require("../db/index")'
+  ]) {
+    assert.match(banned, IMPURE_REQUIRE, `C9 does not catch ${banned}`);
+  }
+
+  // ...and the permitted set, so widening the alternation cannot quietly ban the
+  // thing lib/ is built out of. node:crypto is the CSPRNG behind every token and
+  // every password hash; a rule that banned it would be repaired by weakening it.
+  for (const allowed of [
+    'require("node:crypto")',
+    'require("crypto")',
+    'require("./tokens")',
+    'require("node:assert/strict")',
+    'require("dns-packet")',
+    'require("../db-fixtures")'
+  ]) {
+    assert.doesNotMatch(allowed, IMPURE_REQUIRE, `C9 wrongly catches ${allowed}`);
+  }
 });
 
 test("C14: nothing under lib/ mints a credential from a non-cryptographic source", () => {
@@ -538,9 +575,21 @@ const SECRET_FALLBACK = rule(
 // C9 -- what stops Tier 1 quietly decaying into Tier 3. A require-graph check,
 // not a behaviour check: a lib/ module reading Date.now() passes this and is
 // still non-deterministic. That discipline rests on review.
+//
+// The `node:` prefix is OPTIONAL and every branch takes a subpath, because the
+// previous pattern demanded the prefix and allowed a subpath on the `../db`
+// branch alone -- so `require("net")`, `require("fs")` and
+// `require("node:fs/promises")` all walked past it. That is not a hypothetical
+// gap: lib/client-ip.js takes `isIP` as an ARGUMENT, and the only justification
+// for that contortion is this rule. If C9 cannot see `require("net")` -- the
+// form every reference and every autocompletion produces -- the contortion is
+// theatre, and the missing four characters are invisible in review because the
+// reviewer reads the word "net" and sees a banned module correctly rejected.
+// node:crypto is deliberately NOT banned: it is what makes lib/ strong, and C15
+// requires it.
 const IMPURE_REQUIRE = rule(
   "C9 impure require in lib",
-  /require\(\s*["'](?:node:fs|node:https?|node:net|pg|\.\.\/db(?:\/[^"']*)?)["']\s*\)/,
+  /require\(\s*["'](?:(?:node:)?(?:fs|http2|https?|net|dns|tls|dgram|child_process)|pg|\.\.\/db)(?:\/[^"']*)?["']\s*\)/,
   'const fs = require("node:fs");',
   '// const fs = require("node:fs");'
 );
