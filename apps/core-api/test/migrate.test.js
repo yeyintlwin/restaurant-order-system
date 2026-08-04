@@ -101,7 +101,7 @@ async function withSession(database, run) {
 // --- the migration set on disk ---------------------------------------------
 
 test("0001_init.sql is installed verbatim from the design appendix", () => {
-  assert.deepEqual(fs.readdirSync(MIGRATIONS_DIR).sort(), ["0001_init.sql"]);
+  assert.deepEqual(fs.readdirSync(MIGRATIONS_DIR).sort(), ["0001_init.sql", "0002_identity.sql"]);
   const text = fs.readFileSync(path.join(MIGRATIONS_DIR, "0001_init.sql"), "utf8");
 
   assert.equal(text.includes("```"), false, "the markdown fence was copied with the SQL");
@@ -355,21 +355,26 @@ test("applies 0001_init.sql once and re-runs as a no-op", { skip: skipDatabaseTe
     await withSession(database, async (session) => {
       const log = collectLog();
       const first = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
-      assert.deepEqual(first.applied, ["0001_init.sql"]);
+      assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql"]);
       assert.deepEqual(first.skipped, []);
 
+      // ORDER BY is load-bearing now that there are two rows: the assertions below
+      // index rows[0] expecting 0001, and Postgres guarantees no order without it.
       const ledger = await database.unscoped(
-        "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations"
+        "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations ORDER BY filename"
       );
-      assert.equal(ledger.rowCount, 1);
-      assert.equal(ledger.rows[0].filename, "0001_init.sql");
+      assert.equal(ledger.rowCount, 2);
+      assert.deepEqual(
+        ledger.rows.map((row) => row.filename),
+        ["0001_init.sql", "0002_identity.sql"]
+      );
       assert.equal(ledger.rows[0].checksum.length, 32);
       assert.ok(ledger.rows[0].duration_ms >= 0);
       const appliedAt = ledger.rows[0].applied_at.getTime();
 
       const second = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
       assert.deepEqual(second.applied, []);
-      assert.deepEqual(second.skipped, ["0001_init.sql"]);
+      assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql"]);
       const reread = await database.unscoped(
         "SELECT applied_at FROM schema_migrations WHERE filename = '0001_init.sql'"
       );
@@ -595,8 +600,13 @@ test("node db/migrate.js applies the migration set and exits 0", { skip: skipDat
     });
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}: ${result.stderr}`);
 
-    const ledger = await database.unscoped("SELECT filename FROM schema_migrations");
-    assert.deepEqual(ledger.rows.map((row) => row.filename), ["0001_init.sql"]);
+    // ORDER BY is load-bearing now that there are two rows: Postgres guarantees
+    // no order without it.
+    const ledger = await database.unscoped("SELECT filename FROM schema_migrations ORDER BY filename");
+    assert.deepEqual(
+      ledger.rows.map((row) => row.filename),
+      ["0001_init.sql", "0002_identity.sql"]
+    );
     const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
     assert.equal(probe.rows[0].present, "companies");
   });
