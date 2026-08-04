@@ -1,8 +1,19 @@
 -- 0002_identity.sql -- credential recovery, and the ledger lockdown 0001 could
 -- not perform on itself.
 --
--- Additive only. Nothing here drops or renames, and the one new NOT NULL column
--- lives on a new table, so no existing row is rewritten.
+-- Additive only. Nothing here drops or renames, and the column added to an
+-- existing table is nullable, so no existing row is rewritten.
+
+-- SET LOCAL is transaction-scoped and the runner opens a fresh BEGIN for EVERY
+-- file, so 0001's settings are NOT inherited -- they have to be repeated here.
+-- They bind harder in this file than they did in 0001: ALTER TABLE users takes
+-- ACCESS EXCLUSIVE on a table that ALREADY EXISTS, so with no bound it queues
+-- behind any open transaction touching users, and every later reader of users
+-- then queues behind IT. The REVOKE at the foot of this file takes a lock on
+-- schema_migrations for the same reason. 0001 only ever created new tables --
+-- it could block on nothing pre-existing -- and set these anyway.
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '60s';
 
 -- ---------------------------------------------------------------------------
 -- users.email_verified_at
@@ -34,7 +45,8 @@ CREATE TABLE user_email_tokens (
   -- The address this token was actually sent to, snapshotted. Consumption
   -- requires it to still equal users.email, so a token minted before an
   -- address correction cannot be redeemed after one.
-  sent_to_email       text NOT NULL,
+  sent_to_email       text NOT NULL
+                        CHECK (length(sent_to_email) BETWEEN 3 AND 254),
   expires_at          timestamptz NOT NULL,
   consumed_at         timestamptz,
   consumed_from_ip    inet,
@@ -58,7 +70,18 @@ CREATE TABLE user_email_tokens (
                         CHECK (delivery_last_error IS NULL
                            OR length(delivery_last_error) <= 500),
   CONSTRAINT user_email_tokens_expires_after_creation
-    CHECK (expires_at > created_at)
+    CHECK (expires_at > created_at),
+  -- A row reaches its end state once: consumed or revoked, never both. Named
+  -- ..._single_end_state rather than ..._single_terminal_state like its
+  -- pairing-code sibling, because "terminal" means a physical device
+  -- everywhere else in this schema.
+  CONSTRAINT user_email_tokens_single_end_state
+    CHECK (consumed_at IS NULL OR revoked_at IS NULL),
+  -- Revocation always records why, and a reason always implies a revocation.
+  -- Without this, revoked_reason = 'superseded' with revoked_at still NULL is a
+  -- row that claims to be dead while it goes on occupying the live_key slot.
+  CONSTRAINT user_email_tokens_revocation_is_explained
+    CHECK ((revoked_at IS NULL) = (revoked_reason IS NULL))
 );
 
 CREATE UNIQUE INDEX user_email_tokens_hash_key
@@ -68,9 +91,13 @@ CREATE UNIQUE INDEX user_email_tokens_hash_key
 -- verbatim: now() cannot appear in an index predicate, so an EXPIRED but
 -- unconsumed row still occupies the slot and would permanently brick that
 -- user's recovery. Every mint site therefore runs
---   SELECT ... FOR UPDATE; revoke any live row; INSERT
--- inside ONE transaction. Do not "fix" the expiry case by adding expires_at to
--- this predicate -- Postgres rejects it as not IMMUTABLE.
+--   SELECT ... FROM users WHERE id = $1 FOR UPDATE; revoke any live row; INSERT
+-- inside ONE transaction. The USERS row lock is what stops two concurrent mints
+-- from racing into a 23505 -- locking the token rows would find NOTHING to lock
+-- in the common case where none is live, and both callers would sail through.
+-- It serialises both purposes for one user, which is acceptable at this volume.
+-- Do not "fix" the expiry case by adding expires_at to this predicate --
+-- Postgres rejects it as not IMMUTABLE.
 CREATE UNIQUE INDEX user_email_tokens_live_key
   ON user_email_tokens (user_id, purpose)
   WHERE consumed_at IS NULL AND revoked_at IS NULL;
@@ -81,6 +108,15 @@ CREATE INDEX user_email_tokens_delivery_due_idx
   WHERE delivery_sent_at IS NULL
     AND consumed_at IS NULL
     AND revoked_at IS NULL;
+
+-- The expiry sweep's driving index, same predicate shape as
+-- terminal_pairing_codes_sweep_idx. 'swept' is an allowed revoked_reason, so
+-- something WILL run WHERE expires_at <= now() AND consumed_at IS NULL AND
+-- revoked_at IS NULL -- without this it is a seq scan over every token ever
+-- minted, and an expired row holds a live_key slot until it is swept.
+CREATE INDEX user_email_tokens_sweep_idx
+  ON user_email_tokens (expires_at)
+  WHERE consumed_at IS NULL AND revoked_at IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- Lock the migration ledger against the application role

@@ -135,14 +135,45 @@ test("0002_identity.sql adds the identity schema and locks the ledger", () => {
   assert.match(text, /CREATE TABLE user_email_tokens \(/);
   assert.match(text, /REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM core_api_app;/);
 
+  // SET LOCAL is transaction-scoped and every file gets its own BEGIN, so this
+  // is NOT inherited from 0001. Unlike 0001 this file ALTERs a pre-existing
+  // table, taking ACCESS EXCLUSIVE on users; unbounded, that queues behind any
+  // open transaction and every later reader of users queues behind it.
+  assert.match(text, /SET LOCAL lock_timeout/);
+
   // The live-token index MUST be partial on the two nullable columns and MUST
   // NOT mention expires_at: now() cannot appear in an index predicate, and a
   // developer "fixing" the expired-token case by adding it gets a silent
   // 42P17 at apply time.
   const liveIndex = text.match(/CREATE UNIQUE INDEX user_email_tokens_live_key[\s\S]*?;/);
   assert.ok(liveIndex, "user_email_tokens_live_key is missing");
-  assert.match(liveIndex[0], /WHERE consumed_at IS NULL AND revoked_at IS NULL/);
+  // Whitespace-loose: the neighbouring delivery_due index wraps its predicate
+  // across lines, so reformatting this one to match is a semantics-free change
+  // that must not turn this red. The token_hash assertion below stays exact --
+  // there the precise spelling IS the thing under test.
+  assert.match(liveIndex[0], /WHERE\s+consumed_at IS NULL\s+AND\s+revoked_at IS NULL/);
   assert.doesNotMatch(liveIndex[0], /expires_at|now\(\)/);
+
+  // 'swept' is an allowed revoked_reason, so an expiry sweep will run against
+  // expires_at. Without this index that is a seq scan over every token ever
+  // minted; 0001 builds the same thing for all three of its expiring tables.
+  const sweepIndex = text.match(/CREATE INDEX user_email_tokens_sweep_idx[\s\S]*?;/);
+  assert.ok(sweepIndex, "user_email_tokens_sweep_idx is missing");
+  assert.match(sweepIndex[0], /\(expires_at\)/);
+  assert.match(sweepIndex[0], /WHERE\s+consumed_at IS NULL\s+AND\s+revoked_at IS NULL/);
+
+  // Both end-state invariants are enforced by Postgres, not by discipline --
+  // the house rule 0001 states in its header. Without the second, a row with
+  // revoked_reason set but revoked_at NULL claims to be dead while still
+  // occupying the live_key slot.
+  assert.match(
+    text,
+    /CONSTRAINT user_email_tokens_single_end_state\s+CHECK \(consumed_at IS NULL OR revoked_at IS NULL\)/
+  );
+  assert.match(
+    text,
+    /CONSTRAINT user_email_tokens_revocation_is_explained\s+CHECK \(\(revoked_at IS NULL\) = \(revoked_reason IS NULL\)\)/
+  );
 
   // bytea(32), never hex text -- binding a raw credential by mistake must raise
   // "invalid input syntax for type bytea" rather than matching zero rows.
