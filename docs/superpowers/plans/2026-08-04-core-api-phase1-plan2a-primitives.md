@@ -26,7 +26,7 @@ Bare section references (§5.1, §8.5) point at the **parent** spec,
 
 ## Execution log
 
-**Status: 3 of 11 tasks done.**
+**Status: 4 of 11 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -38,6 +38,7 @@ steps are ticked and its commit exists.
 ---
 | 2026-08-04 | Task 2. The migration-set pins. The plan said five sites; there are SIX -- `assert.equal(ledger.rowCount, 1)` is the only one that is not an array literal, so a grep for the literal finds five of six. The implementer escalated rather than guessing. Confirming that escalation surfaced a worse defect the plan had introduced: both multi-row ledger queries had NO `ORDER BY`, while the new two-element deepEqual and three `rows[0]` accesses had just made row order load-bearing. It would have passed every run until a HOT update or autovacuum reordered the heap. Review found one further real hole -- the pending-migration stderr assertion matched only the first filename, so it had stopped verifying that 0002 is reported at all. 23 pass, 0 fail. | **2/11** | `9d268e6`, (this commit) | Task 3 |
 | 2026-08-04 | Task 3. The plan named three files; there were SIX. Two sites the implementer found and fixed (a comma count over TRUNCATE_STATEMENT, a stale count in a test name), and one they escalated on instead of touching: `infra/restore-drill.sh` hand-mirrors S1 in SQL, and `backup-restore.test.js` regex-extracts the node list to cross-check it. With 0002 applied, the drill would RAISE on a GOOD restore -- a production defect, proved two-sided by deleting the name and watching the exception fire. Review then found the mirror is ONE-DIRECTIONAL: the loops prove node subset drill, nothing proved the reverse, and for an EXEMPTION list the unchecked direction is fail-open -- a bogus name added to the drill alone passed 12/0. Closed with a deepEqual, mutation-tested. 294 tests, 293 pass, 0 fail, 1 skip. | **3/11** | `3db26d9`, `732cc5f`, (this commit) | Task 4 |
+| 2026-08-04 | Task 4. `lib/tokens.js`. The implementer noticed that `lib/` had not existed until this commit, so rule C9 had been comparing `[]` to `[]` since it was written, and mutation-tested it now that it has something to scan. Review then found the gap C9 CANNOT see: a `Math.random` token is still 22 Base64URL characters, still unique across a thousand draws, and passes C9 -- the downgrade REMOVES a require. Demonstrated, not asserted. Closed with a new C14 over `lib/`, mutation-tested, which `lib/password.js` inherits on arrival for its salt. 300 tests, 299 pass. | **4/11** | `bd48644`, (this commit) | Task 5 |
 
 ## How to pick this up
 
@@ -731,7 +732,7 @@ git commit -m "test(core-api): user_email_tokens joins the exception lists and t
 - Create: `apps/core-api/lib/tokens.js`
 - Test: `apps/core-api/test/tokens.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/tokens.test.js`:
 
@@ -787,13 +788,13 @@ test("hashToken refuses a non-string, so a Buffer or null cannot hash to a const
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test apps/core-api/test/tokens.test.js`
 
 Expected: FAIL — `Cannot find module '../lib/tokens'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `apps/core-api/lib/tokens.js`:
 
@@ -834,13 +835,13 @@ function hashToken(raw) {
 module.exports = { mintToken, hashToken, TOKEN_BYTES, TOKEN_LENGTH };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test apps/core-api/test/tokens.test.js`
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/tokens.js apps/core-api/test/tokens.test.js

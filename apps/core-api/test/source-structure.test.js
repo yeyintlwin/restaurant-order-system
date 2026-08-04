@@ -412,6 +412,10 @@ test("C9: nothing under lib/ touches the filesystem, the network or the database
   assert.deepEqual(filesMatching(IMPURE_REQUIRE, (file) => file.startsWith("lib/")), []);
 });
 
+test("C14: nothing under lib/ mints a credential from a non-cryptographic source", () => {
+  assert.deepEqual(filesMatching(WEAK_RANDOM, (file) => file.startsWith("lib/")), []);
+});
+
 // C6 -- exempt-zone budget. One entry per /api/platform/* route in the design,
 // plus the audit writer. Adding an eleventh requires editing a name list in a
 // test: a diff a reviewer cannot miss.
@@ -468,6 +472,21 @@ const IMPURE_REQUIRE = rule(
   /require\(\s*["'](?:node:fs|node:https?|node:net|pg|\.\.\/db(?:\/[^"']*)?)["']\s*\)/,
   'const fs = require("node:fs");',
   '// const fs = require("node:fs");'
+);
+
+// C14 -- lib/ mints every credential in the service, and the strength of the
+// randomness behind them is the one property with no observable signature. A
+// Math.random() token is still 22 Base64URL characters, still unique across a
+// thousand draws, and still passes C9 -- the downgrade REMOVES a require rather
+// than adding one. Nothing else in the suite can see it.
+//
+// pseudoRandomBytes is banned alongside it: the name reads as a synonym for
+// randomBytes and is not one.
+const WEAK_RANDOM = rule(
+  "C14 weak randomness in lib",
+  /Math\.random\s*\(|pseudoRandomBytes/,
+  "const x = Math.random();",
+  "// const x = Math.random();"
 );
 
 test("C10: migration filenames are contiguous, unique and additive-only", () => {

@@ -15,7 +15,9 @@
 const crypto = require("node:crypto");
 
 const TOKEN_BYTES = 16;
-const TOKEN_LENGTH = 22;
+// Derived, not a second literal: unpadded Base64URL emits one character per 6
+// bits. Two independent constants can drift; this pair cannot.
+const TOKEN_LENGTH = Math.ceil((TOKEN_BYTES * 8) / 6);
 
 function mintToken() {
   return crypto.randomBytes(TOKEN_BYTES).toString("base64url");

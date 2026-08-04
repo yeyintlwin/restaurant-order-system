@@ -3,9 +3,13 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { mintToken, hashToken, TOKEN_LENGTH } = require("../lib/tokens");
+const { mintToken, hashToken, TOKEN_BYTES, TOKEN_LENGTH } = require("../lib/tokens");
 
 test("a minted token is 22 Base64URL characters", () => {
+  // Both constants, so neither is public surface that nothing holds to account.
+  // 128 bits is the strength this credential is claimed to have; 22 is what
+  // unpadded Base64URL makes of it.
+  assert.equal(TOKEN_BYTES, 16);
   assert.equal(TOKEN_LENGTH, 22);
   for (let i = 0; i < 200; i += 1) {
     const token = mintToken();
