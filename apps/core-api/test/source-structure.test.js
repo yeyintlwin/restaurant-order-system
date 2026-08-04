@@ -458,6 +458,35 @@ test("C14: nothing under lib/ mints a credential from a non-cryptographic source
   assert.deepEqual(filesMatching(WEAK_RANDOM, (file) => file.startsWith("lib/")), []);
 });
 
+test("C15: every lib/ primitive still contains the construct that makes it strong", () => {
+  // Each pattern is proved against the exact text it guards AND against the exact
+  // text the regression replaces it with, so C15 cannot report green because the
+  // regex is wrong rather than because the file is intact. This is the positive
+  // rule's version of the fixture pair every rule() carries.
+  const [SAFE_COMPARE, NFKC] = REQUIRED_PRIMITIVES;
+  assert.match("return crypto.timingSafeEqual(actual, expected);", SAFE_COMPARE.pattern);
+  assert.doesNotMatch("return actual.equals(expected);", SAFE_COMPARE.pattern);
+  assert.match('password.normalize("NFKC"),', NFKC.pattern);
+  assert.doesNotMatch("password,", NFKC.pattern);
+
+  for (const { file, pattern, atLeast, why } of REQUIRED_PRIMITIVES) {
+    // Load-bearing, and the whole reason C15 is a table rather than a bare
+    // assert.match: without it a rename makes this rule vacuously green, which is
+    // exactly how C9 spent the whole of Plan 1 comparing [] to [].
+    assert.ok(SOURCE_FILES.includes(file), `C15 names ${file}, which was not scanned`);
+
+    // Counted, not tested: `atLeast` is 2 for a construct that must appear on two
+    // different code paths, and RegExp.test with /g is stateful -- see the note on
+    // RULES. Comments are stripped first, so documenting the construct is not the
+    // same as calling it.
+    const found = (sourceOf(file).match(new RegExp(pattern.source, "g")) || []).length;
+    assert.ok(
+      found >= atLeast,
+      `${file} has ${found} occurrence(s) of ${pattern}, needs ${atLeast}. ${why}`
+    );
+  }
+});
+
 // C6 -- exempt-zone budget. One entry per /api/platform/* route in the design,
 // plus the audit writer. Adding an eleventh requires editing a name list in a
 // test: a diff a reviewer cannot miss.
@@ -530,6 +559,57 @@ const WEAK_RANDOM = rule(
   "const x = Math.random();",
   "// const x = Math.random();"
 );
+
+// C15 -- the POSITIVE counterpart to C14, and the only rule in this file that
+// asserts a file still CONTAINS something. Every other assertion here is
+// `filesMatching(...) === []`, which by construction can only ever see text being
+// ADDED. C14's own comment names that limitation -- "the downgrade REMOVES a
+// require rather than adding one" -- and then encodes a single instance of it.
+// The dangerous edit to a credential primitive is a DELETION, and until this rule
+// there was nothing in the suite that could see one.
+//
+// MEMBERSHIP IS EARNED BY MEASUREMENT, not by looking crypto-shaped. An entry
+// belongs here only if removing the construct leaves the whole suite GREEN;
+// otherwise the behavioural test is the better guard, and a second copy of it
+// here is decoration that rots into a rule nobody has seen fail. Both entries
+// below were measured at 353/353 green with the construct gone.
+//
+// Two constructs that look like obvious members are deliberately ABSENT for that
+// reason, also measured: crypto.randomBytes in lib/tokens.js (mintToken) and in
+// hashPassword (the salt) each turn a test red on their own -- "minted tokens do
+// not repeat" and the distinct-hash test -- and C14 independently bans
+// Math.random(). Adding them would grow the table without closing anything.
+const REQUIRED_PRIMITIVES = [
+  {
+    file: "lib/password.js",
+    pattern: /crypto\.timingSafeEqual\s*\(/,
+    atLeast: 1,
+    why:
+      "This is the derived-key comparison on the unauthenticated login path. " +
+      "Swapping it for actual.equals(expected) -- a byte-at-a-time compare that " +
+      "leaks the match length through timing -- leaves every test green. The swap " +
+      "has a WRITTEN motive, which is what makes it likely rather than exotic: " +
+      "the comment above the call flags that timingSafeEqual throws on a length " +
+      "mismatch, while a sibling test in password.test.js demands that a " +
+      "malformed stored value be false and never a throw."
+  },
+  {
+    file: "lib/password.js",
+    pattern: /\.normalize\(\s*["']NFKC["']\s*\)/,
+    atLeast: 2,
+    why:
+      "ONE on the hash path (normalise) and ONE on the verify path, which is why " +
+      "the count is 2 and not 1 -- a single occurrence means one of the two paths " +
+      "lost it. Deleting the verify-path call leaves every test green: the sole " +
+      "NFKC test compares hashPassword against hashPassword and never calls " +
+      "verifyPassword, and every verifyPassword argument in the suite is pure " +
+      "ASCII, hence NFKC-invariant. The effect is that anyone who set a password " +
+      "through an IME hashes one way at write time and is compared another at " +
+      "read time, and can never sign in again -- returned as a plain false, " +
+      "indistinguishable from a wrong password. 'Normalisation belongs on the " +
+      "write path' is the defensible-sounding instinct that gets it deleted."
+  }
+];
 
 test("C10: migration filenames are contiguous, unique and additive-only", () => {
   const files = fs.readdirSync(path.join(appRoot, "migrations")).sort();
