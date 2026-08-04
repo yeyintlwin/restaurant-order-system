@@ -430,7 +430,10 @@ function isTransientEpaperError(error) {
   if (
     error?.code === "EPAPER_CONFIGURATION" ||
     error?.code === "ERR_INVALID_URL" ||
-    /^(?:baseUrl|apiKey|epaperId|tableNumber|status|url)\b.*\b(?:must|is required)\b|^url is too long for the e-paper QR area$|^Invalid URL$/.test(message)
+    // tableLabel is the SDK's rejection; tableNumber is still thrown by table-visit-store.js
+    // for this app's own 1..12 range, and both are permanent -- retrying either just burns
+    // the startup attempt budget three times over.
+    /^(?:baseUrl|apiKey|epaperId|tableNumber|tableLabel|status|url)\b.*\b(?:must|is required)\b|^url is too long for the e-paper QR area$|^Invalid URL$/.test(message)
   ) return false;
   const status = /(?:^|\D)([1-5]\d{2})(?:\D|$)/.exec(message);
   if (!status) return true;

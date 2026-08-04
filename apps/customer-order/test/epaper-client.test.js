@@ -29,7 +29,7 @@ test("passes an exact opaque URL through an in-use e-paper update", async () => 
   assert.deepEqual(
     JSON.parse(requests[0].options.body),
     renderTableDisplay({
-      tableNumber: 7,
+      tableLabel: "TABLE 07",
       status: "Table is in use",
       url: opaqueUrl
     })
@@ -54,7 +54,7 @@ test("passes an exact opaque URL through a Welcome e-paper update", async () => 
   assert.deepEqual(
     JSON.parse(requests[0].options.body),
     renderTableDisplay({
-      tableNumber: 7,
+      tableLabel: "TABLE 07",
       status: "Welcome",
       url: opaqueUrl
     })
