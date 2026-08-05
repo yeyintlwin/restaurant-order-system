@@ -3368,7 +3368,7 @@ suite survives this task:
 grep -rn "trustedProxyHops" apps/core-api/test/
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/pipeline.test.js`:
 
@@ -3681,7 +3681,7 @@ test("the existing terminal route still works: the pipeline resolves nothing for
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/pipeline.test.js
@@ -3690,7 +3690,7 @@ node --test apps/core-api/test/pipeline.test.js
 Expected: FAIL — the cookie route answers 200 with `req.core.scope` undefined
 (a `TypeError` → 500), no 401, no 429, no renewal.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 **(a)** In `apps/core-api/http/router.js` add the requires:
 
@@ -3959,7 +3959,7 @@ Production is unaffected: `server.js` passes `config.trustedProxyHops` and
 it stays red under the full `npm test` this plan runs twice and under the test gate
 in `.github/workflows/deploy.yml`, so it blocks the commit either way.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/pipeline.test.js apps/core-api/test/table-displays.test.js \
@@ -3986,7 +3986,7 @@ Three failures and what each one means:
   as `log`, and `deriveClientIp: trustedProxyHops must be a non-negative integer`
   is sitting there.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/router.js apps/core-api/server.js \

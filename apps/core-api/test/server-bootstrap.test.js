@@ -9,7 +9,8 @@ const CONFIG = Object.freeze({
   databaseUrl: "postgres://core_api_app:app-secret@127.0.0.1:5433/core",
   databaseMigrationUrl: "postgres://core_api_owner:owner-secret@127.0.0.1:5433/core",
   databaseAppPassword: "app-secret",
-  dbPoolMax: 12
+  dbPoolMax: 12,
+  scryptSlots: 2
 });
 
 // A stand-in for the pool checkout. Recording its identity is how the test pins runMigrations'

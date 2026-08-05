@@ -15,6 +15,10 @@ const { checkReadiness, waitForDatabase } = require("./db/health");
 const { createApp } = require("./http/router");
 const { createEpaperHubClient } = require("./epaper/hub-client");
 const { appendAuditEvent } = require("./repositories/auth/audit");
+const { createSemaphore } = require("./lib/semaphore");
+const { createRateLimiter } = require("./lib/rate-limit");
+const sessionsRepository = require("./repositories/auth/sessions");
+const scopesRepository = require("./repositories/auth/scope-materialize");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
@@ -88,7 +92,26 @@ async function start(options = {}) {
       createEpaperHubClient({ hubUrl: config.epaperHubUrl, apiKey: config.epaperApiKey }),
     tableDisplayServiceToken: config.tableDisplayServiceToken,
     appendAuditEvent: options.appendAuditEvent || appendAuditEvent,
-    trustedProxyHops: config.trustedProxyHops
+    trustedProxyHops: config.trustedProxyHops,
+    apiPublicOrigin: config.apiPublicOrigin,
+    sessionIdleSeconds: config.sessionIdleSeconds,
+    sessionAbsoluteSeconds: config.sessionAbsoluteSeconds,
+    loginRatePerMinute: config.loginRatePerMinute,
+    loginTimeBudgetMs: config.loginTimeBudgetMs,
+    passwordAbuseThreshold: config.passwordAbuseThreshold,
+    adminMintRatePer10min: config.adminMintRatePer10min,
+    pairingMintRatePer10min: config.pairingMintRatePer10min,
+    pairRatePerMinute: config.pairRatePerMinute,
+    rotateRatePerHour: config.rotateRatePerHour,
+    // Date.now is injected HERE rather than read inside lib/, which is what keeps
+    // lib/rate-limit.js Tier 1 and every window boundary unit-testable.
+    rateLimiter: options.rateLimiter || createRateLimiter({ now: Date.now }),
+    // Spec 5.1: SCRYPT_SLOTS concurrent hashes with a queue depth of 4x, shedding
+    // 503 rather than queueing -- "a lengthening queue converts a CPU limit into a
+    // timeout storm". ONE semaphore for the whole process: two would be two limits.
+    scryptSemaphore: options.scryptSemaphore || createSemaphore({ slots: config.scryptSlots }),
+    sessions: options.sessions || sessionsRepository,
+    scopes: options.scopes || scopesRepository
   });
   return listen(app, config.port, config.host);
 }

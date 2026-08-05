@@ -33,6 +33,7 @@ test("GET /health is 200 and never touches the database", async () => {
   let probeCalls = 0;
   const deps = {
     log: captureLog(),
+    trustedProxyHops: 0,
     checkReadiness: async () => {
       probeCalls += 1;
       return { database: "ready", migrations: "current" };
@@ -51,7 +52,7 @@ test("GET /health is 200 and never touches the database", async () => {
 });
 
 test("HEAD /health is 200 with no body — this is what the container healthcheck issues", async () => {
-  await withServer({ log: captureLog(), checkReadiness: async () => ({ database: "ready", migrations: "current" }) }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0, checkReadiness: async () => ({ database: "ready", migrations: "current" }) }, async (base) => {
     const response = await fetch(`${base}/health`, { method: "HEAD" });
 
     assert.equal(response.status, 200, "wget --spider issues HEAD; a 405 here makes the container permanently unhealthy");
@@ -60,7 +61,7 @@ test("HEAD /health is 200 with no body — this is what the container healthchec
 });
 
 function readyDeps(checks, log) {
-  return { log, checkReadiness: async () => checks };
+  return { log, trustedProxyHops: 0, checkReadiness: async () => checks };
 }
 
 test("GET /health/ready is 200 when the database answers and the ledger is current", async () => {
@@ -117,6 +118,7 @@ test("a probe that throws is 503 with database unreachable, not a 500", async ()
   await withServer(
     {
       log,
+      trustedProxyHops: 0,
       checkReadiness: async () => {
         throw new Error("connect ECONNREFUSED 172.19.0.2:5432");
       }

@@ -5,6 +5,9 @@ const express = require("express");
 const { sendError } = require("./respond");
 const { LIMITERS } = require("../lib/rate-limit");
 const { AUDIT_ACTIONS } = require("../lib/audit-vocabulary");
+const { buildClearingCookie } = require("./cookies");
+const { requiresOriginCheck, assertOriginAndContentType } = require("./csrf");
+const { sessionTokensPresented, clientAddressOf, authenticateUser } = require("./authenticate");
 
 // Spec §3.2 rule 2: this is the ONLY file in the service that may require("express"), and
 // source-structure.test.js rule C3 asserts that by name. One registration function means one
@@ -205,6 +208,144 @@ function allowedMethods(pathname) {
   return [...allowed].sort();
 }
 
+// Spec 6.3.5, steps 3 through 7, in order, and THE ORDERING IS THE SECURITY
+// PROPERTY. It runs INSIDE the dispatch wrapper -- after route lookup -- because
+// as an app.use() ahead of the routes it would answer 403 origin_not_allowed for
+// an unknown path instead of 404 not_found, destroying the
+// [credential-independent] property step 2 is marked with. And a pure
+// http/csrf.js called from here is the only compliant shape anyway:
+// source-structure.test.js rule C3 forbids app.use( outside this file.
+//
+// Returns true when the handler should run. Every refusal RESPONDS HERE and
+// returns false, rather than throwing: two of them (429, 401) have to set a
+// header, ApiError cannot carry one, and one style for all five beats a mix a
+// reader has to hold in their head.
+async function runPipeline(entry, req, res, deps) {
+  // Step 3 -- the declared auth mode. Nothing to do at runtime: route() and
+  // validateRouteTable() have already refused a table with a missing or unknown
+  // mode, which is why 6.3.5 marks this step "never a runtime 500".
+
+  // Step 4a -- CREDENTIAL-INDEPENDENT buckets, before any scrypt is queued.
+  const address = clientAddressOf(req, deps.trustedProxyHops);
+  req.core.clientIp = address.ip;
+  req.core.clientBucketKey = address.bucketKey;
+  if (!consumeLimit(entry, req, res, deps, "ip", address.bucketKey)) return false;
+
+  if (entry.options.auth === "user") {
+    // Step 5 -- credential resolution and channel binding, READ-ONLY.
+    const authenticate = deps.authenticate || authenticateUser;
+    let resolved;
+    try {
+      resolved = await authenticate(req, deps);
+    } catch (error) {
+      if (!(error && error.status === 401)) throw error;
+      // A clearing Set-Cookie ONLY when one was presented (6.3.4). Sending it
+      // unconditionally would let any unauthenticated request instruct a browser
+      // to drop a cookie it never sent.
+      const headers = sessionTokensPresented(req).length > 0 ? { "Set-Cookie": buildClearingCookie() } : {};
+      sendError(res, error, req.core.requestId, headers);
+      return false;
+    }
+
+    req.core.session = resolved.session;
+    req.core.scope = resolved.scope;
+    req.core.actorKind = "user";
+    req.core.actorId = resolved.session.userId;
+
+    // Step 5b -- PRINCIPAL-KEYED buckets. They could not run at 4a: the principal
+    // does not exist until now, and keying them on the presented credential string
+    // would put every probe in a fresh empty bucket AND make the map an
+    // unauthenticated memory-growth vector.
+    if (!consumeLimit(entry, req, res, deps, "user", resolved.session.userId)) return false;
+
+    // Step 6 -- the must_change_password gate, in the RESOLVER and not the UI.
+    // Spec 8.5 rule 3 fixes the exempt set at exactly two routes, and
+    // route-auth.test.js asserts it by set equality.
+    if (resolved.session.mustChangePassword && entry.options.exemptFromPasswordChange !== true) {
+      sendError(res, { status: 403, code: "password_change_required" }, req.core.requestId);
+      return false;
+    }
+  }
+
+  // Step 7 -- Origin and Content-Type, AFTER the password gate. Reversed, an
+  // attacker with no session learns whether their Origin is allowed before being
+  // asked for a credential.
+  if (requiresOriginCheck(entry)) {
+    try {
+      assertOriginAndContentType({
+        origin: req.headers.origin,
+        contentType: req.headers["content-type"],
+        apiPublicOrigin: deps.apiPublicOrigin
+      });
+    } catch (error) {
+      sendError(res, error, req.core.requestId);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// One helper for both 4a and 5b: `stage` is the key kind this call is responsible
+// for, so a principal-keyed limiter is invisible at 4a and an ip-keyed one is not
+// consumed twice.
+function consumeLimit(entry, req, res, deps, stage, bucketKey) {
+  const declared = entry.options.limit ? LIMITERS[entry.options.limit.name] : null;
+  if (declared === null || declared.key !== stage) return true;
+  // "failure" limiters are the handler's to consume -- password-change-abuse
+  // counts consecutive failures, and a per-request decrement would lock a user out
+  // of their own password-change route for succeeding at it.
+  if (declared.consume !== "request") return true;
+
+  const ceiling = deps[declared.ceilingKey];
+  const verdict = deps.rateLimiter.consume(entry.options.limit.name, bucketKey, ceiling);
+  if (verdict.allowed) return true;
+
+  const headers = verdict.retryAfterSeconds === null ? {} : { "Retry-After": String(verdict.retryAfterSeconds) };
+  sendError(res, { status: 429, code: "rate_limited" }, req.core.requestId, headers);
+  return false;
+}
+
+// Step 14 -- sliding renewal, at most once per 60 seconds, and ONLY on a request
+// that reached the handler and succeeded. The throttle itself lives in the SQL so
+// two concurrent requests cannot both decide they are the one allowed to renew.
+//
+// `log` is createApp's NORMALISED local, threaded in by the caller, not deps.log.
+// server.js passes `log: options.log`, which is undefined on a normal boot, so
+// deps.log(...) here is a TypeError in production on the one path that only fires
+// when the database is already in trouble.
+async function renewIfSucceeded(entry, req, res, deps, log) {
+  if (entry.options.auth !== "user" || req.core.session === undefined) return;
+  if (res.statusCode >= 400) return;
+  try {
+    await deps.sessions.renewSession({
+      sessionId: req.core.session.sessionId,
+      idleSeconds: deps.sessionIdleSeconds,
+      lastSeenIp: req.core.clientIp
+    });
+  } catch (error) {
+    // The response is already written. A failure here costs one minute of idle
+    // window, and turning a successful request into a 500 because of it would be
+    // strictly worse.
+    //
+    // NOT req.core.logExtra. Step 14 runs after the handler resolved, and the
+    // access line is assembled inside res.on("finish"), which has already fired
+    // and already spread logExtra -- a write there is discarded unread, and the
+    // renewal failure would be invisible everywhere. So this is a second line for
+    // the same request, in the shape of the error tail's, and `level` is what keeps
+    // the access log one line per request.
+    log(
+      JSON.stringify({
+        level: "error",
+        requestId: req.core.requestId,
+        route: req.core.routePattern,
+        status: res.statusCode,
+        message: `renewSession: ${String((error && error.message) || error)}`
+      })
+    );
+  }
+}
+
 function createApp(deps = {}) {
   validateRouteTable();
 
@@ -260,12 +401,17 @@ function createApp(deps = {}) {
   for (const entry of routes) {
     app[entry.method.toLowerCase()](entry.path, (req, res, next) => {
       req.core.routePattern = entry.path;
-      try {
-        const result = entry.handler(req, res);
-        if (result && typeof result.then === "function") result.then(undefined, next);
-      } catch (error) {
-        next(error);
-      }
+      // async, because steps 5 and 14 both await. The whole body is one promise
+      // chain so a rejection anywhere reaches next() and the error tail, which is
+      // the only thing that may build a response from an exception.
+      (async () => {
+        if (!(await runPipeline(entry, req, res, deps))) return;
+        await entry.handler(req, res);
+        // `log`, not `deps.log`: this loop already sits inside createApp, one scope
+        // below the `const log = typeof deps.log === "function" ? ... ` normalisation,
+        // and that default is the only reason a normal boot logs at all.
+        await renewIfSucceeded(entry, req, res, deps, log);
+      })().catch(next);
     });
   }
 

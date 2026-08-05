@@ -287,7 +287,7 @@ function captureLog() {
 }
 
 test("GET dispatches through the table and carries the base headers", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     const response = await fetch(`${base}/__probe/ok`);
 
     assert.equal(response.status, 200);
@@ -298,7 +298,7 @@ test("GET dispatches through the table and carries the base headers", async () =
 });
 
 test("HEAD resolves through the same table as GET, with the body stripped", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     const response = await fetch(`${base}/__probe/ok`, { method: "HEAD" });
 
     assert.equal(response.status, 200, "the wget --spider healthcheck issues HEAD");
@@ -308,14 +308,14 @@ test("HEAD resolves through the same table as GET, with the body stripped", asyn
 });
 
 test("a path parameter reaches the handler", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     const response = await fetch(`${base}/__probe/items/abc123`);
     assert.deepEqual(await response.json(), { itemId: "abc123" });
   });
 });
 
 test("an unregistered method on a known path is 405 with Allow, and HEAD counts as GET", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     for (const method of ["DELETE", "PATCH", "OPTIONS"]) {
       const response = await fetch(`${base}/__probe/ok`, { method });
       assert.equal(response.status, 405, method);
@@ -328,7 +328,7 @@ test("an unregistered method on a known path is 405 with Allow, and HEAD counts 
 });
 
 test("an unknown path is 404 not_found with an 8-character requestId", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     const response = await fetch(`${base}/__probe/nowhere`);
 
     assert.equal(response.status, 404);
@@ -340,7 +340,7 @@ test("an unknown path is 404 not_found with an 8-character requestId", async () 
 });
 
 test("a throwing handler becomes an opaque 500 that leaks no driver text", async () => {
-  await withServer({ log: captureLog() }, async (base) => {
+  await withServer({ log: captureLog(), trustedProxyHops: 0 }, async (base) => {
     const response = await fetch(`${base}/__probe/boom`);
 
     assert.equal(response.status, 500);
@@ -352,7 +352,7 @@ test("a throwing handler becomes an opaque 500 that leaks no driver text", async
 
 test("the request log records the route pattern, never the raw path or query string", async () => {
   const log = captureLog();
-  await withServer({ log }, async (base) => {
+  await withServer({ log, trustedProxyHops: 0 }, async (base) => {
     await fetch(`${base}/__probe/items/abc123?token=leaked-secret`);
   });
 
@@ -373,7 +373,7 @@ test("the request log records the route pattern, never the raw path or query str
 test("the logged requestId is the one the client was given", async () => {
   const log = captureLog();
   let seen;
-  await withServer({ log }, async (base) => {
+  await withServer({ log, trustedProxyHops: 0 }, async (base) => {
     seen = (await (await fetch(`${base}/__probe/nowhere`)).json()).error.requestId;
   });
 
