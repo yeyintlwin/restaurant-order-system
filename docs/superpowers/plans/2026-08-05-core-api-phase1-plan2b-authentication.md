@@ -1798,7 +1798,7 @@ times.
 
 **Needs a database.** Export `CORE_API_TEST_DATABASE_URL` first.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/auth-users.test.js`:
 
@@ -2045,7 +2045,7 @@ test("teardown", { skip }, async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/auth-users.test.js
@@ -2053,7 +2053,7 @@ node --test apps/core-api/test/auth-users.test.js
 
 Expected: FAIL — `Cannot find module '../repositories/auth/users'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/repositories/auth/users.js`:
 
@@ -2357,7 +2357,7 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/auth-users.test.js apps/core-api/test/source-structure.test.js
@@ -2367,7 +2367,7 @@ Expected: both pass. **`source-structure.test.js` is not optional here** — it 
 the only thing that catches a callback named `client`, and C4's allowlist already
 names this file so nothing else would.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/repositories/auth/users.js apps/core-api/test/auth-users.test.js
