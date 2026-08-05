@@ -4142,7 +4142,7 @@ correct at three, so nothing about it changes here. That edit is why
 `git add` — an earlier draft named the file here and nowhere else, which is how a
 file gets edited and then left out of the commit.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/auth-routes.test.js`:
 
@@ -4513,7 +4513,7 @@ test("the origin-gated set is derived and pinned, so a new public POST cannot sk
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js
@@ -4530,7 +4530,7 @@ node --test apps/core-api/test/deploy-config.test.js
 Expected: **PASS**, because `http/routes/auth.js` does not exist yet. It goes red in
 Step 3 and comes back in Step 4. That sequence is the tripwire working.
 
-- [ ] **Step 3: Write the route**
+- [x] **Step 3: Write the route**
 
 Create `apps/core-api/http/routes/auth.js`:
 
@@ -4807,7 +4807,7 @@ then inside the `createApp({ … })` call:
     users: options.users || usersRepository,
 ```
 
-- [ ] **Step 4: Move the deploy tripwire, in this same commit**
+- [x] **Step 4: Move the deploy tripwire, in this same commit**
 
 **(a)** In `.github/workflows/deploy.yml`, block 4. Find it with
 `grep -n "xff-probe@invalid.test" .github/workflows/deploy.yml`.
@@ -4928,7 +4928,7 @@ Then **delete the `routesDir` loop entirely** — the whole `const routesDir = �
 through its closing brace. It existed for exactly one purpose, to make this commit
 impossible to forget, and it has now done it. Leaving it in place fails forever.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js \
@@ -4944,7 +4944,7 @@ what the deploy asserts:
 npm test
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/core-api/http/routes/auth.js apps/core-api/test/auth-routes.test.js \

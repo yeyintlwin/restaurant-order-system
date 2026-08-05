@@ -30,10 +30,27 @@ test("rule 1: every entry declares one of the three auth modes", () => {
 test("rule 2: the public set is exactly the Plan 1 set", () => {
   const publicKeys = new Set(entries.filter((entry) => entry.options.auth === "public").map((entry) => entry.key));
 
-  // Set EQUALITY, not containment: adding a fifth fails and so does removing one.
-  // Plan 2 adds "POST /api/admin/auth/login" and Plan 3 adds "POST /api/terminal/pair" here,
-  // reaching the settled four of spec §6.1. Widen this literal in the same commit as the route.
-  assert.deepEqual(publicKeys, new Set(["GET /health", "GET /health/ready"]));
+  // Set EQUALITY, not containment: adding a fourth fails and so does removing one.
+  // Three of the eight that identity spec 6.2 enumerates. The next five are Plan 2d's
+  // recovery routes; POST /api/terminal/pair makes nine and arrives with the terminal
+  // plan. Widen this literal in the same commit as the route, never ahead of it.
+  assert.deepEqual(
+    publicKeys,
+    new Set(["GET /health", "GET /health/ready", "POST /api/admin/auth/login"])
+  );
+});
+
+test("the origin-gated set is derived and pinned, so a new public POST cannot skip the gate", () => {
+  const { requiresOriginCheck } = require("../http/csrf");
+  const gated = new Set(entries.filter(requiresOriginCheck).map((entry) => entry.key));
+
+  // Identity spec 6.3's amended rule, asserted as a CENSUS rather than declared as a
+  // route option: 8.5 is exactly ten rules and adding an `origin:` option would be a
+  // design change rather than a repair. Plan 2d adds forgot-password, reset-password
+  // and verify-email; the auth routes below arrive across Tasks 12-15.
+  assert.deepEqual(gated, new Set([
+    "POST /api/admin/auth/login"
+  ]));
 });
 
 test("rule 3: neither settled must-change-password exemption is declared before its route exists", () => {

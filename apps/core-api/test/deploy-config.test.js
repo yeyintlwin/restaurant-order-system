@@ -736,8 +736,8 @@ test("deploy heredoc probes the login path before it exhausts the limit_req buck
 
   // The probe asserts on the RESPONSE. A `curl -fsS … || true` proves nothing at all.
   assert.match(workflow, /-H 'X-Forwarded-For: 203\.0\.113\.99'/);
-  assert.match(workflow, /test "\$probe_status" = "404"/);
-  assert.match(workflow, /grep -q '"code":"not_found"' \/tmp\/xff-probe\.body/);
+  assert.match(workflow, /test "\$probe_status" = "401"/);
+  assert.match(workflow, /grep -q '"code":"invalid_credentials"' \/tmp\/xff-probe\.body/);
   assert.doesNotMatch(workflow, /xff-probe@invalid\.test[^\n]*\|\| true/);
 
   // Read the RUNNING PROCESS, not the project files. The `exec … printenv` form echoes
@@ -757,29 +757,20 @@ test("deploy heredoc probes the login path before it exhausts the limit_req buck
     );
   }
 
-  // The forgeability half needs Plan 2's auth route and audit writer. The marker is what
-  // stops it from being forgotten, and it has a defined removal trigger.
-  assert.match(workflow, /PLAN 2: restore the full forgeability assertion here/);
+  // The forgeability half, which used to be a PLAN 2 marker. All three assertions,
+  // because each catches a different wrong answer: no row means the probe never
+  // reached core-api, 203.0.113.99 means the header is forgeable, and null means the
+  // derivation collapsed into the shared "unknown" bucket.
   assert.match(workflow, /detail->>'email' = 'xff-probe@invalid\.test'/);
+  assert.match(workflow, /test -n "\$probe"/);
+  assert.match(workflow, /test "\$probe" != "203\.0\.113\.99"/);
+  assert.match(workflow, /test "\$probe" != "null"/);
+  assert.doesNotMatch(workflow, /PLAN 2: restore the full forgeability assertion/);
 
   // The burst itself ships in full today: nginx applies limit_req before proxying, so
   // the 429s appear whether or not the route exists.
   assert.match(workflow, /for n in \$\(seq 1 20\)/);
   assert.match(workflow, /echo "\$codes" \| grep -q 429/);
-
-  // The 404 expectation must break HERE, in CI, and not at 22:00 on the box after the
-  // migration has already applied.
-  const routesDir = path.join(__dirname, "..", "http", "routes");
-  for (const entry of fs.readdirSync(routesDir)) {
-    if (!entry.endsWith(".js")) continue;
-    const source = fs
-      .readFileSync(path.join(routesDir, entry), "utf8")
-      .replace(/\r\n/g, "\n");
-    assert.ok(
-      !source.includes('"/api/admin/auth/login"'),
-      `http/routes/${entry} registers /api/admin/auth/login, so the deploy's block 4 probe now gets 401 and aborts the deploy AFTER the migration applied. In the same commit that registers the route: change block 4's expected status from 404 to 401, restore the audit_events forgeability assertion, delete the PLAN 2 marker.`,
-    );
-  }
 });
 
 test("deploy heredoc makes a silent backup failure a red build", () => {

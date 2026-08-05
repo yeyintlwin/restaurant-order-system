@@ -86,7 +86,10 @@ function listRoutes() {
 
 // Spec §8.5 rules 1, 4, 5 and 8 — the ones that are invariants of any table and hold with only
 // health registered. Deliberately NOT here:
-//   rule 2  (the public set equals the settled four) and rule 3 (the exempt set) — a census at
+//   rule 2  (the public set is three of the eight identity spec §6.2 enumerates — eight once
+//           Plan 2d adds forgot-password, reset-password, verify-email and the two GET landing
+//           pages, nine when the terminal plan adds POST /api/terminal/pair) and rule 3 (the
+//           exempt set) — a census at
 //           boot makes the service un-bootable at every intermediate commit; both live in
 //           route-auth.test.js, which asserts set EQUALITY and so fails on an addition too.
 //           Rule 4's audit-vocabulary membership (§5.9) and the §5.7 limiter roster check

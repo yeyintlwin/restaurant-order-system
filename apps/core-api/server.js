@@ -19,12 +19,14 @@ const { createSemaphore } = require("./lib/semaphore");
 const { createRateLimiter } = require("./lib/rate-limit");
 const sessionsRepository = require("./repositories/auth/sessions");
 const scopesRepository = require("./repositories/auth/scope-materialize");
+const usersRepository = require("./repositories/auth/users");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
 // module that exists but is never required cannot ship as a silently unserved route.
 require("./http/routes/health");
 require("./http/routes/table-displays");
+require("./http/routes/auth");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -110,6 +112,7 @@ async function start(options = {}) {
     // 503 rather than queueing -- "a lengthening queue converts a CPU limit into a
     // timeout storm". ONE semaphore for the whole process: two would be two limits.
     scryptSemaphore: options.scryptSemaphore || createSemaphore({ slots: config.scryptSlots }),
+    users: options.users || usersRepository,
     sessions: options.sessions || sessionsRepository,
     scopes: options.scopes || scopesRepository
   });
