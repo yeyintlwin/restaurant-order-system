@@ -478,10 +478,11 @@ used to read *"the literal 'the settled four' is written in three places and all
 three move together: `route-auth.test.js:33-36`, `router.js:75`, and the parent
 spec at §6.1 and §8.5 rule 2."* All three moved, each in the same commit as the
 route that forced it. `grep -rn "the settled four" apps docs` now returns **no
-source file, no test and no spec** — only the two plan documents that predate the
-move (`…plan1-foundation.md`, which wrote the literal, and
-`…plan2b-authentication.md`, which instructed its removal), and those are execution
-records rather than live claims.
+source file and no test** — only plan documents and this paragraph. The plans
+(`…plan1-foundation.md`, which wrote the literal, and `…plan2b-authentication.md`,
+which instructed its removal) are execution records rather than live claims, and
+the two hits in this section are the quotation being corrected. A `grep` that
+returns zero would mean this correction had been deleted too.
 
 **Where the public set is pinned now:**
 
@@ -707,8 +708,10 @@ forever and green is the wrong colour for a claim nobody checks.
 
 **Read the Status column, not the Edits column.** The edit counts were estimates
 made before execution and two are known wrong: `migrate.test.js` was five and is
-six (`assert.equal(ledger.rowCount, 1)` is the sixth and is not an array literal,
-so a grep for the pinned filename finds five of six), and
+six — the sixth is the ledger row-count assertion, which is not an array literal,
+so a grep for the pinned filename finds five of six. It read
+`assert.equal(ledger.rowCount, 1)` when this was written and reads `2` now, which
+is the point: cite it by what it asserts, never by its value. Likewise
 `schema-invariants.test.js` named three files when the invariant lists live in
 six — `infra/restore-drill.sh` hand-mirrors S1 in SQL, and with `0002` applied it
 would have raised on a **good** restore.

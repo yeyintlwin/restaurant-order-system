@@ -97,7 +97,10 @@ function listRoutes() {
 //           are both HERE, above, as of Plan 2b: they read lib/audit-vocabulary.js's
 //           AUDIT_ACTIONS and lib/rate-limit.js's LIMITERS, which are the one place each
 //           list is written.
-//   rule 6  (terminal-administration nesting) and rule 7 (a Location emitter has a GET) — Plan 2.
+//   rule 6  (terminal-administration nesting) — the terminal plan, which registers the
+//           /api/admin/shops/:shopId/terminals tree the rule is about.
+//   rule 7  (a Location emitter has a GET) — Plan 2c, which registers the first route that
+//           emits one. Plan 2b's six routes emit no Location at all.
 //   rule 9  is dispatch behaviour, in createApp(). Rule 10 is a test assertion.
 // Takes `entries` as a parameter so the rules can be unit-tested on synthetic tables.
 function validateRouteTable(entries = routes) {
@@ -383,7 +386,9 @@ function createApp(deps = {}) {
   // handler disagree about what is a route.
   app.set("strict routing", true);
   // Deliberately NOT app.set("trust proxy"): the client IP is derived explicitly from
-  // TRUSTED_PROXY_HOPS in lib/client-ip.js (Plan 2). Two derivation paths is one too many.
+  // TRUSTED_PROXY_HOPS in lib/client-ip.js. Two derivation paths is one too many, and
+  // express's would be the one nothing tests -- runPipeline calls deriveClientIp at step
+  // 4a on every route, and lib/client-ip.js throws rather than guessing.
 
   // Pipeline step 1 (spec §6.3.5): requestId first. The security headers and Cache-Control are
   // applied by http/respond.js on the way out, which covers every response including the tails.

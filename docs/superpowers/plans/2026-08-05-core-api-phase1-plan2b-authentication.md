@@ -68,8 +68,15 @@ references (§5.1, §6.3.5, §8.5) point at the **parent**,
 
 ## Execution log
 
-**Status: 17 of 17 tasks done. This plan is COMPLETE. Next is Phase 3 (slice §11.8
-reorders 2b → Phase 3 → 2c → 2d).**
+**Status: 17 of 17 tasks done. This plan is COMPLETE in code. Next is Phase 3
+(slice §11.8 reorders 2b → Phase 3 → 2c → 2d).**
+
+**One checkbox is deliberately unticked: Task 16 Step 4b**, the manual confirmation
+that the bootstrap CLI's password prompt does not echo. Everything around it was
+proven automatically and Step 4b lists exactly what; the echo itself needs a human
+at a real terminal, because a pipe has no echo to switch off. Parent spec §12's
+matching acceptance box is unticked for the same reason. Nothing depends on it —
+the code is shipped and green — but do not tick either from a script.
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -6787,14 +6794,38 @@ Expected: all pass. `deploy-config.test.js` matters because the Dockerfile's sin
 `COPY` is what carries `scripts/` into the image — its comment already says so — and
 this is the first script the runbook tells an operator to run inside the container.
 
-Then, with a database, run it end to end. This is the only task in the plan whose
-proof is a human at a terminal:
+- [ ] **Step 4b: MANUAL — the one check no test in this repository can make**
+
+> **This step has its own checkbox on purpose, and it is deliberately unticked.**
+> It used to sit inside Step 4, where Step 4's tick read as covering it. It does
+> not. Tick this only after a human has actually done it.
 
 ```bash
 node apps/core-api/scripts/create-platform-admin.js ops@example.test
 # type a password twice; it must not echo
 # then, in another shell, curl the login route and expect 200
 ```
+
+**What was already proven automatically, so that this step is about one thing
+rather than four.** Driving the CLI as a child process with `isTTY` faked and
+`setRawMode` stubbed — the stub feeding the password only in response to the real
+prompt bytes, so `promptSecret`'s CR handling is genuinely exercised — established
+against throwaway databases that: the CLI creates the admin and exits 0; a second
+run with the **same** address is refused; a second run with a **different** address
+is refused; deleting the `platform_admin` row and re-running is **still** refused
+(spec §12's monotonicity checkbox); exactly one `platform.admin_created` audit row
+exists with `actor_kind = 'system'`; a fresh empty database logs the
+no-administrator WARNING and **still listens**, answering `/health/ready` with 200;
+and a real `POST /api/admin/auth/login` afterwards returns 200 with
+`Set-Cookie: __Host-core_session=…; Path=/; Secure; HttpOnly; SameSite=Lax`.
+
+**The single unproven line is `# type a password twice; it must not echo`.** A pipe
+has no echo to switch off, so no `spawnSync` test can stand in for a terminal. The
+`setRawMode(true)` call is on the exercised path, so the residual risk is narrow:
+that a real terminal disagrees with Node's raw-mode contract.
+
+Parent spec §12's matching acceptance box is **also unticked**, for the same reason
+and by the same rule — do not tick either from a script.
 
 - [x] **Step 5: Commit**
 

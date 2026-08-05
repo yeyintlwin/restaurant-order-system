@@ -322,8 +322,10 @@ END $$;
 SQL
 
 # 8. Row counts. query_to_xml runs a real count(*) per table, so this self-maintains as
-#    Plan 2 adds tables. n_live_tup would read 0 everywhere on a freshly restored database
-#    that has never been ANALYZEd -- reporting an empty restore as a healthy one.
+#    later migrations add tables -- 0002_identity added user_email_tokens and this needed
+#    no edit, which is the claim being made rather than a prediction about it.
+#    n_live_tup would read 0 everywhere on a freshly restored database that has never been
+#    ANALYZEd -- reporting an empty restore as a healthy one.
 psql_drill -d "$DRILL_DB" -c "
   SELECT c.relname AS table_name,
          (xpath('/row/c/text()',

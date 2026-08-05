@@ -465,7 +465,12 @@ test("the docs state what the backup does and does not protect, and how the gate
   // Deploy #1's pre-deploy dump is a dump of an empty core and cannot be drilled.
   assert.match(doc, /deploy #1[\s\S]{0,240}empty/i);
 
-  assert.match(doc, /AUDIT_RETENTION_DAYS[\s\S]{0,120}Plan 2/);
+  // `Plan 2d`, not the bare `Plan 2` this carried until Plan 2b finished. The old pattern
+  // had no word boundary, so it went on matching after the runbook was retargeted -- it
+  // could not tell "still owed by 2d" from "said Plan 2 before the split and nobody
+  // looked". Naming the plan is what makes it go red on the right day: when 2d ships
+  // sweep-expired.js and the sentence stops deferring anything.
+  assert.match(doc, /AUDIT_RETENTION_DAYS[\s\S]{0,120}Plan 2d/);
 });
 
 test("infra/README.md carries the pre-cutover checklist, drill included", () => {
