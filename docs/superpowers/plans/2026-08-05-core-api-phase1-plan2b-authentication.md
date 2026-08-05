@@ -257,7 +257,7 @@ is inert. §5.7 also says the roster is *"defined once here and nowhere else"* a
 enumerates all seven as settled. So all seven land now, and Plan 2d widens it to
 ten.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/rate-limit.test.js`:
 
@@ -449,7 +449,7 @@ test("createRateLimiter refuses to read an ambient clock", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/rate-limit.test.js
@@ -457,7 +457,7 @@ node --test apps/core-api/test/rate-limit.test.js
 
 Expected: FAIL — `Cannot find module '../lib/rate-limit'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/lib/rate-limit.js`:
 
@@ -622,7 +622,7 @@ function createRateLimiter({ now, maxKeys = MAX_TRACKED_KEYS } = {}) {
 module.exports = { LIMITERS, createRateLimiter, MAX_TRACKED_KEYS };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/rate-limit.test.js apps/core-api/test/source-structure.test.js
@@ -634,7 +634,7 @@ green, and because the walker floor is a **minimum** — 26 scanned files clears
 floor of 25, so nothing breaks here. The floor is raised to its new exact value in
 Task 17.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/rate-limit.js apps/core-api/test/rate-limit.test.js
@@ -1125,8 +1125,12 @@ test("TRUSTED_PROXY_HOPS equals the proxy depth infra/nginx actually deploys", (
   // whose real client is 1.2.3.4, so the module has nothing to assert about its
   // own input. Two locally-correct files, one wrong pair -- which is the shape the
   // trailing-slash bypass had, and the technique that caught that one is this.
-  const apiConf = readText(repoRoot, "infra", "nginx", "api.conf");
-  const snippet = readText(repoRoot, "infra", "nginx", "core-api-proxy.conf");
+  //
+  // proxySnippet(), not readText: the snippet's header comment NAMES
+  // $proxy_add_x_forwarded_for to explain it, above the one directive that sets
+  // it, so a raw read counts two appends and this assertion is red against a tree
+  // that is correct. The comment stripper is load-bearing, not tidiness.
+  const snippet = proxySnippet();
 
   // (1) Exactly one hop is APPENDED. $proxy_add_x_forwarded_for is the incoming
   //     header with $remote_addr appended on the right, so one occurrence of it
@@ -1135,24 +1139,23 @@ test("TRUSTED_PROXY_HOPS equals the proxy depth infra/nginx actually deploys", (
   const appends = (snippet.match(/\$proxy_add_x_forwarded_for/g) || []).length;
   assert.equal(appends, 1, "core-api-proxy.conf must append X-Forwarded-For exactly once");
 
-  // (2) There is no SECOND proxy layer. api.conf never proxy_passes directly (a
-  //     bare proxy_pass would set no X-Forwarded-For at all and pass the client's
-  //     own header straight through), and the snippet's single proxy_pass names
-  //     the upstream group rather than another nginx.
-  assert.doesNotMatch(apiConf, /proxy_pass/, "api.conf must proxy only through the snippet");
+  // (2) There is no SECOND proxy layer: the snippet's single proxy_pass names the
+  //     upstream group rather than another nginx.
   assert.equal((snippet.match(/^[ \t]*proxy_pass\s/gm) || []).length, 1);
   assert.match(snippet, /^proxy_pass http:\/\/core_api;$/m);
 
-  // (3) Nothing rewrites $remote_addr before the chain is built. With
-  //     real_ip_header set, a forged header gets appended to ITSELF and a
-  //     one-from-the-right read returns the attacker's value -- so the deployed
-  //     depth would no longer be derivable from the two facts above.
-  for (const [label, text] of [["api.conf", apiConf], ["core-api-proxy.conf", snippet]]) {
-    assert.doesNotMatch(text, /\breal_ip_header\b/, `${label} carries real_ip_header`);
-    assert.doesNotMatch(text, /\bset_real_ip_from\b/, `${label} carries set_real_ip_from`);
-  }
+  // The two remaining premises are asserted by their own tests in this file and
+  // are deliberately NOT restated here -- restating them is how a copy drifts from
+  // the original, and the copy is the one that gets weakened. "every location that
+  // forwards to core-api does so through the proxy snippet" pins api.conf's zero
+  // proxy_pass (a bare proxy_pass would set no X-Forwarded-For at all and pass the
+  // client's own header straight through); "no real_ip directive can rewrite
+  // $remote_addr before the XFF chain is built" pins the real_ip trio --
+  // real_ip_recursive included, which a hand-copied pair drops -- and with
+  // real_ip_header set a forged header gets appended to ITSELF, so the deployed
+  // depth would no longer be derivable from the count above at all.
 
-  // The deployed depth, DERIVED from the three facts rather than restated.
+  // The deployed depth, DERIVED from those facts rather than restated.
   const deployedProxyDepth = appends;
 
   // ...and the value the container will actually run with. Read out of the real
@@ -1184,9 +1187,16 @@ test("the hop-count assertion is not vacuous: it moves when either side moves", 
 });
 ```
 
-> `readText` and `repoRoot` already exist at the top of `nginx-config.test.js`.
-> Confirm with `grep -n "function readText\|const repoRoot" apps/core-api/test/nginx-config.test.js`
-> before pasting; if the helper is named differently, use the file's own.
+> `apiConf()` and `proxySnippet()` already exist at the top of
+> `nginx-config.test.js`, and both run the file through `stripComments` before
+> returning it. Confirm with
+> `grep -n "function apiConf\|function proxySnippet\|function stripComments" apps/core-api/test/nginx-config.test.js`
+> before pasting; if the helpers are named differently, use the file's own — but
+> use the **stripping** ones, never `readText` directly. If a later edit needs
+> api.conf here, do not name the local `apiConf`: `const apiConf = apiConf();` is a
+> TDZ `ReferenceError` against the module-level `function apiConf()`, and the error
+> it throws names the variable, not the shadowing, so it reads like a missing
+> helper.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1200,11 +1210,40 @@ Expected: FAIL — `docker-compose.yml sets TRUSTED_PROXY_HOPS=2 but infra/nginx
 deploys 1 proxy hop(s)`. **Revert the compose edit immediately** — it is a
 production file and `config.test.js` reads it too.
 
+If instead the run dies on `appends` with `2 !== 1`, the reads were pasted as
+`readText` rather than the stripping accessors, and this step proves nothing:
+`appends` would be 2 for the header comment, the run would never reach
+`composeEnvironment`, and if it did, a mutated compose of `2` would compare 2 to 2
+and **pass**. The proof that the assertion is not vacuous only exists once the
+stripping is in place.
+
 - [ ] **Step 3: Implement**
 
-Nothing to implement. The assertion passes against the tree as it stands; Step 2 is
-the proof it is not vacuous. This is the one task in this plan whose deliverable is
-the test.
+Nothing to implement. The assertion passes against the tree as it stands **because
+every read goes through the comment strippers**; Step 2 is the proof it is not
+vacuous. This is the one task in this plan whose deliverable is the test.
+
+The stripping is the whole reason this task can be a no-op. Both nginx files
+document the very strings the assertions count:
+
+```bash
+grep -n 'proxy_add_x_forwarded_for' infra/nginx/core-api-proxy.conf
+grep -n 'real_ip_header' infra/nginx/api.conf
+```
+
+The first prints **two** lines — a header comment explaining the variable, and the
+one `proxy_set_header` that uses it — so a raw read makes `appends` 2 and the
+assertion fails `2 !== 1` against a tree that is correct. The second prints a
+comment reading `# NO real_ip_header AND NO set_real_ip_from ANYWHERE IN THIS
+FILE.`, which is a raw match for both directives the sibling real_ip test forbids.
+
+That leaves a repair that must not be taken. **Nothing in the suite pins the text of
+those warning comments**, so an executor who sees the red and deletes them turns the
+suite green and leaves no detector behind: the next person to add a second proxy
+layer, or to reach for `real_ip_header` because a header arrives wrong, gets no
+failure and no comment telling them why they must not. The comments are the
+documentation the assertions exist to keep honest; the fix is always on the reading
+side.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -3228,13 +3267,41 @@ This is the task that can break the one working route in the service. Read
 - Modify: `apps/core-api/http/router.js`
 - Modify: `apps/core-api/server.js`
 - Modify: `apps/core-api/test/server-bootstrap.test.js`
+- Modify: `apps/core-api/test/health.test.js`
+- Modify: `apps/core-api/test/router-registration.test.js`
 - Create: `apps/core-api/test/pipeline.test.js`
 
-**The mirrors.** `server-bootstrap.test.js` asserts `start()`'s collaborator order
-with a `deepEqual` on an array of strings, so any new step in `start()` moves it:
+**The mirrors.** Two of them, and the second is the one this task creates: every
+shipped harness that builds a `deps` object by hand becomes a mirror of
+`runPipeline`, because step 4a runs on **every** route before the auth branch.
+
+**(1)** `server-bootstrap.test.js` asserts `start()`'s collaborator order with a
+`deepEqual` on an array of strings:
 
 ```bash
 grep -n "deepEqual(calls" apps/core-api/test/server-bootstrap.test.js
+```
+
+That array does **not** move under this task: the new collaborators go into the
+`createApp` **argument**, not into `start()`'s ordered section. What does move is
+the frozen `CONFIG` at the top of the same file — see Step 3(c). Its failure is a
+thrown `Error` from `createSemaphore`, never a `deepEqual` mismatch, so a reader
+who takes Step 4's troubleshooting note as the only symptom will look in the wrong
+place.
+
+**(2)** The `deps` literals in `health.test.js` and `router-registration.test.js`,
+which predate `lib/client-ip.js` and carry no `trustedProxyHops`:
+
+```bash
+grep -n "log: captureLog()\|checkReadiness:" apps/core-api/test/health.test.js apps/core-api/test/router-registration.test.js
+```
+
+See Step 3(d). `apps/core-api/test/table-displays.test.js` is the precedent — it
+already carries `trustedProxyHops: 0` in its harness, which is the only reason that
+suite survives this task:
+
+```bash
+grep -rn "trustedProxyHops" apps/core-api/test/
 ```
 
 - [ ] **Step 1: Write the failing test**
@@ -3725,6 +3792,64 @@ and inside `start()`, in the `createApp({ … })` call, add:
     scopes: options.scopes || scopesRepository,
 ```
 
+Then add **`scryptSlots: 2`** to the frozen `CONFIG` at the top of
+`apps/core-api/test/server-bootstrap.test.js` — `createSemaphore` refuses a
+non-integer `slots` and that fixture states seven keys, none of them this one, so
+the one test that reaches `createApp` dies on a thrown `Error` before it can assert
+anything. `2` is `config.js`'s own `SCRYPT_SLOTS` default. **Add only that key.**
+`createApp` validates no deps at all, so `apiPublicOrigin`, the `session*`, the
+`*Rate*` keys and `loginTimeBudgetMs` all arrive as `undefined` and nothing reads
+them on a boot that never serves a request. Adding the rest of the block above to
+make the fixture "complete" states a requirement the code does not have, and hands
+the next person to touch `config.js` a list to keep in sync instead of one key.
+
+**Do not write `config.scryptSlots ?? 2` in `server.js`.** That plants a second
+default for a value `config.js` already bounds to 1–8 — *"above 8 the memory-hard
+parameters put the process inside OOM-killer range"* — in a file that cannot
+enforce the bound, and the two disagree the first time the bound moves. The fixture
+is what is wrong, not the wiring.
+
+**(d)** Add `trustedProxyHops: 0` to every `deps` object built by hand in
+`apps/core-api/test/health.test.js` and
+`apps/core-api/test/router-registration.test.js`.
+
+`runPipeline` calls `clientAddressOf(req, deps.trustedProxyHops)` at step 4a — on
+**every** route, before the `auth === "user"` branch — and `lib/client-ip.js` throws
+on anything that is not a non-negative integer, `undefined` included. Both files
+were written before `lib/client-ip.js` existed and neither states the key, so both
+go red the moment this task lands:
+
+- `health.test.js` — **all six** tests. Four `deps` sites: the inline literal in
+  "GET /health is 200", the inline literal in the `HEAD /health` test, the
+  `readyDeps()` helper (which covers three tests), and the inline literal in "a
+  probe that throws". The 503 cases collapse to 500, so the symptom is not even the
+  status the test names.
+- `router-registration.test.js` — **four of eight**, at the `withServer({ log: … })`
+  literals. The 405 and the two 404 cases are unaffected because the tail is an
+  `app.use` registered after the routes and never enters the dispatch wrapper, and
+  `/__probe/boom` passes **for the wrong reason**: it already expects
+  `500 internal_error`, and its `doesNotMatch` on leaked internals does not list
+  `deriveClientIp`.
+
+Give the key to the ones that already pass as well. A fixture that omits it in four
+places and states it in four others says the pipeline runs on some routes, and the
+next person to add a test copies whichever literal is nearest.
+
+**Do not write `deps.trustedProxyHops ?? 0` — or a `Number.isInteger()` guard — in
+`runPipeline`.** Four shipped sites say the throw is the point:
+`test/client-ip.test.js` pins `undefined` among the must-throw inputs;
+`config.js` refuses to default it at all in production because *"a wrong hop count
+fails silently in both directions"*; `http/router.js` says *"Two derivation paths
+is one too many"*; and `http/routes/table-displays.js` passes `deps.trustedProxyHops`
+straight through, so it would keep throwing there whatever `runPipeline` did. The
+default would buy nothing except silence when a deps object is wired wrong — which
+is exactly the mistake these two files just made.
+
+Production is unaffected: `server.js` passes `config.trustedProxyHops` and
+`config.js` always yields an integer. This is a red suite, not a broken deploy — but
+it stays red under the full `npm test` this plan runs twice and under the test gate
+in `.github/workflows/deploy.yml`, so it blocks the commit either way.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
@@ -3735,15 +3860,29 @@ node --test apps/core-api/test/pipeline.test.js apps/core-api/test/table-display
 
 Expected: all pass. **`table-displays.test.js` is the one that matters** — it is
 the proof the pipeline did not 401 or 403 the only working authenticated route.
-If `server-bootstrap.test.js` fails on its `deepEqual(calls, …)`, the new
-collaborators were added to `start()`'s ordered section rather than to the
-`createApp` argument; move them.
+
+Three failures and what each one means:
+
+- `server-bootstrap.test.js` fails on its `deepEqual(calls, …)` — the new
+  collaborators were added to `start()`'s ordered section rather than to the
+  `createApp` argument; move them.
+- `server-bootstrap.test.js` fails with `createSemaphore: slots must be a positive
+  integer, got undefined` — Step 3(c)'s `scryptSlots: 2` did not reach the frozen
+  `CONFIG`. This is a thrown `Error`, not a `deepEqual` mismatch, so the bullet
+  above does not describe it and the collaborator order is not the problem.
+- A bare `500 !== 200` anywhere in `health.test.js` or `router-registration.test.js`
+  — the `deps` object for that test lacks `trustedProxyHops` (Step 3(d)). The
+  message says nothing because `captureLog()` swallows the log line the error tail
+  writes; read it with `log.raw()`, or run the one test with a real `console.log`
+  as `log`, and `deriveClientIp: trustedProxyHops must be a non-negative integer`
+  is sitting there.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/router.js apps/core-api/server.js \
-        apps/core-api/test/pipeline.test.js apps/core-api/test/server-bootstrap.test.js
+        apps/core-api/test/pipeline.test.js apps/core-api/test/server-bootstrap.test.js \
+        apps/core-api/test/health.test.js apps/core-api/test/router-registration.test.js
 git commit -m "feat(core-api): the 6.3.5 pipeline, inside the wrapper where 404 still beats 403"
 ```
 
@@ -3860,6 +3999,7 @@ without the deploy edit aborts a real deploy **after the migration has applied**
 - Create: `apps/core-api/http/routes/auth.js`
 - Create: `apps/core-api/test/auth-routes.test.js`
 - Modify: `apps/core-api/server.js`
+- Modify: `apps/core-api/http/router.js`
 - Modify: `apps/core-api/test/route-auth.test.js`
 - Modify: `.github/workflows/deploy.yml`
 - Modify: `apps/core-api/test/deploy-config.test.js`
@@ -3870,7 +4010,7 @@ without the deploy edit aborts a real deploy **after the migration has applied**
 grep -rn "GET /health/ready" apps/core-api/test/route-auth.test.js   # the public set
 grep -rn "ORIGIN_GATED_PUBLIC_KEYS" apps/core-api                    # Task 6's list, already correct
 grep -rn "xff-probe@invalid.test" .github/workflows apps/core-api    # the probe, both ends
-grep -rn "the settled four" apps/core-api docs                       # router.js:75 and two specs
+grep -rn "the settled four" apps/core-api docs                       # http/router.js and two specs
 ```
 
 `ORIGIN_GATED_PUBLIC_KEYS` already reads `["POST /api/admin/auth/login"]` — Task 6
@@ -3878,10 +4018,20 @@ wrote it that way on purpose, so it needs no edit here and the census in
 `route-auth.test.js` should already agree the moment the route registers. If it does
 not, the census is what is wrong.
 
-`router.js:75`'s comment and the two specs say *"the settled four"* about the public
-set. This plan takes it from two to **three**; it reaches four when Plan 2c or the
-terminal plan adds `POST /api/terminal/pair`. Update the comment to say three-of-four
-with the fourth named, rather than deleting the count.
+`http/router.js`'s comment and the two specs say *"the settled four"* about the public
+set. **"Four" was never right and this is not the plan that makes it wrong.** Identity
+slice §6.2 is titled *"The public set is eight"* and enumerates them; its §12 already
+carries the amendment row against parent §6.1. This plan takes the set from two to
+**three**; it reaches **eight** when Plan 2d adds `forgot-password`, `reset-password`,
+`verify-email`, `GET /admin/reset-password` and `GET /admin/verify-email`, and **nine**
+when the **terminal plan** — not Plan 2c, which registers tenant CRUD and adds nothing
+public — adds `POST /api/terminal/pair`. Update the comment to say three-of-eight with
+the growth named, rather than deleting the count: a count is what makes the `deepEqual`
+in `route-auth.test.js` legible, and the `deepEqual` itself is set equality and stays
+correct at three, so nothing about it changes here. That edit is why
+`apps/core-api/http/router.js` is in this task's Files list and in the Step 6
+`git add` — an earlier draft named the file here and nowhere else, which is how a
+file gets edited and then left out of the commit.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4496,7 +4646,52 @@ then inside the `createApp({ … })` call:
 **(a)** In `.github/workflows/deploy.yml`, block 4. Find it with
 `grep -n "xff-probe@invalid.test" .github/workflows/deploy.yml`.
 
-Change the two expectations:
+**Block 4's header comment is part of this edit, not a tidy-up for Task 17.** Three
+of its claims become false the moment the two expectations below change, and the
+worst of them is the paragraph declaring in capitals that NOTHING IN THIS BLOCK CAN
+FAIL BECAUSE THE HOP COUNT PRODUCES THE WRONG ADDRESS — after this step it would sit
+at the top of a block whose last three assertions exist for no other purpose than to
+fail on a wrong hop count, and it is the first thing anyone debugging a red deploy at
+22:00 will read.
+Two more: the header advertises *"the XFF assertion arrives in Plan 2"*, and the
+paragraph attributing the answer to core-api names the 404 tail's
+`{"error":{"code":"not_found"}}`, which is exactly the pair being changed. A fourth
+sentence in it is already false at HEAD — *"Plan 1 ships no login route, no
+`lib/client-ip.js` and no audit writer"* — both files exist
+(`apps/core-api/lib/client-ip.js`, `apps/core-api/repositories/auth/audit.js`).
+
+This cannot be deferred to Task 17: Task 17's greps carry `--include=*.md
+--include=*.js` and cannot match a `.yml` file, its Files list has no `.github/`
+path, and this plan's one-commit rule requires `deploy.yml` to move with the route
+anyway. Replace the header — from the `# ---- 4.` line through the line ending
+*"The behavioural assertion is Plan 2's."*, both ends found with
+`grep -n "LOGIN-PATH ROUTING PROBE\|behavioural assertion is Plan 2" .github/workflows/deploy.yml`
+— with:
+
+```sh
+          # ---- 4. LOGIN-PATH ROUTING PROBE, AND THE FORGEABILITY ASSERTION ----
+          # THIS MUST RUN BEFORE THE limit_req BURST IN BLOCK 5. Run after it and the
+          # burst has already exhausted the core_login bucket for this source address,
+          # so nginx sheds the probe, it never reaches core-api, and every assertion
+          # below passes vacuously.
+          #
+          # What the status pair proves: the login path resolves through the real TLS
+          # chain, nginx's `location = /api/admin/auth/login` includes the proxy snippet,
+          # and CORE-API ITSELF answered -- the route returns application/json
+          # {"error":{"code":"invalid_credentials",...}} for an address that does not
+          # exist, where an nginx-level 404 returns text/html and a dead upstream returns
+          # nginx's own 502 page.
+          #
+          # What the psql proves, and no file in this repository can prove about itself:
+          # that a client-sent X-Forwarded-For is NOT honoured. That 401 is a real login
+          # failure, so it writes an audit row, and the row carries the address the
+          # DEPLOYED chain derived rather than the one the header asked for. SO THIS
+          # BLOCK NOW FAILS WHEN THE HOP COUNT PRODUCES THE WRONG ADDRESS -- that is what
+          # the three tests after the psql are for, and the earlier `hops` check stays
+          # only because it names the variable's actual value in its message.
+```
+
+Then change the two expectations:
 
 ```sh
           test "$probe_status" = "401" || { echo "login probe: expected 401 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
@@ -4587,7 +4782,8 @@ npm test
 
 ```bash
 git add apps/core-api/http/routes/auth.js apps/core-api/test/auth-routes.test.js \
-        apps/core-api/server.js apps/core-api/test/route-auth.test.js \
+        apps/core-api/server.js apps/core-api/http/router.js \
+        apps/core-api/test/route-auth.test.js \
         .github/workflows/deploy.yml apps/core-api/test/deploy-config.test.js
 git commit -m "feat(core-api): sign in, and make the deploy assert that X-Forwarded-For is not forgeable"
 ```
@@ -4643,24 +4839,29 @@ pretending the count is exact.
 Add to `apps/core-api/test/auth-users.test.js`:
 
 ```js
-test("bumpSessionsValidFrom moves the lever and touches nothing else", async () => {
-  const { userId } = await seedUser();
+test("bumpSessionsValidFrom moves the lever and touches nothing else", { skip }, async () => {
+  const columns = "sessions_valid_from, failed_login_count, locked_until, password_hash";
+  const before = await db.unscoped(`SELECT ${columns} FROM users WHERE id = $1`, [IDS.userAStaff]);
+  await users.bumpSessionsValidFrom(IDS.userAStaff);
+  const after = await db.unscoped(`SELECT ${columns} FROM users WHERE id = $1`, [IDS.userAStaff]);
 
-  const before = await readUser(userId);
-  await users.bumpSessionsValidFrom(userId);
-  const after = await readUser(userId);
-
-  assert.ok(after.sessions_valid_from > before.sessions_valid_from);
+  assert.ok(after.rows[0].sessions_valid_from > before.rows[0].sessions_valid_from);
   // The login credential's columns are NOT this route's to write -- spec 5.8(a).
-  assert.equal(after.failed_login_count, before.failed_login_count);
-  assert.equal(after.locked_until?.getTime() ?? null, before.locked_until?.getTime() ?? null);
-  assert.equal(after.password_hash, before.password_hash);
+  assert.equal(after.rows[0].failed_login_count, before.rows[0].failed_login_count);
+  assert.equal(after.rows[0].locked_until?.getTime() ?? null, before.rows[0].locked_until?.getTime() ?? null);
+  assert.equal(after.rows[0].password_hash, before.rows[0].password_hash);
 });
 ```
 
-> `seedUser()` and `readUser()` are this file's existing helpers from Task 7. If they
-> are named differently there, use whatever Task 7 actually wrote — do not add a
-> second pair.
+Written in the shape Task 7 gave that file, because that file has no helpers: its
+`writePasswordHash` test is the template, every read there is a bare
+`await db.unscoped(…)`, and every test carries `{ skip }`. Both details are
+load-bearing rather than stylistic. Drop `{ skip }` and the file stops being
+skippable on a box with no database — it fails instead of standing down, which is the
+one thing `skipDatabaseTests()` exists to prevent. Drop the `.rows[0].` and the four
+assertions read properties off the result object rather than off the row: the first
+one fails as `undefined > undefined` against a perfectly correct repository function,
+and the other three go green against one that writes nothing at all.
 
 Add to `apps/core-api/test/auth-routes.test.js`:
 
@@ -4808,7 +5009,10 @@ node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users
 
 Expected: the route tests 404 (`not_found`) because none of the three paths is
 registered; the repository test fails with
-`users.bumpSessionsValidFrom is not a function`.
+`users.bumpSessionsValidFrom is not a function`, thrown from the line between the two
+reads. If it fails anywhere earlier than that line, the test is wrong and not the
+repository — the two `db.unscoped` reads and `IDS` are all Task 7's, and a
+`ReferenceError` there means a helper was invented rather than reused.
 
 - [ ] **Step 3: Implement**
 
@@ -6445,13 +6649,24 @@ markers with assertions on the claim that is now TRUE.*
 - Modify: `apps/core-api/README.md`
 - Modify: `apps/core-api/test/operations-docs.test.js`
 - Modify: `apps/core-api/test/source-structure.test.js`
+- Modify: `apps/core-api/test/deploy-config.test.js`
+- Modify: `apps/core-api/test/backup-restore.test.js`
 - Modify: `docs/superpowers/specs/2026-07-29-core-api-phase1-design.md`
 - Modify: `docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md`
 
-**The mirrors — run all four and reconcile every hit, not just the ones listed here:**
+**Two of those test files are here because Step 2 turns them red.** `operations-docs.test.js`
+is the file everyone remembers; `deploy-config.test.js` and `backup-restore.test.js` each
+carry one `assert.match` on a sentence Step 2 retires, and neither is found by the `Plan 2`
+mirror below — one of them matches the literal *"Ships in a later plan of this phase"*,
+which contains no `Plan 2` at all. Step 1 retargets all three files together, because a
+documentation edit that lands with the assertions untouched is a red suite blamed on the
+last thing committed rather than on the edit that caused it.
+
+**The mirrors — run all five and reconcile every hit, not just the ones listed here:**
 
 ```bash
 grep -rn "Plan 2" infra apps/core-api --include=*.md --include=*.js | grep -v node_modules
+grep -rn "Ships in a later plan" apps/core-api
 grep -rn "runs a forged-XFF probe as a gate" .
 grep -rn "the settled four\|exactly four entries" apps docs
 grep -rn "SOURCE_FILES.length >=" apps/core-api/test/source-structure.test.js
@@ -6461,6 +6676,21 @@ grep -rn "SOURCE_FILES.length >=" apps/core-api/test/source-structure.test.js
 sentence points at `scripts/sweep-expired.js`, which is **Plan 2d** and is not built
 here. Retarget that one to say `Plan 2d` rather than deleting it — "Plan 2" was
 unambiguous when it was written and stopped being so the day 2a shipped.
+
+**`scripts/set-password.js` and `scripts/unlock-account.js` get the same retarget, and
+this plan is what makes them urgent.** Neither file exists — `apps/core-api/scripts/`
+holds `reset-database.js`, `setup-template-db.js` and, after Task 16,
+`create-platform-admin.js`. Both are named as shipped levers in five places
+(`design.md` §7's file layout, `:1509`, §9.10, §10's Phase-1 recovery sentence, and
+§12's acceptance checkbox), and slice §11.1 calls `set-password.js` the remedy that
+"already exists". **Do not reword the two error messages Task 16 writes.** The name is
+pinned at all five spec sites, in Plan 5's image-contents rule, and in a live comment at
+`apps/core-api/test/deploy-config.test.js:63`; renaming the script here would make six
+documents wrong to make one message accurate. The bookkeeping is the fix: they belong to
+**Plan 2d**, which slice §11.8 gives "the admin CRUD and credential recovery", and
+`set-password.js` is the operator half of exactly that. Until 2d lands, an operator who
+hits `already_bootstrapped` is told to run a file that is not there — which is why Step 4
+corrects slice §11.1 rather than leaving "already exists" standing.
 
 - [ ] **Step 1: Retarget the documentation tripwires**
 
@@ -6504,6 +6734,49 @@ Measure before and after:
 
 ```bash
 awk '/^## The client-IP chain$/,/^## /' infra/README.md | wc -l
+```
+
+**Two more tripwires live outside that file, and Step 2 breaks both.** They are the
+reason `deploy-config.test.js` and `backup-restore.test.js` are in this task's Files
+list. Retarget them in this step, not after `npm test` reports them.
+
+In `apps/core-api/test/deploy-config.test.js`, at the end of *"the operator docs name
+the second secrets file and why core-db publishes no port"*:
+
+```js
+  // WAS: assert.match(coreReadme, /Ships in a later plan of this phase/) — the marker
+  // that told a reader not to look for the script. The script exists, so the assertion
+  // moves onto what the Bootstrapping section must now carry: the in-container path,
+  // and the `exec -T` ban the script enforces by refusing a non-TTY stdin. The
+  // two-variable rule above already covers this section's compose line.
+  assert.match(coreReadme, /node apps\/core-api\/scripts\/create-platform-admin\.js/);
+  assert.match(coreReadme, /never `exec -T`/);
+  assert.doesNotMatch(coreReadme, /Ships in a later plan of this phase/);
+```
+
+The `doesNotMatch` is not symmetry for its own sake. The forged-XFF ban is deleted above
+because the banned sentence became **true**; this sentence became **false**, and a ban is
+the only shape that goes red if a later edit restores it.
+
+In `apps/core-api/test/backup-restore.test.js`, in *"the runbook covers a fresh instance
+and the password-rotation ordering"*:
+
+```js
+  // WAS: assert.match(doc, /create-platform-admin\.js[\s\S]{0,200}Plan 2/) — the runbook
+  // was required to say the script did not exist yet. It does, and this is the paragraph
+  // an operator reads on the one deploy where there is no dump to restore, so it must
+  // carry the command rather than a forward reference.
+  assert.match(doc, /create-platform-admin\.js[\s\S]{0,400}docker compose exec/);
+  assert.doesNotMatch(doc, /script ships in Plan 2/);
+```
+
+**Measure the 400, do not inherit it.** The bound must be the real distance between the
+sentence and the fenced command after Step 2 has written them, plus room for one edit —
+too wide and the assertion starts passing off the *cutover* invocation two hundred lines
+below, which is a different site and would leave this paragraph free to rot. Read it back:
+
+```bash
+grep -n "create-platform-admin.js" infra/README.md
 ```
 
 - [ ] **Step 2: Update `infra/README.md` and `apps/core-api/README.md`**
@@ -6572,16 +6845,53 @@ handles a plaintext password.
 | --- | --- |
 | §5.7 | *"`route()` rejects at boot any route whose `limit` names a limiter absent from it"* was false when written. Task 2 made it true. Note that it is now enforced, and where. |
 | §5.9 | Same for the vocabulary membership check, landed in Task 3. |
-| §6.1 / §8.5 rule 2 | *"exactly four entries"* / *"the settled four"* → the three that exist, with `POST /api/terminal/pair` named as the fourth and the plan it arrives in. |
+| §6.1 / §8.5 rule 2 | *"exactly four entries"* / *"the settled four"* → **three** after this plan, and say what it grows to rather than implying it stops: **eight** once Plan 2d adds `forgot-password`, `reset-password`, `verify-email`, `GET /admin/reset-password` and `GET /admin/verify-email`, and **nine** when the terminal plan adds `POST /api/terminal/pair`. Do not write "four". The slice settled this at §6.2 — *"The public set is eight"* — and its §12 already carries the amendment row; a plan that re-derives four here would put the parent back in conflict with the slice one commit after the slice was written. |
+| §6.2, the four identity rows | The Roles column reads `anyUser`; it becomes **`anyUser` + `platform`**. §5.4's alias table excludes an unscoped `platform_admin` from `anyUser` and §6.2 gives these four rows `anyUser`, so the two sections disagree and Plan 2b is the first plan to execute the disagreement — see Part 5 departure (d). It is settled in §6.2's direction *for these four rows only*, by declaring both aliases on routes that bind no company, and **not** by widening `anyUser` in `permits()`, which would admit an unscoped platform admin to the roughly twenty tenant routes Plan 2c registers at `anyUser`. |
 | §6.3.5 | Step 10 is two halves. The static route-roles half runs at step 7.5 and the per-resource half arrives in Plan 2c — see Part 5 departure (c). |
+| §7 file layout `:1124`, §9.10, §12 | Not a correction — a **confirmation**, and it is worth a row precisely because three sites would otherwise stay unverified. All three describe `create-platform-admin.js` as holding an advisory lock and a monotonic audit guard: §7's file-layout line, §9.10's justification for connecting as `core_api_app` rather than the owner, and §12's checkbox (*"a second run with a different address exits NON-ZERO; DELETE the platform_admin row and re-run — still non-zero"*). Task 7's `bootstrapPlatformAdmin` takes `pg_advisory_xact_lock` and refuses on an existing `platform.admin_created` audit row, in one transaction, and Task 16 calls it. Record that they are now implemented and name the tests, so the next reader does not re-litigate a guard that exists. |
+| §6.2 `POST /api/platform/admins` and §8's peer-creation paragraph | Follows from the row above: that route is *"the sole route in the system that creates a peer"* and its only stated justification is that `create-platform-admin.js` is monotonic. It is. Leave both sentences standing and note that the premise was checked here — an earlier draft of this plan shipped a `created === null` guard that would have removed it, and Plan 2c inherits the exception. |
 | §9.5 | **The block-4 appendix is wrong twice** and must be corrected or the next reader copies it: it writes the curl as `curl -fsS … \|\| true`, which `deploy-config.test.js` bans, and it writes the psql with `'"'"'`-style quoting that no longer matches what the test asserts. Replace both with what `deploy.yml` actually carries after Task 12. |
 | §9.12 | The semaphore-occupancy sentence names `LOGIN_RATE_PER_MINUTE` as *"the control"*. With `login-global` in a roster and `core_login` at the edge it is one of two, and identity spec §7.3 already says so. |
 
 `docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md` (this slice):
 
+- **§11.1** — *"The remedy is out-of-band and already exists: `scripts/set-password.js`"*. It does not exist and no written plan builds it; see the retarget above. Correct the sentence to name **Plan 2d** as its owner and say plainly that until 2d lands there is **no** remedy for a mistyped address — a residual section that describes a missing tool as present is the one kind of residual that gets closed on paper.
 - **§11.5** — the `TRUSTED_PROXY_HOPS` cross-file assertion is marked **required**. Task 4 landed it. Mark it shipped and name the test.
 - **§11.6** — *"two boot checks Plan 2b must land, and one false claim to settle"*. Both landed, in Tasks 2 and 3. Mark it shipped; the section's reasoning about *why* they waited is worth keeping.
 - Add a short **§11.10** in the shape of §11.9, recording what 2b shipped: the pipeline, the six routes, the bootstrap CLI, and the two things it deliberately did **not** do — `lib/authorization.js` holds the alias half only, and step 10's per-resource half is Plan 2c's.
+- Add **§11.11**, detailed below. It is the section Part 5 departure (d) promises by name, and it is the one piece of this task that Plan 2c cannot start without. Write it first: if this step is interrupted, §11.10 is a summary somebody can reconstruct from the plan and §11.11 is not.
+
+**§11.11 — what to write, and why it is not a note in the execution log.** Two decisions
+were settled while executing this plan, both by reading the parent spec against itself
+rather than by choosing. Neither belongs in a plan that is about to be marked done:
+§11.5–§11.9 are the slice's amendment mechanism precisely because a decision recorded in
+a finished plan is a decision nobody reads again. Write it in their shape — a `## 11.11`
+heading, **Status:** line, the decision, then the reason stated as the failure it
+prevents. It carries two things:
+
+1. **The two-alias fix on the four identity routes.** `me`, `logout`, `logout-all` and
+   `password` declare `["platform", "anyUser"]`. Give the failure, not the change: under
+   plain `anyUser` the only account this plan creates cannot read its own identity, sign
+   out, or change the password the CLI just set, because login always materialises
+   `actingCompanyId: null` and §5.4's table excludes an *unscoped* `platform_admin`. Name
+   the two repairs that were rejected and why — widening `anyUser` in `permits()` (it
+   admits an unscoped scope to Plan 2c's tenant routes) and a fifth alias (`ROLE_ALIASES`
+   is frozen at four and asserted twice). Record that §5.4 and §6.2 disagree and that the
+   parent is amended at §6.2, not at §5.4.
+2. **Nothing in Plan 2b produces `409 scope_required`, and that is Plan 2c's first
+   problem.** This is the half that matters more, and it must be stated as a gap rather
+   than implied by the first half. §6.3.3 promises **409 `scope_required`** when a tenant
+   route is reached by an unscoped platform admin. Plan 2b registers no tenant route, so
+   it builds no producer for that code, gives it no home in the pipeline, and no test
+   asserts it — §6.3.5's step 10 note (departure (c)) defers the *per-resource* half to
+   Plan 2c without noticing that the **scope-state** answer has no owner at all. The
+   first ~20 tenant routes registered at `anyUser` in Plan 2c will each need it, and the
+   cheap wrong repair available at that moment — letting the unscoped admin through
+   because the alias already admits them — is the security hole this slice just refused.
+   Say where it should live: beside the role gate at step 7.5, reading `scope.kind`
+   against whether the route binds a company. **Do not build it here.** Plan 2b has no
+   route that could exercise it, and a producer with no consumer is untested code in the
+   credential path.
 
 - [ ] **Step 5: Run everything, then close the plan**
 
@@ -6598,6 +6908,7 @@ commits, and the next plan.
 ```bash
 git add infra/README.md apps/core-api/README.md \
         apps/core-api/test/operations-docs.test.js apps/core-api/test/source-structure.test.js \
+        apps/core-api/test/deploy-config.test.js apps/core-api/test/backup-restore.test.js \
         docs/superpowers/specs docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md
 git commit -m "docs(core-api): retire the Plan 2 markers, because Plan 2b made all of them false"
 ```
