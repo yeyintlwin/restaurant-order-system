@@ -25,7 +25,7 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 1 of 9 tasks done.**
+**Status: 2 of 9 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -33,6 +33,7 @@ steps are ticked and its commit exists.
 | Date | Session did | Tasks finished | Commits | Next |
 | --- | --- | --- | --- | --- |
 | 2026-08-05 | Task 1: manifest, stub `index.html`, static server. 4/4 pass. Found that `node --test <dir>` does not work in this checkout — see the note under Task 1 Step 4; use `npm --prefix apps/admin-management test`. | **1/9** | `feat(admin-management): serve public/, and resolve the path before trusting it` | Task 2 |
+| 2026-08-05 | Task 2: the `/api` proxy. 10/10 pass. Step 2 predicted six red and measured five — "only /api is proxied" is green before the proxy exists, see the note under Step 2. Full suite still at baseline, no mirror moved. | **2/9** | `feat(admin-management): proxy /api, and touch neither Origin nor X-Forwarded-For` | Task 3 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -397,7 +398,7 @@ grep -n "apiPublicOrigin" apps/core-api/http/csrf.js
 grep -n "BASE_ATTRIBUTES" apps/core-api/http/cookies.js
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `apps/admin-management/test/server.test.js`:
 
@@ -504,7 +505,7 @@ test("core-api being down is 502, and says nothing about why", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/admin-management/test/server.test.js
@@ -513,7 +514,17 @@ node --test apps/admin-management/test/server.test.js
 Expected: the six new tests fail — `/api/...` currently answers 404 from the static
 handler, or 405 for the POSTs.
 
-- [ ] **Step 3: Implement the proxy**
+> **Measured: FIVE of the six fail, not six.** The mechanism is exactly as predicted
+> — nothing reaches the upstream, so `seen[0]` is `undefined` for the Origin and
+> X-Forwarded-For tests, `getSetCookie()[0]` is `undefined`, the `POST /api/admin/users`
+> gets 405 and the `GET /api/admin/auth/me` gets 404 instead of 502. The exception is
+> **"only /api is proxied", which is green before the proxy exists**: it asserts
+> `/health` is 404 and that the upstream saw nothing, and a server with no proxy at all
+> satisfies both vacuously. It is a regression guard, not a red-first test — it can only
+> ever fail once someone widens the prefix match. Keep it; just do not read it as
+> evidence the proxy works.
+
+- [x] **Step 3: Implement the proxy**
 
 In `apps/admin-management/server.js`, add the proxy above `createServer`:
 
@@ -585,7 +596,7 @@ and replace the request handler inside `createServer`:
   });
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/admin-management/test/server.test.js
@@ -593,7 +604,10 @@ node --test apps/admin-management/test/server.test.js
 
 Expected: 10 tests, all pass.
 
-- [ ] **Step 5: Commit**
+> Measured: 10 tests, 10 pass, 0 fail. The full repository suite still measures the
+> recorded baseline — 14 / 33 / 69 / 531, 0 failures, 1 skip — so no mirror moved.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/server.js apps/admin-management/test/server.test.js \

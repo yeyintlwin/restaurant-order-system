@@ -82,6 +82,53 @@ function serveStatic(req, res) {
   });
 }
 
+// Forward VERBATIM, with exactly one exception: `host`, which must name the upstream
+// or a virtual-hosted server would route by the wrong name. Everything else --
+// Origin, X-Forwarded-For, Cookie, Content-Type -- goes through untouched, and each
+// of those has a test saying why.
+//
+// NOTHING IS APPENDED TO X-Forwarded-For. This process is transparent; nginx stays
+// the only hop, and TRUSTED_PROXY_HOPS stays 1 with its cross-file assertion intact.
+function proxyToCoreApi(req, res, coreApiUrl) {
+  const target = new URL(req.url, coreApiUrl);
+  const headers = { ...req.headers, host: target.host };
+
+  const upstream = http.request(
+    {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port,
+      path: target.pathname + target.search,
+      method: req.method,
+      headers
+    },
+    (upstreamRes) => {
+      // writeHead with the raw headers object preserves a repeated Set-Cookie as an
+      // array. Copying them one at a time with setHeader is how the second cookie
+      // gets lost.
+      res.writeHead(upstreamRes.statusCode, {
+        ...SECURITY_HEADERS,
+        ...upstreamRes.headers
+      });
+      upstreamRes.pipe(res);
+    }
+  );
+
+  upstream.on("error", () => {
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    // 502 with a fixed body. The errno names a host and a port, and this response is
+    // public.
+    send(res, 502, "Bad gateway", { "Content-Type": "text/plain; charset=utf-8" });
+  });
+
+  // Never log the body: the sign-in request carries a password. Piping it straight
+  // through is also what keeps this a streaming proxy rather than a buffer.
+  req.pipe(upstream);
+}
+
 function createServer(options = {}) {
   const coreApiUrl = options.coreApiUrl || process.env.CORE_API_URL;
   if (!coreApiUrl) {
@@ -89,6 +136,10 @@ function createServer(options = {}) {
   }
 
   return http.createServer((req, res) => {
+    if (req.url === "/api" || req.url.startsWith("/api/")) {
+      proxyToCoreApi(req, res, coreApiUrl);
+      return;
+    }
     if (req.method === "GET" || req.method === "HEAD") {
       serveStatic(req, res);
       return;
