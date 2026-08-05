@@ -102,6 +102,20 @@ a CORS-in-production-only design has.
 
 - **It must not alter `Origin`.** core-api's §5.3 check is the CSRF control; a proxy
   that rewrites the header disables it for every request that passes through.
+- **It must not append to `X-Forwarded-For`, and this is the subtle one.** core-api
+  derives the client address by counting `TRUSTED_PROXY_HOPS` entries **from the
+  right** of that header, and the value is pinned at 1 against the depth
+  `infra/nginx/` deploys — `nginx-config.test.js` asserts the pair. Inserting this
+  app into the chain and letting it append would make the depth 2 for requests that
+  came through `/api` and 1 for everything else, so **one hop count cannot be right
+  for both**. Forward the header exactly as nginx wrote it and add nothing: this
+  process is transparent, nginx remains the only hop, and `TRUSTED_PROXY_HOPS` stays
+  1 with its assertion intact.
+
+  The failure if this is got wrong is silent and bad. The pick lands one place to
+  the left, on an entry the client controls, and every attacker owns their own
+  rate-limit bucket — the exact attack `lib/client-ip.js` exists to prevent, and
+  §11.5 records that no per-request test can catch it.
 - **It must not add, drop or rewrite `Cookie` or `Set-Cookie`.** The `__Host-`
   prefix constrains what the browser accepts; a proxy that touches the attributes
   can only weaken it.
@@ -187,6 +201,20 @@ migration has applied**, which is the failure shape §9.5 is written to design a
 | `apps/core-api/test/config.test.js` | The frozen `PRODUCTION_ENV` fixture |
 | `infra/nginx/` | A new `admin.yeyintlwin.com` server block |
 | `infra/README.md` | The new subdomain and its certificate |
+
+**A fifth app is itself a lockstep change**, separately from the origin move, and
+these sites are not co-located either:
+
+| Site | Edit |
+| --- | --- |
+| root `package.json` | `scripts.test` gains `npm --prefix apps/admin-management test`. Nothing runs the suite otherwise — `source-structure.test.js`'s C11 exists because a suite the root script does not invoke is a suite the deploy gate never sees. |
+| `.github/workflows/deploy.yml` | An `npm ci` and an `npm test` step, beside the four that are there |
+| `.github/workflows/deploy.yml` | A `docker build`, a tarball, and an `ADMIN_MANAGEMENT_IMAGE` export beside the other three |
+| `docker-compose.yml` | The service block |
+| root `README.md` | `monorepo-structure.test.js` reads it |
+
+`workspaces` needs no edit: it is `["apps/*"]`, asserted by `deepEqual`, and the new
+directory is already inside it.
 
 **All six move in one commit.** Find them with:
 
