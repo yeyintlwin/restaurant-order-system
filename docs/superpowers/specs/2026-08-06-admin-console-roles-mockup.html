@@ -176,13 +176,10 @@ tbody tr:hover{background:#fcfcfd}
 /* A shop left without a manager is a hole in the company, not a blank cell. */
 .state.none{color:#9c5c17;font-weight:550}
 
-/* The shop count opens up. The breakdown is opt-in, so the default table stays a list of
-   companies rather than a list of everything. */
-.count{border:0;background:none;padding:0;font:inherit;font-size:13px;color:var(--accent);
-       font-weight:550;text-decoration:underline;text-underline-offset:3px}
-tr.sub td{background:#fbfbfc;padding-top:9px;padding-bottom:9px;font-size:13px;color:var(--muted)}
+/* The branches sit under their company all the time. Hiding them behind a click made the
+   one number the platform owner came to read into a thing to go and find. */
+tr.sub td{background:#fbfbfc;padding-top:8px;padding-bottom:8px;font-size:13px;color:var(--muted)}
 tr.sub .leaf{padding-left:43px}
-tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
@@ -332,21 +329,21 @@ tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
               <tr>
                 <td><div class="who"><span class="av">SK</span><span><span class="nm">Sakura Kitchen</span><br><span class="em">sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Khin Myat</b>khin@sakura.mm</td>
-                <td class="meta state" data-label="Shops"><button type="button" class="count">3</button></td><td class="meta state" data-label="Tables">40</td>
+                <td class="meta state" data-label="Shops">3</td><td class="meta state" data-label="Tables">40</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-company="Sakura Kitchen" data-ceo="Khin Myat" data-ceo-email="khin@sakura.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">MG</span><span><span class="nm">Mandalay Grill</span><br><span class="em">mandalaygrill.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Nay Lin</b>naylin@mandalaygrill.mm</td>
-                <td class="meta state" data-label="Shops"><button type="button" class="count">1</button></td><td class="meta state" data-label="Tables">10</td>
+                <td class="meta state" data-label="Shops">1</td><td class="meta state" data-label="Tables">10</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-company="Mandalay Grill" data-ceo="Nay Lin" data-ceo-email="naylin@mandalaygrill.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">SC</span><span><span class="nm">Shwe Café</span><br><span class="em">shwecafe.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Su Su Hlaing</b>susu@shwecafe.mm</td>
-                <td class="meta state" data-label="Shops"><button type="button" class="count">2</button></td><td class="meta state" data-label="Tables">14</td>
+                <td class="meta state" data-label="Shops">2</td><td class="meta state" data-label="Tables">14</td>
                 <td class="meta state" data-label="Status">Suspended</td>
                 <td class="act"><button class="edit" data-company="Shwe Café" data-ceo="Su Su Hlaing" data-ceo-email="susu@shwecafe.mm" data-status="suspended">Edit</button></td>
               </tr>
@@ -965,9 +962,7 @@ function openCompany(btn){
 
 document.getElementById("co-rows").addEventListener("click",e=>{
   const btn=e.target.closest("[data-company]");
-  if(btn){ openCompany(btn); return; }
-  const count=e.target.closest(".count");
-  if(count) toggleShops(count.closest("tr"));
+  if(btn) openCompany(btn);
 });
 
 /* Shops and tables are the size of what is being hosted, not who is inside it, so the
@@ -985,32 +980,30 @@ function shopsOf(company){
     ]);
   return OTHER_SHOPS[company]||[];
 }
-function toggleShops(row){
-  let next=row.nextElementSibling;
-  if(next && next.classList.contains("sub")){        // already open — close it
-    while(next && next.classList.contains("sub")){
-      const after=next.nextElementSibling; next.remove(); next=after;
+function renderBranches(){
+  document.querySelectorAll("#co-rows tr.sub").forEach(tr=>tr.remove());
+  for(const btn of document.querySelectorAll("#co-rows [data-company]")){
+    const row=btn.closest("tr");
+    const list=shopsOf(btn.dataset.company);
+    if(!list.length){
+      const tr=document.createElement("tr");
+      tr.className="sub";
+      tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
+      row.after(tr);
+      continue;
     }
-    return;
-  }
-  const company=row.querySelector("[data-company]").dataset.company;
-  const list=shopsOf(company);
-  if(!list.length){
-    const tr=document.createElement("tr");
-    tr.className="sub";
-    tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
-    row.after(tr);
-    return;
-  }
-  let at=row;
-  for(const [shop,tables] of list){
-    const tr=document.createElement("tr");
-    tr.className="sub";
-    tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
-                 '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
-    tr.querySelector(".leaf").textContent=shop;
-    tr.querySelector('[data-label="Tables"]').textContent=tables+" tables";
-    at.after(tr); at=tr;
+    let at=row;
+    for(const [shop,tables] of list){
+      const tr=document.createElement("tr");
+      tr.className="sub";
+      // The table count lands in the same column as the company's total, so the branch
+      // figures read as the parts that make up the sum.
+      tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
+                   '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
+      tr.querySelector(".leaf").textContent=shop;
+      tr.querySelector('[data-label="Tables"]').textContent=tables;
+      at.after(tr); at=tr;
+    }
   }
 }
 document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
@@ -1080,7 +1073,7 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     tr.innerHTML=
       '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
       '<td class="meta state" data-label="CEO"><b></b></td>'+
-      '<td class="meta state" data-label="Shops"><button type="button" class="count">0</button></td>'+
+      '<td class="meta state" data-label="Shops">0</td>'+
       '<td class="meta state" data-label="Tables">0</td>'+
       '<td class="meta state ok" data-label="Status">Active</td>'+
       '<td class="act"><button class="edit" data-status="active">Edit</button></td>';
@@ -1384,11 +1377,9 @@ function refreshCompanyTotals(){
   const btn=document.querySelector('[data-company="Sakura Kitchen"]');
   if(!btn) return;                                   // renamed by the platform owner
   const row=btn.closest("tr");
-  row.querySelector('[data-label="Shops"] .count').textContent=rows.length;
+  row.querySelector('[data-label="Shops"]').textContent=rows.length;
   row.querySelector('[data-label="Tables"]').textContent=tables;
-  // Any breakdown showing beneath is now stale; close it so it reopens with fresh numbers.
-  let next=row.nextElementSibling;
-  while(next && next.classList.contains("sub")){ const a=next.nextElementSibling; next.remove(); next=a; }
+  renderBranches();
 }
 
 function refreshShopGaps(){
@@ -1531,6 +1522,8 @@ function setAs(as){
 asview.addEventListener("change",()=>setAs(asview.value));
 // Clicking inside the drawer normally closes it; this control is not navigation.
 asview.addEventListener("click",e=>e.stopPropagation());
+
+renderBranches();
 
 // Run the same code path the first time as every time. Without this the heading, the
 // button's label and — the part that actually broke — the button's data-opens are only

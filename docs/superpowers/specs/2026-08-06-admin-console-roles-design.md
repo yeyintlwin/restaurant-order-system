@@ -230,8 +230,12 @@ sees, for every company:
 - how many shops it has, and **the name and table count of each one**
 - how many tables in total
 
-The branch list opens from the shop count rather than sitting there permanently, so the
-default screen stays a list of companies rather than a list of everything.
+The branches sit under their company **all the time**. They were behind a click for one
+revision and it was wrong: it turned the number the platform owner came to read into a
+thing to go and find. A count that has to be opened is a count nobody checks.
+
+Each branch shows its table figure in the same column as its company's total, so the parts
+read as the parts of the sum.
 
 This is what the platform is hosting and, eventually, what it would bill for. Nothing here
 names a manager or a member of staff, so §6 is untouched.
