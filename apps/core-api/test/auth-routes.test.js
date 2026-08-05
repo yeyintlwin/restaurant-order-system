@@ -330,3 +330,137 @@ test("login's 429 carries NO Retry-After, on the real route", async () => {
     assert.equal(shed.headers.get("retry-after"), null);
   });
 });
+
+const SESSION_ROW = {
+  sessionId: SESSION_ID,
+  userId: USER,
+  actingCompanyId: null,
+  expiresAt: new Date("2026-08-05T08:00:00.000Z"),
+  absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z"),
+  lastSeenAt: new Date("2026-08-05T00:00:00.000Z"),
+  email: "till@example.test",
+  displayName: "Till",
+  role: "company_admin",
+  companyId: COMPANY,
+  mustChangePassword: false,
+  actingCompanyStatus: null
+};
+
+// A harness whose session resolver answers, for the five authenticated routes.
+// `calls` records the ORDER of repository writes, which is the only way to assert
+// "delete before bump" without a clock.
+function signedIn(overrides = {}) {
+  const calls = [];
+  const base = harness();
+  const deps = {
+    ...base.deps,
+    sessions: {
+      ...base.deps.sessions,
+      resolveSession: async () => ({ ...SESSION_ROW, ...(overrides.session || {}) }),
+      renewSession: async () => null,
+      deleteSession: async (id) => { calls.push(["deleteSession", id]); return 1; },
+      deleteAllSessionsForUser: async (id) => { calls.push(["deleteAllSessionsForUser", id]); return 3; }
+    },
+    users: {
+      ...base.deps.users,
+      findById: async () => activeUser(),
+      writePasswordHash: async (id, hash, options) => { calls.push(["writePasswordHash", id, options]); },
+      bumpSessionsValidFrom: async (id) => { calls.push(["bumpSessionsValidFrom", id]); }
+    },
+    ...(overrides.deps || {})
+  };
+  return { deps, calls, audits: base.audits };
+}
+
+const COOKIE = { cookie: `${SESSION_COOKIE_NAME}=AAAAAAAAAAAAAAAAAAAAAA` };
+const POST_HEADERS = { Origin: ORIGIN, "Content-Type": "application/json", ...COOKIE };
+
+test("GET me returns the same document login returned", async () => {
+  const { deps } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.user.id, USER);
+    assert.equal(body.user.mustChangePassword, false);
+    assert.equal(body.scope.kind, "tenant");
+    assert.deepEqual(body.scope.shopIds, []);
+    assert.equal(body.session.expiresAt, "2026-08-05T08:00:00.000Z");
+  });
+});
+
+test("me is NOT exempt from the password-change gate; logout is", async () => {
+  // Spec 6.2 states both, and gives the reason for the asymmetry: me's 403 is
+  // self-describing and login already returned mustChangePassword, while a user who
+  // cannot sign out has no way to abandon a session they must not use.
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  await withServer(deps, async (base) => {
+    const me = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(me.status, 403);
+    assert.equal((await me.json()).error.code, "password_change_required");
+
+    const out = await fetch(`${base}/api/admin/auth/logout`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(out.status, 200);
+  });
+});
+
+test("logout deletes the presenting session and clears the cookie", async () => {
+  const { deps, calls, audits } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true });
+    // The SAME attributes as the setting cookie: a browser matches the cookie to
+    // delete on name + path + domain, so a clearing header with a different Path
+    // deletes nothing and the stale cookie comes back on the next request.
+    assert.match(response.headers.get("set-cookie"), /^__Host-core_session=; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=0$/);
+  });
+  assert.deepEqual(calls, [["deleteSession", SESSION_ID]]);
+  assert.equal(audits[0].action, "auth.logout");
+  assert.equal(audits[0].actorUserId, USER);
+});
+
+test("logout-all deletes THEN bumps, and reports the count it deleted", async () => {
+  // The ordering IS the correctness argument. Bump-then-delete leaves a session
+  // created in the gap with created_at > sessions_valid_from, so the resolver
+  // accepts it and it survives the one button that exists to kill it.
+  const { deps, calls, audits } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout-all`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, revokedSessionCount: 3 });
+    assert.match(response.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+  assert.deepEqual(calls, [
+    ["deleteAllSessionsForUser", USER],
+    ["bumpSessionsValidFrom", USER]
+  ]);
+  assert.deepEqual(audits[0].detail, { revokedSessionCount: 3 });
+});
+
+test("logout-all IS gated by the password-change requirement", async () => {
+  // Only logout and password are exempt -- spec 8.5 rule 3 fixes the set at two, and
+  // route-auth.test.js asserts it by set equality. Adding a third here would be a
+  // design change, not a convenience.
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/api/admin/auth/logout-all`, { method: "POST", headers: POST_HEADERS });
+    assert.equal(response.status, 403);
+  });
+});
+
+test("no cookie is 401 and sets no clearing header; a bad cookie is 401 and does", async () => {
+  // Spec 6.3.4: the clearing Set-Cookie goes out "only when one was presented".
+  // Unconditional, it would let any unauthenticated request instruct a browser to
+  // drop a cookie it never sent.
+  const { deps } = signedIn({ deps: { sessions: { resolveSession: async () => null, renewSession: async () => null } } });
+  await withServer(deps, async (base) => {
+    const none = await fetch(`${base}/api/admin/auth/me`);
+    assert.equal(none.status, 401);
+    assert.equal(none.headers.get("set-cookie"), null);
+
+    const stale = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(stale.status, 401);
+    assert.match(stale.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+});

@@ -116,6 +116,19 @@ test("writing a password bumps sessions_valid_from, which is what kills every se
   assert.equal(await verifyPassword("a-brand-new-password", after.rows[0].password_hash), true);
 });
 
+test("bumpSessionsValidFrom moves the lever and touches nothing else", { skip }, async () => {
+  const columns = "sessions_valid_from, failed_login_count, locked_until, password_hash";
+  const before = await db.unscoped(`SELECT ${columns} FROM users WHERE id = $1`, [IDS.userAStaff]);
+  await users.bumpSessionsValidFrom(IDS.userAStaff);
+  const after = await db.unscoped(`SELECT ${columns} FROM users WHERE id = $1`, [IDS.userAStaff]);
+
+  assert.ok(after.rows[0].sessions_valid_from > before.rows[0].sessions_valid_from);
+  // The login credential's columns are NOT this route's to write -- spec 5.8(a).
+  assert.equal(after.rows[0].failed_login_count, before.rows[0].failed_login_count);
+  assert.equal(after.rows[0].locked_until?.getTime() ?? null, before.rows[0].locked_until?.getTime() ?? null);
+  assert.equal(after.rows[0].password_hash, before.rows[0].password_hash);
+});
+
 test("the bootstrap is MONOTONIC: the guard is an audit row, not the current state", { skip }, async () => {
   // Spec 12's acceptance checkbox, verbatim: "a second run with a different address
   // exits NON-ZERO; DELETE the platform_admin row and re-run -- still non-zero (the

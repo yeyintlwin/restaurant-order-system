@@ -13,7 +13,7 @@ const { sendJson } = require("../respond");
 const { ApiError } = require("../../db/errors");
 const { verifyPassword } = require("../../lib/password");
 const { mintToken, hashToken } = require("../../lib/tokens");
-const { buildSessionCookie } = require("../cookies");
+const { buildSessionCookie, buildClearingCookie } = require("../cookies");
 
 // ---------------------------------------------------------------------------
 // The me-document (spec 6.2), built by NAMING every field rather than by spreading
@@ -59,6 +59,26 @@ function meDocument({ user, scope, session }) {
     document.scope.administeredShopIds = [...scope.administeredShopIds];
   }
   return document;
+}
+
+// resolveSession returns the joined user columns under different names than the
+// login lookup does (userId, not id), and every route except login builds its
+// me-document from a resolved session. One adapter, so the shape cannot drift
+// between four routes.
+//
+// user.companyId is the user's OWN company and is null for every platform_admin --
+// users_platform_admin_has_no_company makes that a constraint. The ACTING company
+// lives in scope.companyId, which is exactly the distinction spec 6.2 draws when it
+// says scope.kind is what the UI branches on.
+function userFromSession(session) {
+  return {
+    id: session.userId,
+    email: session.email,
+    displayName: session.displayName,
+    role: session.role,
+    companyId: session.companyId,
+    mustChangePassword: session.mustChangePassword
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,4 +268,116 @@ route(
   }
 );
 
-module.exports = { meDocument, evaluateLogin, payTimeBudget };
+// ---------------------------------------------------------------------------
+// GET /api/admin/auth/me
+// ---------------------------------------------------------------------------
+
+// DELIBERATELY NOT exempt from the password-change gate (spec 6.2): the 403 is
+// self-describing, and login already told the caller mustChangePassword.
+route(
+  "GET",
+  "/api/admin/auth/me",
+  // BOTH aliases -- Part 5 departure (d). `anyUser` admits a SCOPED platform admin
+  // and deliberately excludes an unscoped one, and the account the bootstrap CLI
+  // creates is unscoped from the moment it signs in. This route binds no company, so
+  // admitting it here widens no tenant query.
+  { auth: "user", roles: ["platform", "anyUser"], sample: {} },
+  async (req, res) => {
+    sendJson(
+      res,
+      200,
+      meDocument({
+        user: userFromSession(req.core.session),
+        scope: req.core.scope,
+        session: req.core.session
+      })
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/logout
+// ---------------------------------------------------------------------------
+
+route(
+  "POST",
+  "/api/admin/auth/logout",
+  {
+    auth: "user",
+    // Part 5 departure (d). Signing out is the one thing every actor must be able to
+    // do, and an unscoped platform admin is an actor.
+    roles: ["platform", "anyUser"],
+    body: null,
+    audit: "auth.logout",
+    // One of exactly two exemptions (spec 8.5 rule 3). A user who must change their
+    // password and cannot sign out is stuck holding a session they must not use.
+    exemptFromPasswordChange: true,
+    sample: {}
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    await deps.sessions.deleteSession(session.sessionId);
+    await deps.appendAuditEvent({
+      actorKind: "user",
+      actorUserId: session.userId,
+      companyId: session.companyId,
+      action: "auth.logout",
+      outcome: "success",
+      targetKind: "user",
+      targetId: session.userId,
+      sourceIp: req.core.clientIp
+    });
+
+    // Step 14 runs after this handler and will try to renew a session that no longer
+    // exists. That is a zero-row UPDATE, not an error, and renewSession is written to
+    // treat zero rows as the ordinary case. Do not "fix" it by clearing
+    // req.core.session -- the pipeline reads it to decide whether to renew at all,
+    // and a handler reaching back into the pipeline's state is worse than one
+    // harmless statement.
+    sendJson(res, 200, { ok: true }, { "Set-Cookie": buildClearingCookie() });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/logout-all
+// ---------------------------------------------------------------------------
+
+route(
+  "POST",
+  "/api/admin/auth/logout-all",
+  // Part 5 departure (d).
+  { auth: "user", roles: ["platform", "anyUser"], body: null, audit: "auth.logout_all", sample: {} },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    // DELETE FIRST, THEN BUMP, and the order is the correctness argument rather than
+    // a style choice. Bump-then-delete leaves a session created in the gap with
+    // created_at > sessions_valid_from, so the resolver accepts it and the DELETE has
+    // already run -- the stolen session survives the one button that exists to kill
+    // it. This way round, anything created in the gap has created_at <
+    // sessions_valid_from and is rejected, so the pair fails closed with no
+    // transaction. The residual is that the COUNT under-reports by whatever landed in
+    // the gap; it is an informational number, not a guarantee.
+    const revokedSessionCount = await deps.sessions.deleteAllSessionsForUser(session.userId);
+    await deps.users.bumpSessionsValidFrom(session.userId);
+
+    await deps.appendAuditEvent({
+      actorKind: "user",
+      actorUserId: session.userId,
+      companyId: session.companyId,
+      action: "auth.logout_all",
+      outcome: "success",
+      targetKind: "user",
+      targetId: session.userId,
+      sourceIp: req.core.clientIp,
+      detail: { revokedSessionCount }
+    });
+
+    sendJson(res, 200, { ok: true, revokedSessionCount }, { "Set-Cookie": buildClearingCookie() });
+  }
+);
+
+module.exports = { meDocument, userFromSession, evaluateLogin, payTimeBudget };

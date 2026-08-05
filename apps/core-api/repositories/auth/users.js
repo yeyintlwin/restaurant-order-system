@@ -158,6 +158,29 @@ async function writePasswordHash(userId, passwordHash, { mustChangePassword } = 
   });
 }
 
+// The THIRD writer of sessions_valid_from. Spec 5.2 names all three -- password
+// change, suspension, and "sign out everywhere" -- and writePasswordHash owns the
+// first. This one exists because a DELETE over user_sessions is not a revocation:
+// a session created between the DELETE and the response survives it, and the whole
+// point of this route is that nothing survives it.
+//
+// failed_login_count and locked_until are DELIBERATELY NOT TOUCHED. They belong to
+// the unauthenticated login credential (spec 5.8(a)); signing out everywhere is not
+// a failed login and must not push anybody toward a lockout.
+const BUMP_SESSIONS_VALID_FROM = `
+  UPDATE users
+     SET sessions_valid_from = now(),
+         updated_at = now()
+   WHERE id = $1
+`;
+
+async function bumpSessionsValidFrom(userId) {
+  // `connection`, never `client` -- see the note at the top of this file.
+  await withUnscopedConnection(async (connection) => {
+    await connection.query(BUMP_SESSIONS_VALID_FROM, [userId]);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // THE BOOTSTRAP. One transaction, an advisory lock, and a MONOTONIC guard.
 // ---------------------------------------------------------------------------
@@ -292,6 +315,7 @@ module.exports = {
   recordFailedLogin,
   recordSuccessfulLogin,
   writePasswordHash,
+  bumpSessionsValidFrom,
   bootstrapPlatformAdmin,
   countActivePlatformAdmins
 };

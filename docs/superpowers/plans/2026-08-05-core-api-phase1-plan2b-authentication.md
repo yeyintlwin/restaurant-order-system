@@ -5000,7 +5000,7 @@ row. The only cost is that `revokedSessionCount` under-reports by whatever was
 created in the gap — an informational number, and the plan says so rather than
 pretending the count is exact.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `apps/core-api/test/auth-users.test.js`:
 
@@ -5167,7 +5167,7 @@ test("no cookie is 401 and sets no clearing header; a bad cookie is 401 and does
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users.test.js
@@ -5180,7 +5180,7 @@ reads. If it fails anywhere earlier than that line, the test is wrong and not th
 repository — the two `db.unscoped` reads and `IDS` are all Task 7's, and a
 `ReferenceError` there means a helper was invented rather than reused.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 **(a)** In `apps/core-api/repositories/auth/users.js`, beside `writePasswordHash`:
 
@@ -5383,7 +5383,7 @@ will say so:
 It grows again in Tasks 14 and 15. That is the census doing its job: a new
 browser-facing POST cannot land without a line in it.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/auth-users.test.js \
@@ -5394,7 +5394,7 @@ Expected: all pass. **`route-auth.test.js` is the one that matters** — its rul
 arms itself the moment `POST /api/admin/auth/logout` registers, and it is what
 catches a missing `exemptFromPasswordChange`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/routes/auth.js apps/core-api/repositories/auth/users.js \

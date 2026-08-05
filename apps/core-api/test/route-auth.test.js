@@ -49,7 +49,9 @@ test("the origin-gated set is derived and pinned, so a new public POST cannot sk
   // design change rather than a repair. Plan 2d adds forgot-password, reset-password
   // and verify-email; the auth routes below arrive across Tasks 12-15.
   assert.deepEqual(gated, new Set([
-    "POST /api/admin/auth/login"
+    "POST /api/admin/auth/login",
+    "POST /api/admin/auth/logout",
+    "POST /api/admin/auth/logout-all"
   ]));
 });
 
