@@ -25,7 +25,7 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 2 of 9 tasks done.**
+**Status: 3 of 9 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -34,6 +34,7 @@ steps are ticked and its commit exists.
 | --- | --- | --- | --- | --- |
 | 2026-08-05 | Task 1: manifest, stub `index.html`, static server. 4/4 pass. Found that `node --test <dir>` does not work in this checkout — see the note under Task 1 Step 4; use `npm --prefix apps/admin-management test`. | **1/9** | `feat(admin-management): serve public/, and resolve the path before trusting it` | Task 2 |
 | 2026-08-05 | Task 2: the `/api` proxy. 10/10 pass. Step 2 predicted six red and measured five — "only /api is proxied" is green before the proxy exists, see the note under Step 2. Full suite still at baseline, no mirror moved. | **2/9** | `feat(admin-management): proxy /api, and touch neither Origin nor X-Forwarded-For` | Task 3 |
+| 2026-08-05 | Task 3: `public/api.js`, `fetch` injected. 9/9 pass, 19/19 for the app. **The dual-export footer was KEPT as written** — `require()` did not throw, so the fallback was not taken; see the note under Step 4 for why, and for the Node floor it costs. | **3/9** | `feat(admin-management): the API client, with fetch injected so 401 is testable` | Task 4 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -631,7 +632,7 @@ For a page whose interesting behaviour is *what happens on a 401*, that is a
 spell-checker. Taking `fetch` as an argument is what makes every status in spec §4
 a real test.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/admin-management/test/api.test.js`:
 
@@ -759,7 +760,7 @@ test("the password appears in the body and nowhere else", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/admin-management/test/api.test.js
@@ -767,7 +768,10 @@ node --test apps/admin-management/test/api.test.js
 
 Expected: FAIL — `Cannot find module '../public/api.js'`.
 
-- [ ] **Step 3: Write the module**
+> **Measured, exactly as predicted:** `# Error: Cannot find module '../public/api.js'`,
+> 0 pass / 1 fail.
+
+- [x] **Step 3: Write the module**
 
 Create `apps/admin-management/public/api.js`:
 
@@ -897,7 +901,7 @@ export { createApi, ROUTES };
 > a bundler; the plan forbids it and one global is cheaper. Decide this at Step 4 by
 > running the test, and record which shape you took in the plan's execution log.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/admin-management/test/api.test.js
@@ -906,7 +910,46 @@ node --test apps/admin-management/test/api.test.js
 Expected: 9 tests, all pass. If `require()` throws on the `export` line, take the
 fallback in the note above and re-run.
 
-- [ ] **Step 5: Commit**
+> **DECIDED: the dual-export footer stayed. The fallback was NOT taken.** Measured
+> 9/9 on the first run with both the `module.exports` line and the `export` line
+> present, and 19/19 for the app (`npm --prefix apps/admin-management test`, which
+> is server.test.js's 10 plus these 9).
+>
+> **But not for the reason the note assumed, and this is worth knowing.** The file
+> is not being loaded as CommonJS-with-an-extra-line. `require()` of it returns an
+> **ES module namespace object** — `Object.prototype.toString` gives `[object
+> Module]`, keys come back alphabetised as `ROUTES, createApi`. Node parsed it as
+> CJS, hit the `export`, and re-parsed it as ESM (module syntax detection), then
+> `require(esm)` handed back the namespace. So `typeof module` is `undefined`
+> inside it and **the `module.exports` line never executes** — it is dead code that
+> is kept because the plan says type the block verbatim, and because it costs
+> nothing (the `typeof` guard short-circuits instead of throwing a ReferenceError).
+>
+> The note's "a file cannot be both" is right; the file is ESM, and `require(esm)`
+> is what makes it look like both.
+>
+> **The price is a Node floor that `engines` does not state.** `require(esm)` is
+> unflagged only from **v20.19 / v22.12**. Measured, on this exact file:
+>
+> | Runtime | Result |
+> | --- | --- |
+> | local v22.20.2 | 9/9 pass |
+> | `node:20-alpine` (today v20.20.2) | 9/9 pass |
+> | `node:20.18-alpine` | **`SyntaxError: Unexpected token 'export'`**, 0 pass / 1 fail |
+>
+> `apps/admin-management/package.json` says `"node": ">=20"` and every sibling
+> Dockerfile says `FROM node:20-alpine`, which today resolves to 20.20.2 and is
+> fine. CI (`.github/workflows/deploy.yml`, `node-version: 20`) resolves to latest
+> 20.x and is fine. Anything on 20.0–20.18 is not. **Task 6, when it writes this
+> app's Dockerfile: do not pin a minor below 20.19**, and consider tightening
+> `engines` to `>=20.19`.
+>
+> **For Task 4:** `import { createApi } from "./api.js"` in `app.js` is the correct
+> shape and needs no change — the file really is an ES module, so a
+> `<script type="module">` in `index.html` loads it natively. The `window.adminApi`
+> global fallback is not needed and should not be introduced.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/public/api.js apps/admin-management/test/api.test.js \
