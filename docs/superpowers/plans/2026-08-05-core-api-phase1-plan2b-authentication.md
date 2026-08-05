@@ -663,7 +663,7 @@ true is the cheaper of the two."* This is that.
 grep -rn "limit.name\|limiter absent\|login-global" apps/core-api docs/superpowers/specs --include=*.js --include=*.md | grep -v node_modules
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/router-registration.test.js`, after the existing
 `validateRouteTable` cases:
@@ -743,7 +743,7 @@ test("validateRouteTable rejects a limit that is not an object", () => {
 > them against a 2b action now means Task 3 does not have to come back and edit
 > them.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/router-registration.test.js
@@ -753,7 +753,7 @@ Expected: FAIL — three of the four new cases report
 `Missing expected exception`; `validateRouteTable` currently returns the entries
 unchanged for all of them.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `apps/core-api/http/router.js`, add the require beside the existing ones:
 
@@ -822,7 +822,7 @@ find it with `grep -n "Plan 2, with the" apps/core-api/http/router.js` — so th
 //           LIMITERS, which is the one place the roster is written.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/router-registration.test.js apps/core-api/test/route-auth.test.js apps/core-api/test/rate-limit.test.js
@@ -831,7 +831,7 @@ node --test apps/core-api/test/router-registration.test.js apps/core-api/test/ro
 Expected: all pass. `route-auth.test.js` is unaffected — no registered route
 declares a `limit` yet.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Amend the parent spec §5.7 in the same commit. Find the sentence with:
 
@@ -4342,8 +4342,9 @@ And widen the public set in `apps/core-api/test/route-auth.test.js` — find it 
 
 ```js
   // Set EQUALITY, not containment: adding a fourth fails and so does removing one.
-  // Three of spec 6.1's settled four. The fourth is POST /api/terminal/pair, which
-  // arrives with the terminal plan; widen this literal in the same commit as that route.
+  // Three of the eight that identity spec 6.2 enumerates. The next five are Plan 2d's
+  // recovery routes; POST /api/terminal/pair makes nine and arrives with the terminal
+  // plan. Widen this literal in the same commit as the route, never ahead of it.
   assert.deepEqual(
     publicKeys,
     new Set(["GET /health", "GET /health/ready", "POST /api/admin/auth/login"])
@@ -6654,13 +6655,16 @@ markers with assertions on the claim that is now TRUE.*
 - Modify: `docs/superpowers/specs/2026-07-29-core-api-phase1-design.md`
 - Modify: `docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md`
 
-**Two of those test files are here because Step 2 turns them red.** `operations-docs.test.js`
-is the file everyone remembers; `deploy-config.test.js` and `backup-restore.test.js` each
-carry one `assert.match` on a sentence Step 2 retires, and neither is found by the `Plan 2`
-mirror below — one of them matches the literal *"Ships in a later plan of this phase"*,
-which contains no `Plan 2` at all. Step 1 retargets all three files together, because a
-documentation edit that lands with the assertions untouched is a red suite blamed on the
-last thing committed rather than on the edit that caused it.
+**Two of those test files are here because Step 2 turns them red.**
+`deploy-config.test.js` and `backup-restore.test.js` each carry one `assert.match` on a
+sentence Step 2 retires. The first mirror below does return both, but it returns them on
+their **comment** lines, buried in thirty-odd hits across nine files — and
+`deploy-config.test.js`'s assertion is on the literal *"Ships in a later plan of this
+phase"*, which contains no `Plan 2` at all, so the only thing tying it to this task is
+the comment above it. That is what the second mirror is for. Step 1 retargets all three
+test files, `operations-docs.test.js` included, before `npm test` is run: a documentation
+edit that lands with its assertions untouched is a red suite blamed on the last thing
+committed rather than on the edit that caused it.
 
 **The mirrors — run all five and reconcile every hit, not just the ones listed here:**
 
@@ -6675,17 +6679,23 @@ grep -rn "SOURCE_FILES.length >=" apps/core-api/test/source-structure.test.js
 **Not every `Plan 2` is this plan.** `infra/README.md`'s `AUDIT_RETENTION_DAYS`
 sentence points at `scripts/sweep-expired.js`, which is **Plan 2d** and is not built
 here. Retarget that one to say `Plan 2d` rather than deleting it — "Plan 2" was
-unambiguous when it was written and stopped being so the day 2a shipped.
+unambiguous when it was written and stopped being so the day 2a shipped. Its assertion,
+`assert.match(doc, /AUDIT_RETENTION_DAYS[\s\S]{0,120}Plan 2/)` in
+`backup-restore.test.js`, stays **green** through that retarget and needs no edit: the
+pattern has no word boundary, so it matches `Plan 2d`. Leave it exactly as it is —
+adding a `\b` there is a repair nobody asked for that turns a passing assertion red.
 
 **`scripts/set-password.js` and `scripts/unlock-account.js` get the same retarget, and
 this plan is what makes them urgent.** Neither file exists — `apps/core-api/scripts/`
 holds `reset-database.js`, `setup-template-db.js` and, after Task 16,
-`create-platform-admin.js`. Both are named as shipped levers in five places
-(`design.md` §7's file layout, `:1509`, §9.10, §10's Phase-1 recovery sentence, and
-§12's acceptance checkbox), and slice §11.1 calls `set-password.js` the remedy that
-"already exists". **Do not reword the two error messages Task 16 writes.** The name is
-pinned at all five spec sites, in Plan 5's image-contents rule, and in a live comment at
-`apps/core-api/test/deploy-config.test.js:63`; renaming the script here would make six
+`create-platform-admin.js`. Both are named as shipped levers in five sections of the
+parent spec — §7's file layout, §9.3's "`scripts/` in the image is required", §9.10's
+neighbouring-levers sentence, §10's Phase-1 recovery line, and §12's acceptance checkbox
+— and slice §11.1 calls `set-password.js` the remedy that "already exists". Find every
+one with `grep -rn "set-password.js\|unlock-account.js" docs apps`.
+**Do not reword the two error messages Task 16 writes.** The name is
+pinned at all five spec sites, in Plan 5's image-contents rule, and in a live comment in
+`apps/core-api/test/deploy-config.test.js`; renaming the script here would make six
 documents wrong to make one message accurate. The bookkeeping is the fix: they belong to
 **Plan 2d**, which slice §11.8 gives "the admin CRUD and credential recovery", and
 `set-password.js` is the operator half of exactly that. Until 2d lands, an operator who
@@ -6772,8 +6782,9 @@ and the password-rotation ordering"*:
 
 **Measure the 400, do not inherit it.** The bound must be the real distance between the
 sentence and the fenced command after Step 2 has written them, plus room for one edit —
-too wide and the assertion starts passing off the *cutover* invocation two hundred lines
-below, which is a different site and would leave this paragraph free to rot. Read it back:
+too wide and the assertion starts passing off the *cutover* invocation further down the
+file, which is a different site and would leave this paragraph free to rot. Read it back
+and count the gap yourself:
 
 ```bash
 grep -n "create-platform-admin.js" infra/README.md
@@ -6848,8 +6859,8 @@ handles a plaintext password.
 | §6.1 / §8.5 rule 2 | *"exactly four entries"* / *"the settled four"* → **three** after this plan, and say what it grows to rather than implying it stops: **eight** once Plan 2d adds `forgot-password`, `reset-password`, `verify-email`, `GET /admin/reset-password` and `GET /admin/verify-email`, and **nine** when the terminal plan adds `POST /api/terminal/pair`. Do not write "four". The slice settled this at §6.2 — *"The public set is eight"* — and its §12 already carries the amendment row; a plan that re-derives four here would put the parent back in conflict with the slice one commit after the slice was written. |
 | §6.2, the four identity rows | The Roles column reads `anyUser`; it becomes **`anyUser` + `platform`**. §5.4's alias table excludes an unscoped `platform_admin` from `anyUser` and §6.2 gives these four rows `anyUser`, so the two sections disagree and Plan 2b is the first plan to execute the disagreement — see Part 5 departure (d). It is settled in §6.2's direction *for these four rows only*, by declaring both aliases on routes that bind no company, and **not** by widening `anyUser` in `permits()`, which would admit an unscoped platform admin to the roughly twenty tenant routes Plan 2c registers at `anyUser`. |
 | §6.3.5 | Step 10 is two halves. The static route-roles half runs at step 7.5 and the per-resource half arrives in Plan 2c — see Part 5 departure (c). |
-| §7 file layout `:1124`, §9.10, §12 | Not a correction — a **confirmation**, and it is worth a row precisely because three sites would otherwise stay unverified. All three describe `create-platform-admin.js` as holding an advisory lock and a monotonic audit guard: §7's file-layout line, §9.10's justification for connecting as `core_api_app` rather than the owner, and §12's checkbox (*"a second run with a different address exits NON-ZERO; DELETE the platform_admin row and re-run — still non-zero"*). Task 7's `bootstrapPlatformAdmin` takes `pg_advisory_xact_lock` and refuses on an existing `platform.admin_created` audit row, in one transaction, and Task 16 calls it. Record that they are now implemented and name the tests, so the next reader does not re-litigate a guard that exists. |
-| §6.2 `POST /api/platform/admins` and §8's peer-creation paragraph | Follows from the row above: that route is *"the sole route in the system that creates a peer"* and its only stated justification is that `create-platform-admin.js` is monotonic. It is. Leave both sentences standing and note that the premise was checked here — an earlier draft of this plan shipped a `created === null` guard that would have removed it, and Plan 2c inherits the exception. |
+| §7 file layout, §9.10, §12 | Not a correction — a **confirmation**, and it is worth a row precisely because three sites would otherwise stay unverified. All three describe `create-platform-admin.js` as holding an advisory lock and a monotonic audit guard: §7's file-layout line, §9.10's justification for connecting as `core_api_app` rather than the owner, and §12's checkbox (*"a second run with a different address exits NON-ZERO; DELETE the platform_admin row and re-run — still non-zero"*). Task 7's `bootstrapPlatformAdmin` takes `pg_advisory_xact_lock` and refuses on an existing `platform.admin_created` audit row, in one transaction, and Task 16 calls it. Record that they are now implemented and name the tests, so the next reader does not re-litigate a guard that exists. |
+| §6.2's `POST /api/platform/admins` row, and the peer-creation paragraph in the prose below the same table | Follows from the row above: that route is *"the sole route in the system that creates a peer"* and its only stated justification is that `create-platform-admin.js` is monotonic. It is. Leave both sentences standing and note that the premise was checked here — an earlier draft of this plan shipped a `created === null` guard that would have removed it, and Plan 2c inherits the exception. |
 | §9.5 | **The block-4 appendix is wrong twice** and must be corrected or the next reader copies it: it writes the curl as `curl -fsS … \|\| true`, which `deploy-config.test.js` bans, and it writes the psql with `'"'"'`-style quoting that no longer matches what the test asserts. Replace both with what `deploy.yml` actually carries after Task 12. |
 | §9.12 | The semaphore-occupancy sentence names `LOGIN_RATE_PER_MINUTE` as *"the control"*. With `login-global` in a roster and `core_login` at the edge it is one of two, and identity spec §7.3 already says so. |
 
@@ -6885,7 +6896,7 @@ prevents. It carries two things:
    it builds no producer for that code, gives it no home in the pipeline, and no test
    asserts it — §6.3.5's step 10 note (departure (c)) defers the *per-resource* half to
    Plan 2c without noticing that the **scope-state** answer has no owner at all. The
-   first ~20 tenant routes registered at `anyUser` in Plan 2c will each need it, and the
+   roughly twenty tenant routes Plan 2c registers at `anyUser` each need it, and the
    cheap wrong repair available at that moment — letting the unscoped admin through
    because the alias already admits them — is the security hole this slice just refused.
    Say where it should live: beside the role gate at step 7.5, reading `scope.kind`

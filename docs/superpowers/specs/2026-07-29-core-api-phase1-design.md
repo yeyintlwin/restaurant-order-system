@@ -579,8 +579,11 @@ third, `locked_until = now() + min(2^(n-3) minutes, 15 minutes)`, reset to zero
 on any successful login. A correct password therefore always eventually works.
 
 **The limiter roster — seven, defined once here and nowhere else.** Steps 4a and
-5b in §6.3.5 refer to this table; `route()` rejects at boot any route whose
-`limit` names a limiter absent from it.
+5b in §6.3.5 refer to this table; `validateRouteTable()` rejects at boot any route
+whose `limit` names a limiter absent from it, or whose `limit.key` disagrees with
+the key declared here. The table itself lives in `apps/core-api/lib/rate-limit.js`
+as `LIMITERS`; this section and that constant are the same list, and it is read by
+the boot check and by the request pipeline so the two cannot drift.
 
 | Limiter | Bucket key | Window | Ceiling | `Retry-After`? | Config |
 | --- | --- | --- | --- | --- | --- |

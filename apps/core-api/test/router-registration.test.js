@@ -159,6 +159,73 @@ test("rule 8: a principal-keyed rate limit on a public route is fatal", () => {
   );
 });
 
+const { LIMITERS } = require("../lib/rate-limit");
+
+test("validateRouteTable rejects a limit naming a limiter outside the 5.7 roster", () => {
+  // Spec 5.7 claimed route() already did this. It did not: limit: { key: "ip",
+  // name: "invented" } registered cleanly and the process listened. A limiter name
+  // nobody declared is a bucket nobody sized, so the ceiling the route thinks it
+  // has does not exist.
+  assert.throws(
+    () =>
+      validateRouteTable([
+        entry("POST", "/x", {
+          auth: "public",
+          body: null,
+          audit: "auth.login",
+          limit: { key: "ip", name: "invented" }
+        })
+      ]),
+    /limit\.name "invented".*roster/s
+  );
+});
+
+test("validateRouteTable rejects a limit whose key disagrees with the roster", () => {
+  // The half that is easy to miss: "login-global" IS in the roster, so a name-only
+  // check passes, while the route has quietly asked for a per-user bucket on a
+  // public route. Rule 8 catches THAT particular pair; this catches the general
+  // case, including terminal-vs-user on an authenticated route where rule 8 is
+  // silent.
+  assert.throws(
+    () =>
+      validateRouteTable([
+        entry("POST", "/x", {
+          auth: "user",
+          roles: ["anyUser"],
+          body: null,
+          audit: "auth.login",
+          limit: { key: "terminal", name: "create-user" }
+        })
+      ]),
+    /keys "create-user" on "user"/
+  );
+});
+
+test("validateRouteTable accepts every name in the roster", () => {
+  // The anti-vacuity half. A regex typo that made the membership test always throw
+  // would pass both cases above and make the whole roster unusable at boot.
+  for (const [name, declared] of Object.entries(LIMITERS)) {
+    const options = {
+      auth: declared.key === "ip" ? "public" : "user",
+      body: null,
+      audit: "auth.login",
+      limit: { key: declared.key, name }
+    };
+    if (options.auth === "user") options.roles = ["anyUser"];
+    assert.doesNotThrow(() => validateRouteTable([entry("POST", "/x", options)]), name);
+  }
+});
+
+test("validateRouteTable rejects a limit that is not an object", () => {
+  for (const bad of ["login-global", 5, true]) {
+    assert.throws(
+      () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "auth.login", limit: bad })]),
+      /must be an object/,
+      JSON.stringify(bad)
+    );
+  }
+});
+
 const { createApp } = require("../http/router");
 
 // Plan 2 extracts this into testing/http.js when the explicit cookie jar arrives (spec §8.1);

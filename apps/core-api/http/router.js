@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { sendError } = require("./respond");
+const { LIMITERS } = require("../lib/rate-limit");
 
 // Spec §3.2 rule 2: this is the ONLY file in the service that may require("express"), and
 // source-structure.test.js rule C3 asserts that by name. One registration function means one
@@ -84,9 +85,10 @@ function listRoutes() {
 //   rule 2  (the public set equals the settled four) and rule 3 (the exempt set) — a census at
 //           boot makes the service un-bootable at every intermediate commit; both live in
 //           route-auth.test.js, which asserts set EQUALITY and so fails on an addition too.
-//   rule 4's audit-vocabulary membership (§5.9) and the §5.7 limiter roster — Plan 2, with the
-//           first non-GET route. The noun.verb shape is checked now so Plan 2 cannot invent
-//           free-form strings and then have to reconcile them against the CHECK regex.
+//   rule 4's audit-vocabulary membership (§5.9) — Task 3 of Plan 2b, once the
+//           vocabulary names every action a registered route emits.
+//           The §5.7 limiter roster check IS here, above: it reads lib/rate-limit.js's
+//           LIMITERS, which is the one place the roster is written.
 //   rule 6  (terminal-administration nesting) and rule 7 (a Location emitter has a GET) — Plan 2.
 //   rule 9  is dispatch behaviour, in createApp(). Rule 10 is a test assertion.
 // Takes `entries` as a parameter so the rules can be unit-tested on synthetic tables.
@@ -135,10 +137,43 @@ function validateRouteTable(entries = routes) {
       }
     }
 
-    if (options.limit && PRINCIPAL_LIMIT_KEYS.includes(options.limit.key) && options.auth === "public") {
-      throw new Error(
-        `route table: ${where} keys a rate-limit bucket on "${options.limit.key}" but is auth:'public' — that principal does not exist yet`
-      );
+    if (options.limit !== undefined) {
+      if (options.limit === null || typeof options.limit !== "object") {
+        throw new Error(`route table: ${where} declares a limit that must be an object { key, name }`);
+      }
+      // Spec 5.7's own claim, made true. Until Plan 2b there was no roster
+      // constant and no membership check anywhere in the service, so
+      // limit: { key: "ip", name: "invented" } registered and the process
+      // listened -- a route believing it was throttled by a bucket that did not
+      // exist. The list is printed because the failure is a typo nine times in
+      // ten and the reader needs the spelling.
+      if (!Object.prototype.hasOwnProperty.call(LIMITERS, options.limit.name)) {
+        throw new Error(
+          `route table: ${where} declares limit.name ${JSON.stringify(
+            options.limit.name
+          )}, which is not in the spec 5.7 roster (${Object.keys(LIMITERS).sort().join(", ")})`
+        );
+      }
+      // The roster owns the bucket key, and a route that disagrees with it is
+      // asking for a bucket nobody sized. Rule 8 below catches only the
+      // principal-on-public case; this catches user-vs-terminal too.
+      const declared = LIMITERS[options.limit.name];
+      if (declared.key !== options.limit.key) {
+        throw new Error(
+          `route table: ${where} declares limit.key ${JSON.stringify(options.limit.key)} but the roster keys "${
+            options.limit.name
+          }" on "${declared.key}"`
+        );
+      }
+      // Rule 8, unchanged and deliberately kept as its own statement: spec 6.3.5
+      // splits step 4a from 5b because five of the seven limiters key on a
+      // principal that does not exist until credential resolution. route-auth.test.js
+      // mirrors this assertion, so the two can disagree only by someone editing both.
+      if (PRINCIPAL_LIMIT_KEYS.includes(options.limit.key) && options.auth === "public") {
+        throw new Error(
+          `route table: ${where} keys a rate-limit bucket on "${options.limit.key}" but is auth:'public' — that principal does not exist yet`
+        );
+      }
     }
   }
 
