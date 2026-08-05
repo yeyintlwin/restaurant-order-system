@@ -176,6 +176,14 @@ tbody tr:hover{background:#fcfcfd}
 /* A shop left without a manager is a hole in the company, not a blank cell. */
 .state.none{color:#9c5c17;font-weight:550}
 
+/* The shop count opens up. The breakdown is opt-in, so the default table stays a list of
+   companies rather than a list of everything. */
+.count{border:0;background:none;padding:0;font:inherit;font-size:13px;color:var(--accent);
+       font-weight:550;text-decoration:underline;text-underline-offset:3px}
+tr.sub td{background:#fbfbfc;padding-top:9px;padding-bottom:9px;font-size:13px;color:var(--muted)}
+tr.sub .leaf{padding-left:43px}
+tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
+
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
 .group,.choice{margin:16px 0;padding:14px;border-radius:10px}
@@ -319,26 +327,26 @@ tbody tr:hover{background:#fcfcfd}
         <div class="panel">
           <div class="scroll">
           <table>
-            <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Tables</th><th>Status</th><th></th></tr></thead>
             <tbody id="co-rows">
               <tr>
                 <td><div class="who"><span class="av">SK</span><span><span class="nm">Sakura Kitchen</span><br><span class="em">sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Khin Myat</b>khin@sakura.mm</td>
-                <td class="meta state" data-label="Shops">3</td>
+                <td class="meta state" data-label="Shops"><button type="button" class="count">3</button></td><td class="meta state" data-label="Tables">40</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-company="Sakura Kitchen" data-ceo="Khin Myat" data-ceo-email="khin@sakura.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">MG</span><span><span class="nm">Mandalay Grill</span><br><span class="em">mandalaygrill.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Nay Lin</b>naylin@mandalaygrill.mm</td>
-                <td class="meta state" data-label="Shops">1</td>
+                <td class="meta state" data-label="Shops"><button type="button" class="count">1</button></td><td class="meta state" data-label="Tables">10</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-company="Mandalay Grill" data-ceo="Nay Lin" data-ceo-email="naylin@mandalaygrill.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">SC</span><span><span class="nm">Shwe Café</span><br><span class="em">shwecafe.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Su Su Hlaing</b>susu@shwecafe.mm</td>
-                <td class="meta state" data-label="Shops">2</td>
+                <td class="meta state" data-label="Shops"><button type="button" class="count">2</button></td><td class="meta state" data-label="Tables">14</td>
                 <td class="meta state" data-label="Status">Suspended</td>
                 <td class="act"><button class="edit" data-company="Shwe Café" data-ceo="Su Su Hlaing" data-ceo-email="susu@shwecafe.mm" data-status="suspended">Edit</button></td>
               </tr>
@@ -957,8 +965,54 @@ function openCompany(btn){
 
 document.getElementById("co-rows").addEventListener("click",e=>{
   const btn=e.target.closest("[data-company]");
-  if(btn) openCompany(btn);
+  if(btn){ openCompany(btn); return; }
+  const count=e.target.closest(".count");
+  if(count) toggleShops(count.closest("tr"));
 });
+
+/* Shops and tables are the size of what is being hosted, not who is inside it, so the
+   platform owner may see them down to the branch. Sakura Kitchen's breakdown is read off
+   the CEO's own Shops table rather than kept as a second copy. */
+const OTHER_SHOPS={
+  "Mandalay Grill":[["Mandalay Central",10]],
+  "Shwe Café":[["Shwe Gone Daing",8],["Kamayut",6]],
+};
+function shopsOf(company){
+  if(company==="Sakura Kitchen")
+    return [...document.querySelectorAll("#shops-rows tr")].map(r=>[
+      r.querySelector(".who .nm").textContent,
+      Number(r.querySelector('[data-label="Tables"]').textContent||0),
+    ]);
+  return OTHER_SHOPS[company]||[];
+}
+function toggleShops(row){
+  let next=row.nextElementSibling;
+  if(next && next.classList.contains("sub")){        // already open — close it
+    while(next && next.classList.contains("sub")){
+      const after=next.nextElementSibling; next.remove(); next=after;
+    }
+    return;
+  }
+  const company=row.querySelector("[data-company]").dataset.company;
+  const list=shopsOf(company);
+  if(!list.length){
+    const tr=document.createElement("tr");
+    tr.className="sub";
+    tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
+    row.after(tr);
+    return;
+  }
+  let at=row;
+  for(const [shop,tables] of list){
+    const tr=document.createElement("tr");
+    tr.className="sub";
+    tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
+                 '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
+    tr.querySelector(".leaf").textContent=shop;
+    tr.querySelector('[data-label="Tables"]').textContent=tables+" tables";
+    at.after(tr); at=tr;
+  }
+}
 document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
 
 // The only person the platform owner may unlock. Everyone else is behind the CEO.
@@ -1026,7 +1080,8 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     tr.innerHTML=
       '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
       '<td class="meta state" data-label="CEO"><b></b></td>'+
-      '<td class="meta state" data-label="Shops">0</td>'+
+      '<td class="meta state" data-label="Shops"><button type="button" class="count">0</button></td>'+
+      '<td class="meta state" data-label="Tables">0</td>'+
       '<td class="meta state ok" data-label="Status">Active</td>'+
       '<td class="act"><button class="edit" data-status="active">Edit</button></td>';
     tr.querySelector(".av").textContent=initials(name);
@@ -1193,7 +1248,7 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
         btn.dataset.shop="None";
         const shopCell2=staffRow.querySelector('[data-label="Shop"]');
         if(shopCell2){ shopCell2.textContent="None"; shopCell2.classList.add("none"); }
-        refreshShopGaps();
+        refreshShopGaps(); refreshCompanyTotals();
       }
     }
     banner.textContent=note;
@@ -1320,6 +1375,22 @@ shopDialog.addEventListener("close",()=>{ handover.hidden=true; });
 /* A shop with an empty manager slot is not broken — the CEO is above the manager, so the
    work still has somewhere to land. What it must not be is quiet. This line names the shops
    and says who is carrying them, and it stays until every slot is filled. */
+/* The platform owner sees no people inside a company, but shops and tables are not people —
+   they are the size of the thing being hosted. The totals are summed from the shops rather
+   than typed anywhere, so the two screens can never drift apart. */
+function refreshCompanyTotals(){
+  const rows=[...document.querySelectorAll("#shops-rows tr")];
+  const tables=rows.reduce((n,r)=>n+Number(r.querySelector('[data-label="Tables"]').textContent||0),0);
+  const btn=document.querySelector('[data-company="Sakura Kitchen"]');
+  if(!btn) return;                                   // renamed by the platform owner
+  const row=btn.closest("tr");
+  row.querySelector('[data-label="Shops"] .count').textContent=rows.length;
+  row.querySelector('[data-label="Tables"]').textContent=tables;
+  // Any breakdown showing beneath is now stale; close it so it reopens with fresh numbers.
+  let next=row.nextElementSibling;
+  while(next && next.classList.contains("sub")){ const a=next.nextElementSibling; next.remove(); next=a; }
+}
+
 function refreshShopGaps(){
   const empty=[...document.querySelectorAll('#v-shops [data-label="Manager"].none')]
     .map(td=>td.closest("tr").querySelector(".who .nm").textContent);
@@ -1332,7 +1403,7 @@ function refreshShopGaps(){
     (empty.length===1?"that shop is":"those shops are")+" yours to run — you can already do "+
     "everything a manager can there.";
 }
-refreshShopGaps();
+refreshShopGaps(); refreshCompanyTotals();
 
 document.getElementById("shop-form").addEventListener("submit",e=>{
   e.preventDefault();
@@ -1370,7 +1441,7 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
       (picked ? picked+" manages it." : "It has no manager yet, so it is yours to run.");
     shopDialog.close();
     shopDone.hidden=false;
-    refreshShopGaps();
+    refreshShopGaps(); refreshCompanyTotals();
     shopDone.scrollIntoView({block:"nearest"});
     return;
   }
@@ -1404,7 +1475,7 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
       : picked+" now manages "+shopName.value+".";
   shopDialog.close();
   shopDone.hidden=false;
-  refreshShopGaps();
+  refreshShopGaps(); refreshCompanyTotals();
   shopDone.scrollIntoView({block:"nearest"});
 });
 

@@ -222,6 +222,24 @@ platform owner cannot look. They hand it to that company's CEO. Revisit only if 
 becomes genuinely painful, and then as read-only lookup by exact address with the CEO able
 to see every look.
 
+### 6.1 Shops and tables are not people
+
+The boundary is about **who is inside a company**, not how large it is. The platform owner
+sees, for every company:
+
+- how many shops it has, and **the name and table count of each one**
+- how many tables in total
+
+The branch list opens from the shop count rather than sitting there permanently, so the
+default screen stays a list of companies rather than a list of everything.
+
+This is what the platform is hosting and, eventually, what it would bill for. Nothing here
+names a manager or a member of staff, so §6 is untouched.
+
+The figures for a company are **summed from its shops, never typed**. The CEO adds a branch
+with 16 tables and the platform owner's totals move with it; there is no second copy to
+drift.
+
 ## 7. Screen vocabulary
 
 The same screen is named for the person reading it. A manager's people page is titled
