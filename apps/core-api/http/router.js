@@ -5,6 +5,7 @@ const express = require("express");
 const { sendError } = require("./respond");
 const { LIMITERS } = require("../lib/rate-limit");
 const { AUDIT_ACTIONS } = require("../lib/audit-vocabulary");
+const { permits } = require("../lib/authorization");
 const { buildClearingCookie } = require("./cookies");
 const { requiresOriginCheck, assertOriginAndContentType } = require("./csrf");
 const { sessionTokensPresented, clientAddressOf, authenticateUser } = require("./authenticate");
@@ -284,6 +285,23 @@ async function runPipeline(entry, req, res, deps) {
       sendError(res, error, req.core.requestId);
       return false;
     }
+  }
+
+  // Step 10, FIRST HALF. Spec 6.3.5 writes step 10 as "AUTHORIZATION: route roles ->
+  // 403; then each path resource resolved in path order". Those are two halves with
+  // different inputs, and only the second one has an ordering constraint.
+  //
+  // This half depends on the resolved credential and on NOTHING the caller can vary,
+  // so it runs as soon as the credential exists rather than after steps 8 and 9. The
+  // second half needs step 9's path parameters -- it is what makes "exists but not
+  // yours" and "does not exist" the same zero-row result -- and it arrives with the
+  // first route that HAS a path parameter, in Plan 2c.
+  //
+  // It is here, once, rather than a line in every handler, for the same reason route()
+  // exists at all: one place where authorization can be forgotten.
+  if (entry.options.auth === "user" && !permits(req.core.scope, entry.options.roles)) {
+    sendError(res, { status: 403, code: "forbidden" }, req.core.requestId);
+    return false;
   }
 
   return true;

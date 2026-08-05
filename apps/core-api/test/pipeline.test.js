@@ -36,6 +36,12 @@ route(
   { auth: "public", body: null, audit: "auth.login_failed", limit: { key: "ip", name: "login-global" }, sample: {} },
   (req, res) => sendJson(res, 200, { ok: true })
 );
+route(
+  "POST",
+  "/__pipe/platform-only",
+  { auth: "user", roles: ["platform"], body: null, audit: "auth.logout", sample: {} },
+  (req, res) => sendJson(res, 200, { ok: true })
+);
 
 const USER = "aaaaaaaa-0003-4000-8000-000000000001";
 const SESSION_ID = "aaaaaaaa-0008-4000-8000-000000000001";
@@ -302,5 +308,28 @@ test("the existing terminal route still works: the pipeline resolves nothing for
       body: JSON.stringify({ status: "Welcome", orderingUrl: "https://order.example.test/t/AAAAAAAAAAAAAAAAAAAAAA" })
     });
     assert.equal(response.status, 200, "no Origin header, no cookie, and it must still be 200");
+  });
+});
+
+test("step 10's first half: a role the route does not admit is 403 forbidden", async () => {
+  // The harness resolves a company_admin, whom `platform` does not admit.
+  const { deps } = harness();
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/platform-only`, { method: "POST", headers: jsonPost });
+    assert.equal(response.status, 403);
+    // The GENERIC code. Spec 6.3.2: specific 403 codes exist only where the client
+    // must take a different UI action, and "you are the wrong role" is not one.
+    assert.equal((await response.json()).error.code, "forbidden");
+  });
+});
+
+test("the role gate runs AFTER the credential and the password gate, not before", async () => {
+  // Ordering, asserted by the status a request with two problems gets. An
+  // unauthenticated caller must learn 401 and not "the role you do not have is
+  // wrong", which would be a route-shape oracle available without a credential.
+  const { deps } = harness({ sessions: { resolveSession: async () => null, renewSession: async () => null } });
+  await withServer(deps, async (base) => {
+    const response = await fetch(`${base}/__pipe/platform-only`, { method: "POST", headers: jsonPost });
+    assert.equal(response.status, 401);
   });
 });

@@ -52,7 +52,8 @@ test("the origin-gated set is derived and pinned, so a new public POST cannot sk
     "POST /api/admin/auth/login",
     "POST /api/admin/auth/logout",
     "POST /api/admin/auth/logout-all",
-    "POST /api/admin/auth/password"
+    "POST /api/admin/auth/password",
+    "POST /api/admin/scope"
   ]));
 });
 

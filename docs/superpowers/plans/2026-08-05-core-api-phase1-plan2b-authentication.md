@@ -5841,7 +5841,7 @@ materialises `scope.role = 'platform_admin'` and a company admin materialises
 break the moment §5.4's *"the rank lattice does the work"* is extended.
 `session.role` is the `users.role` column, which is the fact being tested.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `apps/core-api/test/authorization.test.js`:
 
@@ -6117,7 +6117,7 @@ test("a tenant route alias still refuses an unscoped platform admin", async () =
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/core-api/test/authorization.test.js apps/core-api/test/pipeline.test.js \
@@ -6127,7 +6127,7 @@ node --test apps/core-api/test/authorization.test.js apps/core-api/test/pipeline
 Expected: `Cannot find module '../lib/authorization'`; the pipeline's role test
 answers 200 because nothing enforces `roles`; the scope tests 404.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 **(a)** Create `apps/core-api/lib/authorization.js`:
 
@@ -6343,7 +6343,7 @@ its final Plan 2b value — every non-GET `auth:'user'` route plus login:
   ]));
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/authorization.test.js apps/core-api/test/pipeline.test.js \
@@ -6356,7 +6356,7 @@ the gate must skip it entirely; a gate written as "if `options.roles` exists" in
 of "if `auth === 'user'`" passes every test above and 500s that route on
 `permits(undefined, undefined)`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/authorization.js apps/core-api/test/authorization.test.js \

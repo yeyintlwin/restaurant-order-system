@@ -546,4 +546,122 @@ route(
   }
 );
 
+// ---------------------------------------------------------------------------
+// POST /api/admin/scope
+// ---------------------------------------------------------------------------
+
+// Lives in this file despite its path: it changes AUTHENTICATION state -- it writes
+// user_sessions.acting_company_id -- and it returns the me-document. A
+// http/routes/scope.js would import every helper above and add nothing.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Materialised AFTER the write, never reused from req.core.scope: the pipeline's
+// scope was built from the session as it was when this request arrived, so it is one
+// selection out of date by construction.
+async function respondWithScope(req, res, deps, session, actingCompanyId) {
+  const scope = await deps.scopes.materialiseScope({
+    userId: session.userId,
+    sessionId: session.sessionId,
+    role: session.role,
+    companyId: session.companyId,
+    actingCompanyId
+  });
+  sendJson(res, 200, meDocument({ user: userFromSession(session), scope, session }));
+}
+
+route(
+  "POST",
+  "/api/admin/scope",
+  {
+    auth: "user",
+    // BOTH, because spec 5.4's four aliases cannot express "platform_admin, scoped or
+    // unscoped": `platform` admits only the unscoped one, `companyAdmin` admits the
+    // scoped one AND every real company admin. This is the narrowest static
+    // declaration available; the handler closes the rest.
+    roles: ["platform", "companyAdmin"],
+    body: { companyId: "uuid|null" },
+    // The handler writes scope.cleared for a null body. `audit` is one string, and
+    // this is the route's principal action.
+    audit: "scope.selected",
+    sample: { body: { companyId: null } }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+
+    // session.role is users.role -- the fact being tested. scope.role would work by
+    // accident today (a scoped platform admin materialises 'platform_admin' and a
+    // company admin materialises 'company_admin') and stop working the moment spec
+    // 5.4's rank lattice is extended.
+    if (session.role !== "platform_admin") throw new ApiError(403, "forbidden");
+
+    const body = await readJsonBody(req);
+
+    // REQUIRED and explicitly NULLABLE (spec 6.2). hasOwnProperty rather than an
+    // `=== undefined` test, because {} and {"companyId": null} are two different
+    // requests: one is a mistake and the other clears the selection.
+    if (!Object.prototype.hasOwnProperty.call(body, "companyId")) {
+      throw new ApiError(422, "validation_failed", [{ field: "companyId", code: "required" }]);
+    }
+    const companyId = body.companyId;
+    if (companyId !== null && (typeof companyId !== "string" || !UUID_PATTERN.test(companyId))) {
+      // 422, and the "422 never describes a path segment" rule does not apply: that
+      // rule is about PATH parameters, where a malformed segment cannot name a
+      // resource. This is a body field and step 11 owns it.
+      throw new ApiError(422, "validation_failed", [{ field: "companyId", code: "invalid_uuid" }]);
+    }
+
+    if (companyId === null) {
+      await deps.sessions.setActingCompany(session.sessionId, null);
+      await deps.appendAuditEvent({
+        actorKind: "user",
+        actorUserId: session.userId,
+        action: "scope.cleared",
+        outcome: "success",
+        sourceIp: req.core.clientIp
+      });
+      await respondWithScope(req, res, deps, session, null);
+      return;
+    }
+
+    // Read BEFORE the write, and separately, because 6.2 distinguishes 404 not_found
+    // from 409 company_suspended and one zero-row UPDATE cannot produce both.
+    const company = await deps.sessions.findCompanyForScopeSelection(companyId);
+
+    // THE PROBED ID GOES IN target_id, NOT IN company_id. audit_events.company_id
+    // REFERENCES companies (0001_init.sql), so an id matching no row raises 23503
+    // inside the failure path and turns a 404 into a 500 -- reachable by anyone who
+    // can reach this route, with any uuid at all. target_id is text with no FK, and
+    // 0001's own comment says why: "a target may legitimately be gone".
+    const attempt = {
+      actorKind: "user",
+      actorUserId: session.userId,
+      action: "scope.selected",
+      outcome: "failure",
+      targetKind: "company",
+      targetId: companyId,
+      sourceIp: req.core.clientIp
+    };
+
+    if (company === null) {
+      await deps.appendAuditEvent(attempt);
+      throw new ApiError(404, "not_found");
+    }
+    if (company.status !== "active") {
+      await deps.appendAuditEvent(attempt);
+      throw new ApiError(409, "company_suspended");
+    }
+
+    await deps.sessions.setActingCompany(session.sessionId, companyId);
+    await deps.appendAuditEvent({
+      ...attempt,
+      outcome: "success",
+      // Only now that the row is known to exist can the tenant column carry it --
+      // which is what makes "everything done inside this company" a query.
+      companyId
+    });
+    await respondWithScope(req, res, deps, session, companyId);
+  }
+);
+
 module.exports = { meDocument, userFromSession, evaluateLogin, payTimeBudget };

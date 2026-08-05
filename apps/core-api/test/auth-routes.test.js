@@ -577,3 +577,171 @@ test("a user who must change their password can reach this route and only this r
     assert.equal(response.status, 200);
   });
 });
+
+function selectScope(base, body) {
+  return fetch(`${base}/api/admin/scope`, { method: "POST", headers: POST_HEADERS, body: JSON.stringify(body) });
+}
+
+function platformAdmin(overrides = {}) {
+  const { deps, calls, audits } = signedIn({
+    session: { role: "platform_admin", companyId: null, actingCompanyId: null }
+  });
+  deps.sessions = {
+    ...deps.sessions,
+    findCompanyForScopeSelection: async () => ({ id: COMPANY, status: "active" }),
+    setActingCompany: async (sessionId, companyId) => { calls.push(["setActingCompany", sessionId, companyId]); return 1; },
+    ...(overrides.sessions || {})
+  };
+  deps.scopes = {
+    materialiseScope: async (input) =>
+      input.actingCompanyId === null
+        ? { kind: "platform", userId: input.userId, sessionId: input.sessionId }
+        : {
+            kind: "tenant", userId: input.userId, sessionId: input.sessionId,
+            companyId: input.actingCompanyId, role: "platform_admin",
+            shopIds: [], administeredShopIds: [], auditCrossTenant: true
+          }
+  };
+  return { deps, calls, audits };
+}
+
+test("selecting a company writes acting_company_id and returns the new scope", async () => {
+  const { deps, calls, audits } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: COMPANY });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.scope.kind, "tenant");
+    assert.equal(body.scope.companyId, COMPANY);
+    // The user's OWN company stays null -- users_platform_admin_has_no_company makes
+    // that a constraint, and the acting company is a session fact, not a user fact.
+    assert.equal(body.user.companyId, null);
+    assert.deepEqual(body.scope.administeredShopIds, []);
+  });
+  assert.deepEqual(calls, [["setActingCompany", SESSION_ID, COMPANY]]);
+  assert.equal(audits[0].action, "scope.selected");
+  assert.equal(audits[0].companyId, COMPANY);
+});
+
+test("clearing returns the platform scope and writes scope.cleared with no target", async () => {
+  const { deps, calls, audits } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: null });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.scope.kind, "platform");
+    assert.equal(body.scope.companyId, null);
+    // ALWAYS an array. A platform scope reaches no shop, and [] is the honest
+    // rendering of that -- never a missing key the client has to guess about.
+    assert.deepEqual(body.scope.shopIds, []);
+    assert.equal("administeredShopIds" in body.scope, false);
+  });
+  assert.deepEqual(calls, [["setActingCompany", SESSION_ID, null]]);
+  assert.equal(audits[0].action, "scope.cleared");
+  // audit_events_target_pair is (target_kind IS NULL) = (target_id IS NULL), so a
+  // uniform-looking target_kind:'company' with a null id is a CHECK violation.
+  assert.equal(audits[0].targetKind, undefined);
+  assert.equal(audits[0].targetId, undefined);
+});
+
+test("a missing companyId key is 422; an explicit null is not", async () => {
+  // Spec 6.2 makes the key required and explicitly nullable, so {} and
+  // {"companyId": null} are two different requests and must not collapse into one.
+  const { deps } = platformAdmin();
+  await withServer(deps, async (base) => {
+    const missing = await selectScope(base, {});
+    assert.equal(missing.status, 422);
+    assert.deepEqual((await missing.json()).error.errors, [{ field: "companyId", code: "required" }]);
+
+    assert.equal((await selectScope(base, { companyId: null })).status, 200);
+  });
+});
+
+test("an unknown company is 404 and a suspended one is 409, and both are audited", async () => {
+  for (const [company, status, code] of [
+    [null, 404, "not_found"],
+    [{ id: COMPANY, status: "suspended" }, 409, "company_suspended"]
+  ]) {
+    const { deps, audits } = platformAdmin({ sessions: { findCompanyForScopeSelection: async () => company } });
+    await withServer(deps, async (base) => {
+      const response = await selectScope(base, { companyId: COMPANY });
+      assert.equal(response.status, status);
+      assert.equal((await response.json()).error.code, code);
+    });
+    assert.equal(audits[0].outcome, "failure");
+    // The probed id goes in target_id, which is text with NO foreign key. The
+    // company_id COLUMN references companies, so an id that matches no row would
+    // raise 23503 inside the failure path and turn a 404 into a 500.
+    assert.equal(audits[0].targetId, COMPANY);
+    assert.equal(audits[0].companyId, undefined);
+  }
+});
+
+test("a real company_admin is refused even though `companyAdmin` admits them", async () => {
+  // The gap the four aliases cannot close. Without the handler's narrowing, every
+  // company admin on the platform could set their own session's acting_company_id.
+  const { deps } = signedIn();
+  deps.sessions = { ...deps.sessions, setActingCompany: async () => 1, findCompanyForScopeSelection: async () => ({ id: COMPANY, status: "active" }) };
+  await withServer(deps, async (base) => {
+    const response = await selectScope(base, { companyId: COMPANY });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "forbidden");
+  });
+});
+
+test("THE BOOTSTRAP ADMIN CAN STILL USE THE FOUR IDENTITY ROUTES", async () => {
+  // Part 5 departure (d), and the regression that no other test in this file can see.
+  // signedIn() resolves a company_admin and platformAdmin() is otherwise pointed only
+  // at /api/admin/scope, so under a plain roles:["anyUser"] the whole suite stays
+  // green while the ONLY account this plan creates gets 403 for reading `me`, for
+  // signing out, and for changing the password the CLI just set.
+  //
+  // An unscoped platform admin is what login always produces: it materialises
+  // actingCompanyId: null, and materialiseScope answers that with { kind: "platform" }.
+  const { deps } = platformAdmin();
+  deps.users = {
+    ...deps.users,
+    findById: async () => activeUser({ role: "platform_admin", companyId: null })
+  };
+  deps.sessions = {
+    ...deps.sessions,
+    createSession: async () => ({
+      id: SESSION_ID,
+      expiresAt: new Date("2026-08-05T08:00:00.000Z"),
+      absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z")
+    })
+  };
+
+  await withServer(deps, async (base) => {
+    const me = await fetch(`${base}/api/admin/auth/me`, { headers: COOKIE });
+    assert.equal(me.status, 200, "an unscoped platform admin cannot read me");
+    assert.equal((await me.json()).scope.kind, "platform");
+
+    const changed = await fetch(`${base}/api/admin/auth/password`, {
+      method: "POST",
+      headers: POST_HEADERS,
+      body: JSON.stringify({ currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" })
+    });
+    assert.equal(changed.status, 200, "an unscoped platform admin cannot change their password");
+
+    for (const path of ["/api/admin/auth/logout", "/api/admin/auth/logout-all"]) {
+      const response = await fetch(`${base}${path}`, { method: "POST", headers: POST_HEADERS });
+      assert.equal(response.status, 200, `an unscoped platform admin cannot ${path}`);
+    }
+  });
+});
+
+test("a tenant route alias still refuses an unscoped platform admin", async () => {
+  // The other half, and the reason the fix is two aliases rather than a wider
+  // `anyUser`. Plan 2c registers ~20 TENANT routes at anyUser; an unscoped platform
+  // scope carries no companyId, so admitting it there would drive a tenant query with
+  // nothing to bind. 6.3.3 promises those routes answer 409 scope_required -- which
+  // NOTHING IN PLAN 2b PRODUCES. This test pins the refusal so Plan 2c inherits a
+  // known-closed door rather than an accident.
+  const { permits } = require("../lib/authorization");
+  const unscoped = { kind: "platform", userId: USER, sessionId: SESSION_ID };
+  assert.equal(permits(unscoped, ["anyUser"]), false);
+  assert.equal(permits(unscoped, ["manager"]), false);
+  assert.equal(permits(unscoped, ["companyAdmin"]), false);
+  assert.equal(permits(unscoped, ["platform", "anyUser"]), true);
+});
