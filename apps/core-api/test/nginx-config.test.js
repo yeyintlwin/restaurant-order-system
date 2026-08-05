@@ -36,6 +36,23 @@ function adminConf() {
   return stripComments(readText(repoRoot, "infra", "nginx", "admin.conf"));
 }
 
+test("no nginx file enables http2, in either spelling", () => {
+  // THIS TEST EXISTS BECAUSE THE DEPLOY CAUGHT IT AND NOTHING HERE DID.
+  // admin.conf shipped with `http2 on;`, nginx answered
+  // `[emerg] unknown directive "http2"`, and the rollback put the box back. The
+  // directive needs nginx >= 1.25.1; the box runs 1.24.0.
+  //
+  // The reasoning was already written down -- api.conf carries it in full -- and a
+  // comment in one file did not stop it being copied into another without it. Both
+  // spellings are banned here: `http2 on;`, which this nginx cannot parse, and
+  // `listen ... http2`, which parses but reaches past its own server block and turns
+  // http2 on for every site sharing the port, including three that proxy elsewhere.
+  for (const [name, text] of [["api.conf", apiConf()], ["admin.conf", adminConf()], ["core-api-proxy.conf", proxySnippet()]]) {
+    assert.doesNotMatch(text, /^\s*http2\s+on\s*;/m, `${name} uses http2 on; which needs nginx >= 1.25.1`);
+    assert.doesNotMatch(text, /^\s*listen[^;]*\bhttp2\b/m, `${name} puts http2 on a listen directive`);
+  }
+});
+
 test("the admin block serves the front end and adds exactly one proxy hop", () => {
   const admin = adminConf();
 

@@ -1932,7 +1932,13 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    http2 on;
+    # NO `http2` TOKEN AND NO `http2 on;` DIRECTIVE. An earlier draft of this plan
+    # had `http2 on;` here; it shipped, and the deploy answered
+    # `[emerg] unknown directive "http2"` and rolled all three nginx files back. The
+    # directive needs nginx >= 1.25.1 and the box runs 1.24.0 -- and api.conf, the
+    # file this block was modelled on, says exactly that in a comment that was
+    # skipped while copying. `listen 443 ssl http2` is not the fix either: it parses,
+    # and reaches past its own server block to every site sharing the port.
     server_name admin.yeyintlwin.com;
 
     ssl_certificate     /etc/letsencrypt/live/admin.yeyintlwin.com/fullchain.pem;
