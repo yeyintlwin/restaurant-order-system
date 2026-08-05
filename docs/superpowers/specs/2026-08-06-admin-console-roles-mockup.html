@@ -1,0 +1,1334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#fafafa" />
+<title>Restaurant Admin</title>
+<style>
+:root{
+  --ink:#1a1c20; --muted:#787f88; --bg:#fafafa; --surface:#fff; --line:#ebecee;
+  --accent:#2e7d5b; --accent-soft:#eef5f2;
+  --rail:#15251e; --rail-ink:#e9efec; --rail-dim:#7f9a8e;
+  --gut:28px;                       /* page gutter, tightens on small screens */
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+/* The browser's own `hidden` rule is display:none at author-zero specificity, so any
+   `display` we set — .row is display:grid — silently beats it and the element stays on
+   screen. `hidden` has to mean hidden. */
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+html,body{height:100%}
+/* Without this a downward swipe at the top of a list reloads the page on Chrome Android. */
+html,body{overscroll-behavior-y:none}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55}
+body.locked{overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* Who is signed in decides what exists at all. An element lists the people it belongs to
+   in data-for; everyone else never sees it. Higher specificity than .view.on on purpose. */
+body[data-as="platform"] [data-for]:not([data-for~="platform"]),
+body[data-as="company"]  [data-for]:not([data-for~="company"]),
+body[data-as="manager"]  [data-for]:not([data-for~="manager"]),
+body[data-as="staff"]    [data-for]:not([data-for~="staff"]){display:none}
+
+.app{display:grid;grid-template-columns:230px 1fr;height:100vh;height:100dvh}
+
+/* ── rail ───────────────────────────────── */
+/* The rail sits against the left edge whether it is a column or a drawer, so it carries
+   the left safe-area inset at every width. A Pro Max in landscape is 932px wide, which is
+   the permanent-column layout, not the drawer one. */
+.rail{background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;
+      padding:18px 12px;padding-left:calc(12px + env(safe-area-inset-left));
+      overflow-y:auto;overscroll-behavior:contain}
+
+.scope{padding:0 8px 22px}
+.scope .co{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.scope .sh{font-size:12px;color:var(--rail-dim);margin-top:1px}
+
+.nav{flex:1}
+.nav a{display:block;padding:8px 10px;border-radius:8px;color:var(--rail-ink);text-decoration:none;font-size:13.5px}
+.nav a:hover{background:rgb(255 255 255/7%)}
+.nav a.on{background:var(--accent);font-weight:600}
+
+.me{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;
+    color:var(--rail-ink);text-decoration:none}
+.me:hover{background:rgb(255 255 255/7%)}
+.me.on{background:rgb(255 255 255/10%)}
+.me .av{width:28px;height:28px;border-radius:50%;background:rgb(255 255 255/11%);display:grid;
+        place-items:center;font-size:11px;font-weight:600;flex:none}
+.me .nm{font-size:13px;line-height:1.3}
+.me .ro{font-size:11px;color:var(--rail-dim)}
+
+/* Mockup furniture only — this control would not ship. */
+.asview{margin-top:10px;padding-top:9px;border-top:1px solid rgb(255 255 255/9%)}
+.asview span{display:block;padding:0 2px 4px;font-size:10.5px;color:var(--rail-dim)}
+.asview select{width:100%;height:38px;padding:0 8px;border:1px solid rgb(255 255 255/14%);
+               border-radius:7px;background:rgb(255 255 255/6%);color:var(--rail-ink);
+               font:inherit;font-size:12.5px;color-scheme:dark}
+.asview select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.scrim{position:fixed;inset:0;background:rgb(0 0 0/38%);z-index:20}
+
+/* ── main ───────────────────────────────── */
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:4px;min-height:64px;flex:none;
+     padding:0 var(--gut);
+     padding-right:calc(var(--gut) + env(safe-area-inset-right));
+     padding-top:env(safe-area-inset-top)}
+.top h1{font-size:19px;font-weight:600;letter-spacing:-.02em;margin:0;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.btn{height:40px;padding:0 15px;border-radius:9px;border:0;background:var(--accent);color:#fff;
+     font-size:13.5px;font-weight:550;white-space:nowrap;flex:none}
+.btn:hover{background:#256849}
+
+/* hamburger — hidden until the rail becomes a drawer */
+.menu{display:none;place-items:center;width:40px;height:40px;margin-left:-9px;
+      border:0;background:none;border-radius:9px;flex:none}
+.menu:hover{background:#f0f0f1}
+.menu i{display:block;width:18px;height:1.5px;background:var(--ink);position:relative}
+.menu i::before,.menu i::after{content:"";position:absolute;left:0;width:18px;height:1.5px;background:var(--ink)}
+.menu i::before{top:-5px}
+.menu i::after{top:5px}
+
+.body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;
+      padding:0 var(--gut) var(--gut);
+      padding-right:calc(var(--gut) + env(safe-area-inset-right));
+      padding-bottom:calc(var(--gut) + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.on{display:block}
+
+/* ── table ──────────────────────────────── */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:560px;border-collapse:collapse}
+th{text-align:left;font-size:12px;font-weight:500;color:var(--muted);padding:12px 18px;
+   border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:13px 18px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+
+.who{display:flex;align-items:center;gap:11px;min-width:0}
+.who .av{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+         display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
+/* A long name or address wraps instead of pushing the row wider than the screen. */
+.who>span:last-child{min-width:0;overflow-wrap:anywhere}
+.who .nm{font-weight:550}
+.who .em{font-size:12px;color:var(--muted)}
+
+.state{font-size:13px;color:var(--muted)}
+.state.ok{color:var(--ink)}
+.state b{display:block;font-weight:550;color:var(--ink)}
+.act{text-align:right}
+/* 44px square is the smallest reliable finger target. The row is already taller than
+   that, so growing the button does not change the layout. */
+.edit{display:inline-grid;place-items:center;min-width:44px;min-height:44px;padding:0 6px;
+      border:0;background:none;color:var(--accent);font-size:13px;font-weight:550}
+
+/* Reveal Edit on hover ONLY where a real pointer exists. On a touch screen there
+   is no hover, so the button must simply always be there. */
+@media (hover:hover) and (pointer:fine){
+  .edit{opacity:0;transition:opacity .12s}
+  tbody tr:hover .edit,.edit:focus-visible{opacity:1}
+}
+
+/* ── settings ───────────────────────────── */
+.row{display:grid;grid-template-columns:1fr 280px;gap:24px;align-items:center;
+     padding:16px 18px;border-bottom:1px solid var(--line)}
+/* Only the panel's own last row loses its rule. Rows nested in the password form must
+   keep theirs, because more rows follow the form. */
+.panel>.row:last-child{border-bottom:0}
+.row label{font-weight:550}
+.row p{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+/* 16px is the smallest size iOS Safari will not zoom in to reach, and it has to be the
+   default rather than a narrow-screen override: an iPhone in landscape is 667 to 932px
+   wide, so a width query never catches it. Desktop pointers get the smaller text back. */
+.row input,.row select,.field input,.field select{width:100%;height:40px;padding:0 12px;border:1px solid var(--line);
+                       border-radius:9px;background:var(--surface);font:inherit;font-size:16px}
+@media (hover:hover) and (pointer:fine){
+  .row input,.row select,.field input,.field select{font-size:13.5px}
+}
+.row input:focus,.row select:focus,.field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.row input:disabled{background:#f6f6f7;color:var(--muted)}
+.ghost{height:40px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--surface);
+       font-size:13.5px}
+.ghost:hover{background:#f6f6f7}
+
+/* ── password ───────────────────────────── */
+/* Changing a password is its own task with its own commit point, so it gets its own
+   surface. Unfolding it inside the panel only made the list longer: the button that
+   caused it disappeared, and nothing tied the new rows to the click. */
+.modal{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;
+       overscroll-behavior:contain;
+       padding:0;border:0;border-radius:14px;background:var(--surface);color:var(--ink);
+       box-shadow:0 24px 60px rgb(0 0 0/22%)}
+.modal::backdrop{background:rgb(0 0 0/40%)}
+.modal form{padding:22px}
+.modal h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em}
+.modal .sub{margin:2px 0 18px;font-size:13px;color:var(--muted)}
+
+.field{margin-bottom:14px}
+.field label{display:block;margin-bottom:6px;font-weight:550;font-size:13.5px}
+.field .hint{margin:6px 0 0}
+
+/* A shop left without a manager is a hole in the company, not a blank cell. */
+.state.none{color:#9c5c17;font-weight:550}
+
+/* Replacing a manager is one decision with two halves. Splitting it into "demote the old
+   one" and "promote the new one" leaves the shop with two managers or none in between. */
+.group,.choice{margin:16px 0;padding:14px;border-radius:10px}
+.group{border:1px solid var(--line)}
+.choice{background:#fdf8f0;border:1px solid #f0e3cd}      /* amber: something is at stake */
+.group .who,.choice .who{display:block;margin:0 0 2px;font-weight:550;font-size:13.5px}
+.group .who{color:var(--ink)}
+.choice .who{color:#7a5320}
+.group .ask,.choice .ask{margin:0 0 8px;font-size:12.5px}
+.group .ask{color:var(--muted)}
+.choice .ask{color:#8a6534}
+.group label,.choice label{display:flex;align-items:flex-start;gap:9px;padding:6px 0;margin:0;
+              font-weight:400;font-size:13.5px;cursor:pointer}
+.group input,.choice input{flex:none;width:auto;height:auto;margin:4px 0 0}
+.field input[readonly]{background:#f6f6f7}
+/* The line that says where this person's authority stops. */
+.limit{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);
+       font-size:12.5px;color:var(--muted)}
+
+.pair{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.pair.start{justify-content:flex-start;margin-top:10px}
+
+/* The outcome has to be visible without hunting for it. The one on the sign-in page was
+   too quiet and the change looked like it had failed. */
+.done,.warn{padding:11px 14px;border-radius:10px;font-size:13.5px}
+.done{margin:0 0 14px;background:var(--accent-soft);color:#1d5b40}
+.warn{margin:0;background:#fdf0ee;color:#8d2f25}
+/* Not an error — a job nobody has picked up yet. It stays on screen until someone does. */
+.notice{margin:0 0 14px;padding:11px 14px;border-radius:10px;font-size:13.5px;
+        background:#fdf8f0;border:1px solid #f0e3cd;color:#7a5320}
+.hint{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+
+/* ── tablet & phone: the rail becomes a drawer ── */
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .menu{display:grid}
+  /* With the rail out of the flow, the header and the content own the left edge. */
+  .top,.body{padding-left:calc(var(--gut) + env(safe-area-inset-left))}
+  .rail{position:fixed;top:0;bottom:0;left:0;width:264px;z-index:30;
+        transform:translateX(-100%);visibility:hidden;
+        /* visibility flips LATE on close, so the slide-out stays visible, and instantly
+           on open, so the drawer can take focus in the same tick it is opened. A plain
+           `visibility .22s` leaves it hidden for the first half of the open and quietly
+           swallows the .focus() call. */
+        transition:transform .22s ease,visibility 0s linear .22s;
+        padding-top:calc(18px + env(safe-area-inset-top));
+        padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  .rail.open{transform:none;visibility:visible;transition:transform .22s ease,visibility 0s}
+  /* touch targets */
+  .nav a{padding:11px 10px;font-size:15px}
+  .me{padding:11px 10px}
+}
+/* Written as the exact complement of the query above. `(min-width:901px)` would leave a
+   dead band at fractional widths like 900.5 — routine on a 150%-scaled Windows display —
+   where neither query matches and the scrim covers the desktop layout with no way out. */
+@media not all and (max-width:900px){
+  .scrim{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .rail{transition:none}
+}
+
+/* ── phone: the table becomes a list ────── */
+@media (max-width:640px){
+  :root{--gut:16px}
+  .top h1{font-size:17px}
+  .scroll{overflow-x:visible}
+  table{min-width:0}
+  thead{display:none}
+  table,tbody{display:block}
+  tbody tr{display:block;position:relative;padding:14px 16px;border-bottom:1px solid var(--line)}
+  tbody tr:hover{background:none}
+  td{display:block;padding:0;border:0}
+  td:first-child{padding-right:56px}
+  td.meta{display:grid;grid-template-columns:64px 1fr;gap:10px;margin-top:5px;
+          font-size:13px;color:var(--ink)}
+  td.meta::before{content:attr(data-label);color:var(--muted);font-size:12.5px}
+  td.act{position:absolute;top:4px;right:8px}
+  /* In the list layout there is no row to hover, so Edit always shows. */
+  .edit{opacity:1}
+
+  .row{grid-template-columns:1fr;gap:10px;align-items:stretch}
+  .ghost{width:100%}
+  .pair>*{flex:1;width:auto}
+  .modal form{padding:18px}
+}
+</style>
+</head>
+<body data-as="platform">
+<div class="app">
+
+  <aside class="rail" id="rail">
+    <div class="scope">
+      <div class="co" id="scope-co">Restaurant OS</div>
+      <div class="sh" id="scope-sh">Platform</div>
+    </div>
+
+    <nav class="nav">
+      <!-- The platform owner's reach ends at companies and their CEOs. There is deliberately
+           no screen here that lists a manager or a member of staff. -->
+      <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company" class="on">Companies</a>
+      <!-- A CEO owns the level below them: the shops, and everyone working in them. -->
+      <a href="#" data-go="shops" data-for="company" data-title="Shops" data-action="Add shop">Shops</a>
+      <a href="#" data-go="users" data-for="company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
+      <!-- A manager's reach ends at their own staff, so the menu says so. -->
+      <a href="#" data-go="users" data-for="manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
+      <a href="#" data-go="settings" data-for="platform company manager" data-title="Settings">Settings</a>
+    </nav>
+
+    <a href="#" data-go="account" data-title="Account settings" class="me">
+      <span class="av" id="me-av">YL</span>
+      <span><span class="nm" id="me-nm">Ye Yint Lwin</span><br><span class="ro" id="me-ro">Platform owner</span></span>
+    </a>
+
+    <label class="asview">
+      <span>Viewing as</span>
+      <select id="asview">
+        <option value="platform">Platform owner</option>
+        <option value="company">CEO</option>
+        <option value="manager">Manager</option>
+        <option value="staff">Staff</option>
+      </select>
+    </label>
+  </aside>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="main">
+    <header class="top">
+      <button class="menu" id="menu" aria-label="Open menu" aria-expanded="false" aria-controls="rail"><i></i></button>
+      <h1 id="title">Companies</h1>
+      <span class="sp"></span>
+      <button class="btn" id="action">Add company</button>
+    </header>
+
+    <div class="body">
+
+      <!-- ══ Companies — the platform owner's only list ══ -->
+      <section class="view on" id="v-companies" data-for="platform">
+        <p class="done" id="co-done" hidden></p>
+        <div class="panel">
+          <div class="scroll">
+          <table>
+            <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Status</th><th></th></tr></thead>
+            <tbody id="co-rows">
+              <tr>
+                <td><div class="who"><span class="av">SK</span><span><span class="nm">Sakura Kitchen</span><br><span class="em">sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="CEO"><b>Khin Myat</b>khin@sakura.mm</td>
+                <td class="meta state" data-label="Shops">3</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-company="Sakura Kitchen" data-ceo="Khin Myat" data-ceo-email="khin@sakura.mm" data-status="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">MG</span><span><span class="nm">Mandalay Grill</span><br><span class="em">mandalaygrill.mm</span></span></div></td>
+                <td class="meta state" data-label="CEO"><b>Nay Lin</b>naylin@mandalaygrill.mm</td>
+                <td class="meta state" data-label="Shops">1</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-company="Mandalay Grill" data-ceo="Nay Lin" data-ceo-email="naylin@mandalaygrill.mm" data-status="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">SC</span><span><span class="nm">Shwe Café</span><br><span class="em">shwecafe.mm</span></span></div></td>
+                <td class="meta state" data-label="CEO"><b>Su Su Hlaing</b>susu@shwecafe.mm</td>
+                <td class="meta state" data-label="Shops">2</td>
+                <td class="meta state" data-label="Status">Suspended</td>
+                <td class="act"><button class="edit" data-company="Shwe Café" data-ceo="Su Su Hlaing" data-ceo-email="susu@shwecafe.mm" data-status="suspended">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Shops — the CEO's level below ══ -->
+      <section class="view" id="v-shops" data-for="company">
+        <p class="notice" id="shop-gap" hidden></p>
+        <p class="done" id="shop-done" hidden></p>
+        <div class="panel">
+          <div class="scroll">
+          <table>
+            <thead><tr><th>Shop</th><th>Manager</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="who"><span class="av">BG</span><span><span class="nm">Bogyoke</span><br><span class="em">No. 42, Bogyoke Rd</span></span></div></td>
+                <td class="meta state" data-label="Manager"><b>Thura Zaw</b>thura@sakura.mm</td>
+                <td class="meta state" data-label="Staff">2</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-shop="Bogyoke" data-manager="Thura Zaw">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">HL</span><span><span class="nm">Hledan</span><br><span class="em">Hledan Junction</span></span></div></td>
+                <td class="meta state" data-label="Manager"><b>Ko Ko Naing</b>kokonaing@sakura.mm</td>
+                <td class="meta state" data-label="Staff">1</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-shop="Hledan" data-manager="Ko Ko Naing">Edit</button></td>
+              </tr>
+              <!-- Zaw Moe left. The slot was emptied rather than left pointing at someone
+                   who no longer works here, and the hole is stated in plain words. -->
+              <tr>
+                <td><div class="who"><span class="av">IS</span><span><span class="nm">Insein</span><br><span class="em">Insein Rd, Km 9</span></span></div></td>
+                <td class="meta state none" data-label="Manager">No manager</td>
+                <td class="meta state" data-label="Staff">0</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-shop="Insein" data-manager="">Assign</button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Users ══ -->
+      <section class="view" id="v-users" data-for="company manager">
+
+        <!-- The CEO sees every manager and every member of staff in their company. -->
+        <div class="panel" data-for="company">
+          <p class="done" id="ceo-done" hidden></p>
+          <div class="scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Shop</th><th>Status</th><th></th></tr></thead>
+            <tbody id="ceo-rows">
+              <tr>
+                <td><div class="who"><span class="av">TZ</span><span><span class="nm">Thura Zaw</span><br><span class="em">thura@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Manager</td>
+                <td class="meta state" data-label="Shop">Bogyoke</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-person="Thura Zaw" data-email="thura@sakura.mm" data-role="Manager" data-shop="Bogyoke" data-access="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">AA</span><span><span class="nm">Aye Aye Mon</span><br><span class="em">ayeaye@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Staff</td>
+                <td class="meta state" data-label="Shop">Bogyoke</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-person="Aye Aye Mon" data-email="ayeaye@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">MM</span><span><span class="nm">Min Min</span><br><span class="em">minmin@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Staff</td>
+                <td class="meta state" data-label="Shop">Bogyoke</td>
+                <td class="meta state" data-label="Status">Suspended</td>
+                <td class="act"><button class="edit" data-person="Min Min" data-email="minmin@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="suspended">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">KK</span><span><span class="nm">Ko Ko Naing</span><br><span class="em">kokonaing@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Manager</td>
+                <td class="meta state" data-label="Shop">Hledan</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-person="Ko Ko Naing" data-email="kokonaing@sakura.mm" data-role="Manager" data-shop="Hledan" data-access="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">HW</span><span><span class="nm">Hnin Wai</span><br><span class="em">hninwai@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Staff</td>
+                <td class="meta state" data-label="Shop">Hledan</td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-person="Hnin Wai" data-email="hninwai@sakura.mm" data-role="Staff" data-shop="Hledan" data-access="active">Edit</button></td>
+              </tr>
+              <!-- He left. The account is suspended rather than deleted, because every
+                   order and audit entry he touched still points at it. -->
+              <tr>
+                <td><div class="who"><span class="av">ZM</span><span><span class="nm">Zaw Moe</span><br><span class="em">zawmoe@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Role">Manager</td>
+                <td class="meta state none" data-label="Shop">None</td>
+                <td class="meta state" data-label="Status">Suspended</td>
+                <td class="act"><button class="edit" data-person="Zaw Moe" data-email="zawmoe@sakura.mm" data-role="Manager" data-shop="None" data-access="suspended">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <!-- A manager's list holds their own staff and nobody else. Neither the CEO above
+             them nor a manager at another shop appears here. -->
+        <div class="panel" data-for="manager">
+          <p class="done" id="staff-done" hidden></p>
+          <div class="scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+            <tbody id="staff-rows">
+              <tr>
+                <td><div class="who"><span class="av">AA</span><span><span class="nm">Aye Aye Mon</span><br><span class="em">ayeaye@sakura.mm</span></span></div></td>
+                <td class="meta state ok" data-label="Status">Active</td>
+                <td class="act"><button class="edit" data-staff="Aye Aye Mon" data-email="ayeaye@sakura.mm" data-access="active">Edit</button></td>
+              </tr>
+              <tr>
+                <td><div class="who"><span class="av">MM</span><span><span class="nm">Min Min</span><br><span class="em">minmin@sakura.mm</span></span></div></td>
+                <td class="meta state" data-label="Status">Suspended</td>
+                <td class="act"><button class="edit" data-staff="Min Min" data-email="minmin@sakura.mm" data-access="suspended">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Account settings — everyone has one ══ -->
+      <section class="view" id="v-account">
+        <!-- Only the outcome belongs out here. The mismatch warning lives inside the
+             dialog, next to the fields that caused it. -->
+        <p class="done" id="pw-done" hidden>Password changed. Your other devices have been signed out.</p>
+
+        <div class="panel">
+          <div class="row">
+            <div><label for="a1">Name</label></div>
+            <input id="a1" value="Ye Yint Lwin" />
+          </div>
+          <div class="row">
+            <div><label for="a2">Email</label><p>Also your sign-in name.</p></div>
+            <input id="a2" value="yeyintlwin.dev@gmail.com" disabled />
+          </div>
+
+          <!-- A row of dots in a text field says nothing about what it is for. This row
+               says when the password last changed and offers the one action there is.
+               The row itself never moves — the task opens on top of it. -->
+          <div class="row">
+            <div><label>Password</label><p id="pw-when">Last changed 3 months ago.</p></div>
+            <div><button class="ghost" id="pw-open">Change password</button></div>
+          </div>
+
+          <div class="row">
+            <div><label>Signed-in devices</label><p>Three, including this one.</p></div>
+            <div><button class="ghost">Sign out everywhere</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Settings ══ -->
+      <section class="view" id="v-settings" data-for="platform company manager">
+
+        <!-- One preference for now. A platform owner sets nothing that reaches inside a
+             company, so there is nothing else to put here yet. -->
+        <div class="panel" data-for="platform">
+          <div class="row">
+            <div><label for="p4">Language</label><p>The language this console is shown in.</p></div>
+            <select id="p4">
+              <option>English</option>
+              <option>မြန်မာ — Burmese</option>
+              <option>ไทย — Thai</option>
+              <option>中文 — Chinese</option>
+              <option>日本語 — Japanese</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="panel" data-for="company">
+          <div class="row">
+            <div><label for="s1">Company name</label><p>Shown on receipts and printed orders.</p></div>
+            <input id="s1" value="Sakura Kitchen" />
+          </div>
+          <div class="row">
+            <div><label for="s2">Time zone</label><p>Sets when a business day starts and ends.</p></div>
+            <select id="s2">
+              <option>Asia/Yangon</option>
+              <option>Asia/Bangkok</option>
+              <option>Asia/Shanghai</option>
+              <option>Asia/Tokyo</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label for="s3">Currency</label></div>
+            <select id="s3">
+              <option>MMK — Kyat</option>
+              <option>THB — Baht</option>
+              <option>CNY — Yuan</option>
+              <option>JPY — Yen</option>
+              <option>USD — Dollar</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label for="s4">Language</label></div>
+            <select id="s4">
+              <option>English</option>
+              <option>မြန်မာ — Burmese</option>
+              <option>ไทย — Thai</option>
+              <option>中文 — Chinese</option>
+              <option>日本語 — Japanese</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- A manager runs the day at one shop. Naming the shop, and everything about the
+             company, stays with the CEO. -->
+        <div class="panel" data-for="manager">
+          <div class="row">
+            <div><label for="m1">Shop</label><p>Your CEO names the shops.</p></div>
+            <input id="m1" value="Bogyoke" disabled />
+          </div>
+          <div class="row">
+            <div><label for="m2">Phone</label><p>Printed on the receipt.</p></div>
+            <input id="m2" value="09 77 123 4567" />
+          </div>
+          <div class="row">
+            <div><label for="m3">Opening hours</label></div>
+            <input id="m3" value="10:00 – 22:00" />
+          </div>
+          <div class="row">
+            <div><label for="m4">Receipt footer</label></div>
+            <input id="m4" value="Thank you. See you again." />
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- A company and its CEO are created together, because a company with nobody in charge is
+     not a company. Note what is NOT a picker here: the platform owner cannot list the
+     people inside a company, so a new CEO has to be typed in by name and address. The
+     boundary is not decoration — it changes the control. -->
+<dialog class="modal" id="co-dialog" aria-labelledby="co-h">
+  <form id="co-form">
+    <h2 id="co-h">Add company</h2>
+    <p class="sub" id="co-sub">Every company starts with one CEO.</p>
+
+    <div class="field">
+      <label for="co-name">Company name</label>
+      <input id="co-name" />
+    </div>
+
+    <div class="group" id="co-status-box">
+      <strong class="who">Status</strong>
+      <p class="ask">Suspending a company signs out everyone in it, down to the last shop.</p>
+      <label><input type="radio" name="co-status" value="active" checked /><span>Active</span></label>
+      <label><input type="radio" name="co-status" value="suspended" /><span>Suspended</span></label>
+    </div>
+
+    <div class="group" id="co-ceo">
+      <strong class="who">CEO</strong>
+      <p class="ask" id="co-ceo-who"></p>
+      <div class="pair start">
+        <button type="button" class="ghost" id="co-reset">Reset password</button>
+        <button type="button" class="ghost" id="co-replace">Replace CEO</button>
+      </div>
+      <p class="hint" id="co-reset-out" hidden></p>
+    </div>
+
+    <!-- The same three fields serve "the first CEO" and "the next CEO". -->
+    <div id="co-person">
+      <div class="field">
+        <label for="co-pname" id="co-pname-l">CEO name</label>
+        <input id="co-pname" />
+      </div>
+      <div class="field">
+        <label for="co-pemail" id="co-pemail-l">CEO sign-in email</label>
+        <input id="co-pemail" type="email" />
+        <!-- Promoting a manager is typing an address that already exists. The system has to
+             say so, or it quietly makes a second account for the same person. It confirms
+             only that the address is taken — not who it belongs to, which stays inside the
+             company. -->
+        <p class="hint" id="co-known" hidden></p>
+      </div>
+      <div class="field" id="co-pw-field">
+        <label for="co-ppw">First password</label>
+        <input id="co-ppw" readonly />
+        <p class="hint">Read this out to them. They choose their own the first time they sign in.</p>
+      </div>
+    </div>
+
+    <div class="choice" id="co-out" hidden>
+      <strong class="who" id="co-out-who"></strong>
+      <p class="ask">What happens to their account?</p>
+      <label><input type="radio" name="ceo-out" value="suspend" checked /><span>Suspend their access — they have left</span></label>
+      <label><input type="radio" name="ceo-out" value="keep" /><span>Leave the account for the new CEO to place</span></label>
+    </div>
+
+    <p class="limit">You cannot see or change managers and staff. That is the CEO's job.</p>
+
+    <div class="pair">
+      <button type="button" class="ghost" id="co-cancel">Cancel</button>
+      <button type="submit" class="btn" id="co-save">Add company</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- What a shop manager controls is ACCESS, not rank. They can let someone in, keep them
+     out, and get them back in when the password is forgotten. Everything that would move a
+     person between shops or promote them belongs to the CEO, and the dialog says so out
+     loud rather than just omitting the fields. -->
+<dialog class="modal" id="staff-dialog" aria-labelledby="staff-h">
+  <form id="staff-form">
+    <h2 id="staff-h">Add staff</h2>
+    <p class="sub" id="staff-sub">Bogyoke</p>
+
+    <div class="field">
+      <label for="st-name">Name</label>
+      <input id="st-name" />
+    </div>
+
+    <div class="field">
+      <label for="st-email">Sign-in email</label>
+      <input id="st-email" type="email" />
+      <p class="hint" id="st-email-hint">They use this to sign in.</p>
+    </div>
+
+    <!-- A CEO can move someone between their own shops. A manager cannot, so this field
+         is simply not part of their version of the screen. -->
+    <div class="field" id="st-shop-field">
+      <label for="st-shop">Shop</label>
+      <select id="st-shop">
+        <option>Bogyoke</option>
+        <option>Hledan</option>
+        <option>Insein</option>
+      </select>
+    </div>
+
+    <!-- Adding only. There is no mail server in this system, so the manager reads the
+         first password out loud. -->
+    <div class="field" id="st-temp-field">
+      <label for="st-temp">First password</label>
+      <input id="st-temp" readonly />
+      <p class="hint">Read this out to them. They choose their own the first time they sign in.</p>
+    </div>
+
+    <!-- Editing only. -->
+    <div class="group" id="st-access">
+      <strong class="who">Access</strong>
+      <p class="ask">Suspending someone keeps their record and their past orders.</p>
+      <label><input type="radio" name="access" value="active" checked /><span>Active — can sign in and take orders</span></label>
+      <label><input type="radio" name="access" value="suspended" /><span>Suspended — cannot sign in</span></label>
+      <p class="ask" id="st-mgr-warn" hidden></p>
+    </div>
+
+    <div class="field" id="st-reset">
+      <button type="button" class="ghost" id="st-reset-btn">Reset password</button>
+      <p class="hint" id="st-reset-hint">For when they have forgotten it. You will get a new one to read out.</p>
+    </div>
+
+    <p class="limit" id="st-limit">Only your CEO can make someone a manager or move them to another shop.</p>
+
+    <div class="pair">
+      <button type="button" class="ghost" id="staff-cancel">Cancel</button>
+      <button type="submit" class="btn" id="staff-save">Add staff</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- The manager is a slot on the SHOP, not a badge on the person. Editing it here is what
+     makes "one manager per shop" true by construction: there is one field, so there can
+     never be two managers or a second one nobody noticed. -->
+<dialog class="modal" id="shop-dialog" aria-labelledby="shop-h">
+  <form id="shop-form">
+    <h2 id="shop-h">Edit shop</h2>
+    <p class="sub" id="shop-sub">Bogyoke</p>
+
+    <div class="field">
+      <label for="sh-name">Shop name</label>
+      <input id="sh-name" value="Bogyoke" />
+    </div>
+    <div class="field">
+      <label for="sh-mgr">Manager</label>
+      <select id="sh-mgr">
+        <option value="">No manager</option>
+        <option>Thura Zaw</option>
+        <option>Ko Ko Naing</option>
+        <option>Aye Aye Mon</option>
+        <option>Min Min</option>
+        <option>Hnin Wai</option>
+      </select>
+      <p class="hint">Only one person manages a shop. Choosing someone else replaces them.</p>
+    </div>
+
+    <!-- Appears the moment a different name is picked, because that is the moment the
+         question becomes real. -->
+    <div class="choice" id="handover" hidden>
+      <strong class="who" id="handover-who"></strong>
+      <p class="ask">What happens to their account?</p>
+      <label><input type="radio" name="handover" value="staff" checked /><span>Keep them here as staff</span></label>
+      <label><input type="radio" name="handover" value="suspend" /><span>Suspend their access — they have left</span></label>
+    </div>
+
+    <div class="pair">
+      <button type="button" class="ghost" id="shop-cancel">Cancel</button>
+      <button type="submit" class="btn">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- showModal() brings the focus trap, the Escape key and an inert background with it,
+     which is the same set of problems the drawer had to solve by hand. -->
+<dialog class="modal" id="pw-dialog" aria-labelledby="pw-h">
+  <form id="pw-form">
+    <h2 id="pw-h">Change password</h2>
+    <p class="sub">Your other devices will be signed out.</p>
+
+    <div class="field">
+      <label for="pw1">Current password</label>
+      <input id="pw1" type="password" autocomplete="current-password" autofocus />
+    </div>
+    <div class="field">
+      <label for="pw2">New password</label>
+      <input id="pw2" type="password" autocomplete="new-password" />
+      <p class="hint">At least 12 characters.</p>
+    </div>
+    <div class="field">
+      <label for="pw3">Confirm new password</label>
+      <input id="pw3" type="password" autocomplete="new-password" />
+    </div>
+
+    <p class="warn" id="pw-warn" role="alert" hidden>The two new passwords do not match.</p>
+
+    <div class="pair">
+      <button type="button" class="ghost" id="pw-cancel">Cancel</button>
+      <button type="submit" class="btn">Change password</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* Platform
+     └ Company            one CEO each
+        └ Shop            one manager each
+           └ Staff
+   Each person reaches exactly one level down and no further. */
+const PERSON={
+  platform:{co:"Restaurant OS",  sh:"Platform",
+            av:"YL", nm:"Ye Yint Lwin", ro:"Platform owner", em:"yeyintlwin.dev@gmail.com"},
+  company: {co:"Sakura Kitchen", sh:"All shops",
+            av:"KM", nm:"Khin Myat",   ro:"CEO",             em:"khin@sakura.mm"},
+  manager: {co:"Sakura Kitchen", sh:"Bogyoke",
+            av:"TZ", nm:"Thura Zaw",   ro:"Manager",         em:"thura@sakura.mm"},
+  staff:   {co:"Sakura Kitchen", sh:"Bogyoke",
+            av:"AA", nm:"Aye Aye Mon", ro:"Staff",           em:"ayeaye@sakura.mm"},
+};
+
+const rail=document.getElementById("rail");
+const scrim=document.getElementById("scrim");
+const menu=document.getElementById("menu");
+const main=document.querySelector(".main");
+const asview=document.getElementById("asview");
+// The exact complement of the drawer's own media query. `(min-width:901px)` would leave
+// fractional widths such as 900.5 matching neither, and the drawer would never be told to
+// close on the way up.
+const wide=matchMedia("not all and (max-width:900px)");
+
+function drawer(open){
+  if(wide.matches) open=false;             // there is no drawer to open on a wide screen
+  rail.classList.toggle("open",open);
+  scrim.hidden=!open;
+  document.body.classList.toggle("locked",open);
+  menu.setAttribute("aria-expanded",String(open));
+  // Everything behind the scrim is dimmed, so it must be unreachable by Tab as well.
+  main.inert=open;
+  const into=open ? [...rail.querySelectorAll("[data-go]")].find(a=>a.offsetParent) : menu;
+  if(into) into.focus();
+}
+menu.addEventListener("click",()=>drawer(!rail.classList.contains("open")));
+scrim.addEventListener("click",()=>drawer(false));
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&rail.classList.contains("open")) drawer(false); });
+wide.addEventListener("change",e=>{ if(e.matches) drawer(false); });
+
+// Each link carries its own heading and its own primary action, because the same screen
+// is called Users for a CEO and Staff for a manager.
+function go(a){
+  document.querySelectorAll("[data-go]").forEach(x=>x.classList.remove("on"));
+  a.classList.add("on");
+  document.getElementById("title").textContent=a.dataset.title;
+  const b=document.getElementById("action");
+  b.hidden=!a.dataset.action; if(a.dataset.action) b.textContent=a.dataset.action;
+  // The heading's button belongs to the screen, so the screen says what it opens.
+  b.dataset.opens=a.dataset.opens||"";
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
+  document.getElementById("v-"+a.dataset.go).classList.add("on");
+}
+
+document.getElementById("action").addEventListener("click",e=>{
+  const opens=e.currentTarget.dataset.opens;
+  if(opens==="staff")   openPerson(null,"manager");
+  if(opens==="person")  openPerson(null,"ceo");
+  if(opens==="company") openCompany(null);
+});
+
+document.querySelectorAll("[data-go]").forEach(a=>a.addEventListener("click",e=>{
+  e.preventDefault();
+  go(a);
+  if(!wide.matches) drawer(false);
+}));
+
+/* ── the platform owner and the companies ─────────────────────────────────── */
+const coDialog=document.getElementById("co-dialog");
+const coDone=document.getElementById("co-done");
+const coName=document.getElementById("co-name");
+const coPerson=document.getElementById("co-person");
+const coCeo=document.getElementById("co-ceo");
+const coOut=document.getElementById("co-out");
+const coPw=document.getElementById("co-ppw");
+let coRow=null, coWasCeo="", coReplacing=false;
+
+/* Every address that already has an account anywhere on the platform. The server answers
+   "taken" or "free" and nothing else — the platform owner does not get to learn who is
+   behind an address they have not been given. */
+const TAKEN=new Set([
+  "khin@sakura.mm","thura@sakura.mm","ayeaye@sakura.mm","minmin@sakura.mm",
+  "kokonaing@sakura.mm","hninwai@sakura.mm","zawmoe@sakura.mm",
+  "naylin@mandalaygrill.mm","susu@shwecafe.mm",
+]);
+function checkExisting(){
+  const known=TAKEN.has(document.getElementById("co-pemail").value.trim().toLowerCase());
+  const note=document.getElementById("co-known");
+  // An existing person keeps the password they already have, so there is nothing to hand over.
+  document.getElementById("co-pw-field").hidden=known;
+  note.hidden=!known;
+  if(known) note.textContent=
+    "This address already has an account. They keep their password and everything they have "+
+    "done, and are signed out once so the new role takes hold. If they run a shop, that shop "+
+    "is left without a manager for the new CEO to fill.";
+  return known;
+}
+document.getElementById("co-pemail").addEventListener("input",checkExisting);
+
+function openCompany(btn){
+  coRow=btn?btn.closest("tr"):null;
+  const adding=!btn;
+  coReplacing=false;
+  coWasCeo=adding?"":btn.dataset.ceo;
+
+  document.getElementById("co-h").textContent=adding?"Add company":btn.dataset.company;
+  document.getElementById("co-sub").textContent=adding
+    ? "Every company starts with one CEO."
+    : "Company and CEO only.";
+  coName.value=adding?"":btn.dataset.company;
+
+  document.getElementById("co-status-box").hidden=adding;
+  if(!adding) document.querySelector('input[name="co-status"][value="'+btn.dataset.status+'"]').checked=true;
+
+  coCeo.hidden=adding;
+  if(!adding) document.getElementById("co-ceo-who").textContent=
+    btn.dataset.ceo+" · "+btn.dataset.ceoEmail;
+  document.getElementById("co-reset-out").hidden=true;
+
+  // On an existing company the CEO fields stay closed until Replace CEO is pressed.
+  coPerson.hidden=!adding;
+  coOut.hidden=true;
+  document.getElementById("co-pname-l").textContent="CEO name";
+  document.getElementById("co-pemail-l").textContent="CEO sign-in email";
+  document.getElementById("co-pname").value="";
+  document.getElementById("co-pemail").value="";
+  coPw.value=firstPassword();
+  checkExisting();
+
+  document.getElementById("co-save").textContent=adding?"Add company":"Save";
+  coDone.hidden=true;
+  coDialog.showModal();
+}
+
+document.getElementById("co-rows").addEventListener("click",e=>{
+  const btn=e.target.closest("[data-company]");
+  if(btn) openCompany(btn);
+});
+document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
+
+// The only person the platform owner may unlock. Everyone else is behind the CEO.
+document.getElementById("co-reset").addEventListener("click",()=>{
+  const fresh=firstPassword();
+  const out=document.getElementById("co-reset-out");
+  out.textContent="New password for "+coWasCeo+": "+fresh+" — their old one stops working now.";
+  out.hidden=false;
+});
+
+document.getElementById("co-replace").addEventListener("click",()=>{
+  coReplacing=true;
+  coPerson.hidden=false;
+  document.getElementById("co-pname-l").textContent="New CEO name";
+  document.getElementById("co-pemail-l").textContent="New CEO sign-in email";
+  coPw.value=firstPassword();
+  document.getElementById("co-out-who").textContent=
+    coWasCeo+" will no longer be CEO of "+coName.value+".";
+  coOut.hidden=false;
+  document.getElementById("co-pname").focus();
+});
+
+document.getElementById("co-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const name=coName.value.trim();
+  const person=document.getElementById("co-pname").value.trim();
+  const email=document.getElementById("co-pemail").value.trim();
+  if(!name) return;
+  if((!coRow || coReplacing) && !person) return;
+
+  if(coRow){
+    const status=document.querySelector('input[name="co-status"]:checked').value;
+    const btn=coRow.querySelector("[data-company]");
+    coRow.querySelector(".who .nm").textContent=name;
+    btn.dataset.company=name;
+
+    const st=coRow.querySelector('[data-label="Status"]');
+    st.textContent=status==="active"?"Active":"Suspended";
+    st.classList.toggle("ok",status==="active");
+    btn.dataset.status=status;
+
+    let note=name+" saved.";
+    if(coReplacing){
+      const cell=coRow.querySelector('[data-label="CEO"]');
+      cell.innerHTML="<b></b>";
+      cell.querySelector("b").textContent=person;
+      cell.append(email);
+      btn.dataset.ceo=person; btn.dataset.ceoEmail=email;
+      const out=document.querySelector('input[name="ceo-out"]:checked').value;
+      note=person+" is now CEO of "+name+". "+coWasCeo+
+        (out==="suspend" ? " has been suspended." : " keeps their account for the new CEO to place.")+
+        (checkExisting()
+          ? " "+person+" keeps the password they already had."
+          : " First password: "+coPw.value);
+    }
+    coDone.textContent=note;
+  }else{
+    const tr=document.createElement("tr");
+    tr.innerHTML=
+      '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
+      '<td class="meta state" data-label="CEO"><b></b></td>'+
+      '<td class="meta state" data-label="Shops">0</td>'+
+      '<td class="meta state ok" data-label="Status">Active</td>'+
+      '<td class="act"><button class="edit" data-status="active">Edit</button></td>';
+    tr.querySelector(".av").textContent=initials(name);
+    tr.querySelector(".nm").textContent=name;
+    tr.querySelector(".em").textContent=email.split("@")[1]||"";
+    const cell=tr.querySelector('[data-label="CEO"]');
+    cell.querySelector("b").textContent=person;
+    cell.append(email);
+    const b=tr.querySelector("[data-status]");
+    b.dataset.company=name; b.dataset.ceo=person; b.dataset.ceoEmail=email;
+    document.getElementById("co-rows").appendChild(tr);
+    coDone.textContent=name+" is open with "+person+" as CEO. First password: "+coPw.value;
+  }
+  coDialog.close();
+  coDone.hidden=false;
+  coDone.scrollIntoView({block:"nearest"});
+});
+
+/* ── a manager looking after their staff ──────────────────────────────────── */
+const staffDialog=document.getElementById("staff-dialog");
+const staffDone=document.getElementById("staff-done");
+const stName=document.getElementById("st-name");
+const stEmail=document.getElementById("st-email");
+const stTemp=document.getElementById("st-temp");
+const stTempField=document.getElementById("st-temp-field");
+const stAccess=document.getElementById("st-access");
+const stReset=document.getElementById("st-reset");
+let staffRow=null;
+
+// Readable out loud over the noise of a kitchen, and short enough to write on a pad.
+const WORDS=["Mango","Ginger","Basil","Pepper","Lotus","Cashew","Sesame","Tamarind"];
+function firstPassword(){
+  const w=()=>WORDS[Math.floor(Math.random()*WORDS.length)];
+  return w()+"-"+w()+"-"+String(Math.floor(1000+Math.random()*9000));
+}
+function initials(name){
+  return name.trim().split(/\s+/).slice(0,2).map(p=>p[0]||"").join("").toUpperCase()||"?";
+}
+
+/* One screen serves the CEO and the manager, because the job is the same job: let a person
+   in, keep them out, hand them a new password. What differs is reach — the CEO gets a Shop
+   field and sees managers too — and that difference is spelled out at the bottom rather
+   than left as a missing control. */
+let personWho="manager";                    // who is doing the looking
+function openPerson(btn,who){
+  personWho=who;
+  staffRow=btn?btn.closest("tr"):null;
+  const adding=!btn;
+  const ceo=who==="ceo";
+  const name=adding?"":(btn.dataset.person||btn.dataset.staff);
+  const role=adding?"Staff":(btn.dataset.role||"Staff");
+
+  document.getElementById("staff-h").textContent=
+    adding ? (ceo?"Add someone":"Add staff") : name;
+  document.getElementById("staff-sub").textContent=
+    adding ? (ceo?"They will need a shop and a sign-in.":"They will work at Bogyoke.")
+           : (ceo ? role+" · "+(btn.dataset.shop||"None") : "Staff at Bogyoke");
+
+  stName.value=name;
+  stEmail.value=adding?"":btn.dataset.email;
+  stEmail.readOnly=!adding;
+  document.getElementById("st-email-hint").textContent=adding
+    ? "They use this to sign in."
+    : "This is how they sign in, so it cannot be changed here.";
+
+  // Only a CEO may move someone between shops.
+  const shopField=document.getElementById("st-shop-field");
+  shopField.hidden=!ceo;
+  if(ceo && !adding && btn.dataset.shop!=="None") document.getElementById("st-shop").value=btn.dataset.shop;
+
+  stTempField.hidden=!adding;
+  if(adding) stTemp.value=firstPassword();
+  stAccess.hidden=adding;
+  stReset.hidden=adding;
+  document.getElementById("st-reset-hint").textContent=
+    "For when they have forgotten it. You will get a new one to read out.";
+  document.getElementById("st-mgr-warn").hidden=true;
+
+  if(!adding) document.querySelector('input[name="access"][value="'+btn.dataset.access+'"]').checked=true;
+
+  document.getElementById("st-limit").textContent = ceo
+    ? "Managers are chosen on the Shops screen, not here."
+    : "Only your CEO can make someone a manager or move them to another shop.";
+  document.getElementById("staff-save").textContent=
+    adding ? (ceo?"Add":"Add staff") : "Save";
+
+  (ceo?document.getElementById("ceo-done"):staffDone).hidden=true;
+  staffDialog.showModal();
+}
+const openStaff=btn=>openPerson(btn,"manager");
+
+document.getElementById("staff-rows").addEventListener("click",e=>{
+  const btn=e.target.closest("[data-staff]");
+  if(btn) openPerson(btn,"manager");
+});
+document.getElementById("ceo-rows").addEventListener("click",e=>{
+  const btn=e.target.closest("[data-person]");
+  if(btn) openPerson(btn,"ceo");
+});
+
+// Suspending a manager empties their shop's slot. Say so at the moment it is chosen.
+document.querySelectorAll('input[name="access"]').forEach(r=>r.addEventListener("change",()=>{
+  const btn=staffRow&&staffRow.querySelector("[data-person]");
+  const warn=document.getElementById("st-mgr-warn");
+  const isManager=btn&&btn.dataset.role==="Manager"&&btn.dataset.shop!=="None";
+  warn.hidden=!(isManager && r.value==="suspended" && r.checked);
+  if(!warn.hidden) warn.textContent=
+    btn.dataset.shop+" will be left without a manager. Choose a replacement on the Shops screen.";
+}));
+document.getElementById("staff-cancel").addEventListener("click",()=>staffDialog.close());
+
+// Nobody can read anyone's password, so a reset means handing over a new one. It appears
+// directly under the button that made it, not back up in the field used when adding.
+document.getElementById("st-reset-btn").addEventListener("click",()=>{
+  stTemp.value=firstPassword();
+  document.getElementById("st-reset-hint").textContent=
+    "New password: "+stTemp.value+" — their old one stops working now. Read it out to them.";
+});
+
+document.getElementById("staff-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const name=stName.value.trim();
+  if(!name) return;
+  const access=document.querySelector('input[name="access"]:checked').value;
+  const label=access==="active"?"Active":"Suspended";
+  const ceo=personWho==="ceo";
+  const banner=ceo?document.getElementById("ceo-done"):staffDone;
+
+  if(staffRow){
+    const cell=staffRow.querySelector('[data-label="Status"]');
+    cell.textContent=label;
+    cell.classList.toggle("ok",access==="active");
+    staffRow.querySelector(".who .nm").textContent=name;
+    const btn=staffRow.querySelector("[data-person],[data-staff]");
+    if(btn.dataset.person!==undefined) btn.dataset.person=name; else btn.dataset.staff=name;
+    btn.dataset.access=access;
+    let note=name+" is now "+label.toLowerCase()+".";
+    if(ceo){
+      const shop=document.getElementById("st-shop").value;
+      const shopCell=staffRow.querySelector('[data-label="Shop"]');
+      if(shopCell && btn.dataset.shop!=="None"){ shopCell.textContent=shop; shopCell.classList.remove("none"); btn.dataset.shop=shop; }
+      // Suspending a manager empties the slot on the shop too, or the Shops screen would
+      // keep showing someone who can no longer sign in.
+      if(btn.dataset.role==="Manager" && access==="suspended" && btn.dataset.shop!=="None"){
+        const shopBtn=document.querySelector('[data-shop="'+btn.dataset.shop+'"]');
+        if(shopBtn){
+          const cell=shopBtn.closest("tr").querySelector('[data-label="Manager"]');
+          cell.classList.add("none");
+          cell.textContent="No manager";
+          shopBtn.textContent="Assign";
+          shopBtn.dataset.manager="";
+        }
+        note+=" "+btn.dataset.shop+" now has no manager.";
+        btn.dataset.shop="None";
+        const shopCell2=staffRow.querySelector('[data-label="Shop"]');
+        if(shopCell2){ shopCell2.textContent="None"; shopCell2.classList.add("none"); }
+        refreshShopGaps();
+      }
+    }
+    banner.textContent=note;
+    staffDialog.close();
+    banner.hidden=false;
+    banner.scrollIntoView({block:"nearest"});
+    return;
+  }
+  // Adding. The CEO's table carries Role and Shop; the manager's does not, so the row is
+  // built to match the table it is going into.
+  {
+    const shop=document.getElementById("st-shop").value;
+    const tr=document.createElement("tr");
+    tr.innerHTML=
+      '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
+      (ceo ? '<td class="meta state" data-label="Role">Staff</td>'+
+             '<td class="meta state" data-label="Shop"></td>' : "")+
+      '<td class="meta state ok" data-label="Status">Active</td>'+
+      '<td class="act"><button class="edit" data-access="active">Edit</button></td>';
+    tr.querySelector(".av").textContent=initials(name);
+    tr.querySelector(".nm").textContent=name;
+    tr.querySelector(".em").textContent=stEmail.value;
+    const b=tr.querySelector("[data-access]");
+    b.dataset.email=stEmail.value;
+    if(ceo){
+      tr.querySelector('[data-label="Shop"]').textContent=shop;
+      b.dataset.person=name; b.dataset.role="Staff"; b.dataset.shop=shop;
+      document.getElementById("ceo-rows").appendChild(tr);
+    }else{
+      b.dataset.staff=name;
+      document.getElementById("staff-rows").appendChild(tr);
+    }
+    banner.textContent=name+" can sign in"+(ceo?" at "+shop:"")+
+      " now. Their first password is "+stTemp.value+".";
+  }
+  staffDialog.close();
+  banner.hidden=false;
+  banner.scrollIntoView({block:"nearest"});
+});
+
+/* ── choosing a shop's manager ────────────────────────────────────────────── */
+const EMAIL={
+  "Thura Zaw":"thura@sakura.mm", "Ko Ko Naing":"kokonaing@sakura.mm",
+  "Aye Aye Mon":"ayeaye@sakura.mm", "Min Min":"minmin@sakura.mm",
+  "Hnin Wai":"hninwai@sakura.mm",
+};
+const shopDialog=document.getElementById("shop-dialog");
+const shopMgr=document.getElementById("sh-mgr");
+const shopName=document.getElementById("sh-name");
+const handover=document.getElementById("handover");
+const shopDone=document.getElementById("shop-done");
+let shopRow=null, wasManager="";
+
+document.querySelectorAll("[data-shop]").forEach(btn=>btn.addEventListener("click",()=>{
+  shopRow=btn.closest("tr");
+  wasManager=btn.dataset.manager;
+  shopName.value=btn.dataset.shop;
+  shopMgr.value=wasManager;
+  document.getElementById("shop-h").textContent=wasManager?"Edit shop":"Assign a manager";
+  document.getElementById("shop-sub").textContent=wasManager
+    ? btn.dataset.shop
+    : btn.dataset.shop+" has been running without one.";
+  handover.hidden=true;
+  shopDone.hidden=true;
+  shopDialog.showModal();
+}));
+
+// Only ask about the outgoing manager when there is one and they are being replaced.
+shopMgr.addEventListener("change",()=>{
+  const replacing=wasManager && shopMgr.value!==wasManager;
+  handover.hidden=!replacing;
+  if(replacing) document.getElementById("handover-who").textContent=
+    wasManager+" will no longer manage "+shopName.value+".";
+});
+
+document.getElementById("shop-cancel").addEventListener("click",()=>shopDialog.close());
+shopDialog.addEventListener("close",()=>{ handover.hidden=true; });
+
+/* A shop with an empty manager slot is not broken — the CEO is above the manager, so the
+   work still has somewhere to land. What it must not be is quiet. This line names the shops
+   and says who is carrying them, and it stays until every slot is filled. */
+function refreshShopGaps(){
+  const empty=[...document.querySelectorAll('#v-shops [data-label="Manager"].none')]
+    .map(td=>td.closest("tr").querySelector(".who .nm").textContent);
+  const line=document.getElementById("shop-gap");
+  line.hidden=!empty.length;
+  if(!empty.length) return;
+  const names=empty.length===1 ? empty[0]
+    : empty.slice(0,-1).join(", ")+" and "+empty[empty.length-1];
+  line.textContent=names+(empty.length===1?" has":" have")+" no manager. Until you appoint one, "+
+    (empty.length===1?"that shop is":"those shops are")+" yours to run — you can already do "+
+    "everything a manager can there.";
+}
+refreshShopGaps();
+
+document.getElementById("shop-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const picked=shopMgr.value;
+  const kept=document.querySelector('input[name="handover"]:checked').value;
+  const cell=shopRow.querySelector('[data-label="Manager"]');
+  const btn=shopRow.querySelector("[data-shop]");
+
+  if(picked){
+    cell.classList.remove("none");
+    cell.innerHTML="<b></b>";
+    cell.querySelector("b").textContent=picked;
+    cell.append(EMAIL[picked]||"");
+    btn.textContent="Edit";
+  }else{
+    cell.classList.add("none");
+    cell.textContent="No manager";
+    btn.textContent="Assign";
+  }
+  shopRow.querySelector(".who .nm").textContent=shopName.value;
+  btn.dataset.shop=shopName.value;
+  btn.dataset.manager=picked;
+
+  shopDone.textContent = !picked
+    ? shopName.value+" now has no manager."
+    : wasManager
+      ? picked+" now manages "+shopName.value+". "+wasManager+
+        (kept==="staff" ? " stays on as staff." : " has been suspended.")
+      : picked+" now manages "+shopName.value+".";
+  shopDialog.close();
+  shopDone.hidden=false;
+  refreshShopGaps();
+  shopDone.scrollIntoView({block:"nearest"});
+});
+
+/* ── changing a password ──────────────────────────────────────────────────── */
+const pwDialog=document.getElementById("pw-dialog");
+const pwOpen=document.getElementById("pw-open");
+const pwDone=document.getElementById("pw-done");
+const pwWarn=document.getElementById("pw-warn");
+const pwFields=["pw1","pw2","pw3"].map(id=>document.getElementById(id));
+
+pwOpen.addEventListener("click",()=>{ pwDone.hidden=true; pwDialog.showModal(); });
+document.getElementById("pw-cancel").addEventListener("click",()=>pwDialog.close());
+
+// Fires however the dialog went away — the button, Escape, or a successful change — so
+// no half-typed password is left sitting in the form.
+pwDialog.addEventListener("close",()=>{
+  pwFields.forEach(f=>f.value="");
+  pwWarn.hidden=true;
+  pwOpen.focus();
+});
+
+document.getElementById("pw-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const [current,next,again]=pwFields.map(f=>f.value);
+  if(next!==again){ pwWarn.hidden=false; pwFields[2].focus(); return; }
+  pwDialog.close();
+  document.getElementById("pw-when").textContent="Last changed just now.";
+  pwDone.hidden=false;
+  // Land on the confirmation rather than leaving it above the fold on a phone.
+  pwDone.scrollIntoView({block:"nearest"});
+});
+
+// Mockup furniture: jump straight to any of the four levels.
+function setAs(as){
+  const p=PERSON[as];
+  document.body.dataset.as=as;
+  document.getElementById("scope-co").textContent=p.co;
+  document.getElementById("scope-sh").textContent=p.sh;
+  document.getElementById("me-av").textContent=p.av;
+  document.getElementById("me-nm").textContent=p.nm;
+  document.getElementById("me-ro").textContent=p.ro;
+  document.getElementById("a1").value=p.nm;
+  document.getElementById("a2").value=p.em;
+  // Stay on the same screen when the new person also has it — comparing Settings across
+  // levels is the point. Two exceptions: a screen they do not have, and the account page,
+  // which every level has and which is the least interesting thing to compare. Coming up
+  // out of Staff would otherwise leave you sitting on it with nothing appearing to change.
+  const here=document.querySelector("[data-go].on");
+  const first=[...rail.querySelectorAll(".nav a")].find(x=>x.offsetParent)
+           || rail.querySelector(".me");
+  if(!here || !here.offsetParent || here.dataset.go==="account") go(first);
+}
+asview.addEventListener("change",()=>setAs(asview.value));
+// Clicking inside the drawer normally closes it; this control is not navigation.
+asview.addEventListener("click",e=>e.stopPropagation());
+
+// Run the same code path the first time as every time. Without this the heading, the
+// button's label and — the part that actually broke — the button's data-opens are only
+// whatever the markup happened to say, so Add company did nothing until you had navigated
+// somewhere and come back.
+go(document.querySelector("[data-go].on"));
+</script>
+</body>
+</html>
