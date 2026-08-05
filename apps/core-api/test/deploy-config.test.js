@@ -254,18 +254,36 @@ test("every service the compose file declares is one the deploy can actually sta
 
   assert.deepEqual(
     Object.keys(services).sort(),
-    ["core-api", "core-db", "customer-order", "epaper-hub"]
+    ["admin-management", "core-api", "core-db", "customer-order", "epaper-hub"]
   );
 
   for (const [name, body] of Object.entries(services)) {
-    // Every service interpolates its env_file, and the deploy must export that
-    // variable -- Compose validates EVERY service's env_file on EVERY subcommand, so
-    // one unresolvable path makes `up`, `config` and `exec` all fail at project load.
-    const envFileVar = body.match(/^    env_file:\n      - \$\{([A-Z_]+):-\.env\}$/m);
-    assert.ok(envFileVar, `${name}: no interpolated env_file`);
-    assert.match(flat, new RegExp(`${envFileVar[1]}=\\.\\./[a-z-]+\\.env`), `${name} env_file`);
+    // Every service that reads a secret interpolates its env_file, and the deploy must
+    // export that variable -- Compose validates EVERY service's env_file on EVERY
+    // subcommand, so one unresolvable path makes `up`, `config` and `exec` all fail at
+    // project load.
+    //
+    // admin-management is the ONE documented exception: it serves static files and
+    // forwards requests, holds no credential of any kind, and so declares no env_file
+    // at all -- there is no path for Compose to resolve and nothing for the deploy to
+    // export. A missing key is only safe while it is DELIBERATE, so the exemption is
+    // spent against the compose comment that RECORDS the decision. Delete that comment
+    // and this test goes red rather than quietly excusing a service that has since
+    // grown a secret.
+    if (name === "admin-management") {
+      assert.doesNotMatch(body, /^    env_file:$/m, `${name} must declare no env_file`);
+      assert.match(
+        body,
+        /# Deliberately NO env-file key and no credential of any kind\./,
+        `${name} is exempt from the env_file rule only while the compose file says why`,
+      );
+    } else {
+      const envFileVar = body.match(/^    env_file:\n      - \$\{([A-Z_]+):-\.env\}$/m);
+      assert.ok(envFileVar, `${name}: no interpolated env_file`);
+      assert.match(flat, new RegExp(`${envFileVar[1]}=\\.\\./[a-z-]+\\.env`), `${name} env_file`);
+    }
 
-    // Only the three built services interpolate an image; core-db pins a literal tag.
+    // Only the four built services interpolate an image; core-db pins a literal tag.
     const imageVar = body.match(/^    image: \$\{([A-Z_]+):-/m);
     if (!imageVar) {
       assert.match(body, /^    image: postgres:16-alpine$/m, name);
@@ -940,7 +958,23 @@ test("deploy uploads the pre-deploy dump, and never a stale one", () => {
   const registered = (suite.match(/^test\(/gm) || []).length;
   assert.equal(
     registered,
-    16,
-    `apps/core-api/test/deploy-config.test.js registers ${registered} top-level tests, expected 16 (compose's six, nine deploy.yml tasks, and the interpreter pin added after zsh's NOMATCH killed a deploy)`,
+    17,
+    `apps/core-api/test/deploy-config.test.js registers ${registered} top-level tests, expected 17 (compose's six, nine deploy.yml tasks, the interpreter pin added after zsh's NOMATCH killed a deploy, and admin-management's build-and-ship)`,
   );
+});
+
+test("the deploy builds, tests and ships admin-management", () => {
+  const workflow = workflowText();
+
+  // It has no dependencies, so there is no `npm ci` -- but the suite must run, or a
+  // broken front end reaches the box with a green build.
+  assert.match(workflow, /npm --prefix apps\/admin-management test/);
+  assert.match(workflow, /docker build -f apps\/admin-management\/Dockerfile -t admin-management:/);
+  assert.match(workflow, /ADMIN_MANAGEMENT_IMAGE=admin-management:/);
+
+  // The plan's fourth assertion -- that admin.conf is installed -- belongs to Task 8
+  // and is deliberately NOT here. Its nginx server block names a certificate that does
+  // not exist yet, and nginx reads ssl_certificate at PARSE time, so shipping the block
+  // first makes `nginx -t` fail and the deploy roll back. Task 8 adds both the install
+  // step and this assertion once the certificate is issued.
 });

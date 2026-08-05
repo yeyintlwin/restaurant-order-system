@@ -55,6 +55,9 @@ jobs:
 
       - run: npm --prefix apps/customer-order test
 
+      # No `npm ci`: this app declares zero dependencies, like customer-order.
+      - run: npm --prefix apps/admin-management test
+
       - run: npm --prefix apps/core-api ci
 
       - run: npm --prefix apps/core-api test
@@ -70,9 +73,11 @@ jobs:
           set -euo pipefail
           docker build -t epaper-hub:${{ github.sha }} apps/epaper-hub
           docker build -f apps/customer-order/Dockerfile -t customer-order:${{ github.sha }} .
+          docker build -f apps/admin-management/Dockerfile -t admin-management:${{ github.sha }} .
           docker build -f apps/core-api/Dockerfile -t core-api:${{ github.sha }} .
           docker save epaper-hub:${{ github.sha }} | gzip > /tmp/epaper-hub-image.tgz
           docker save customer-order:${{ github.sha }} | gzip > /tmp/customer-order-image.tgz
+          docker save admin-management:${{ github.sha }} | gzip > /tmp/admin-management-image.tgz
           # Sha in the tarball NAME, not just the tag: two concurrent deploys share one
           # /tmp on the runner and one on the box, and a fixed path lets push B's image
           # overwrite the one push A has not loaded yet.
@@ -106,6 +111,7 @@ jobs:
           scp -i ~/.ssh/lightsail.pem infra/restore-drill.sh "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/restaurant-order-system/config/restore-drill.sh"
           scp -i ~/.ssh/lightsail.pem /tmp/epaper-hub-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/epaper-hub-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/customer-order-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/customer-order-image.tgz"
+          scp -i ~/.ssh/lightsail.pem /tmp/admin-management-image.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/admin-management-image.tgz"
           scp -i ~/.ssh/lightsail.pem /tmp/core-api-image-${{ github.sha }}.tgz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/core-api-image-${{ github.sha }}.tgz"
 
       - name: Deploy on Lightsail
@@ -154,13 +160,14 @@ jobs:
           rm -rf ~/epaper-emulator
           docker load -i /tmp/epaper-hub-image.tgz
           docker load -i /tmp/customer-order-image.tgz
+          docker load -i /tmp/admin-management-image.tgz
           docker load -i /tmp/core-api-image-${{ github.sha }}.tgz
-          # Delete this run's tarballs the moment they are in the image store. Three
+          # Delete this run's tarballs the moment they are in the image store. Four
           # images at ~100-200 MB each, and the core-api name carries the sha, so
           # without this the box gains one tarball per deploy until the 85% gate above
           # starts aborting deploys for a reason unrelated to the database. The glob
           # sweeps earlier runs' leftovers too.
-          rm -f /tmp/core-api-image-*.tgz /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz
+          rm -f /tmp/core-api-image-*.tgz /tmp/epaper-hub-image.tgz /tmp/customer-order-image.tgz /tmp/admin-management-image.tgz
           docker volume create restaurant-order-system_epaper-data
           docker volume create restaurant-order-system_core-db-data
           if docker volume inspect epaper-emulator_epaper-data >/dev/null 2>&1; then
@@ -175,6 +182,7 @@ jobs:
           export EPAPER_IMAGE=epaper-hub:${{ github.sha }}
           export CUSTOMER_ORDER_IMAGE=customer-order:${{ github.sha }}
           export CORE_API_IMAGE=core-api:${{ github.sha }}
+          export ADMIN_MANAGEMENT_IMAGE=admin-management:${{ github.sha }}
 
           # ---- 1. PRE-DEPLOY DUMP. Gated on the VOLUME, not on a running container. ----
           # `docker compose ps --quiet core-db` is true only when core-db is RUNNING, so
