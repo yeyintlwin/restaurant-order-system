@@ -37,6 +37,10 @@ function collaborators(calls, overrides = {}) {
     },
     openRuntimePool: (options) => calls.push(`openRuntimePool:${options.connectionString}:${options.max}`),
     waitForDatabase: async (options) => calls.push(`wait:${options.attempts}x${options.delayMs}`),
+    countActivePlatformAdmins: async () => {
+      calls.push("countActivePlatformAdmins");
+      return 1;
+    },
     checkReadiness: async () => ({ database: "ready", migrations: "current" }),
     listen: async (app, port, host) => {
       calls.push(`listen:${host}:${port}`);
@@ -59,6 +63,7 @@ test("start() migrates on a dedicated client, closes that pool, then opens the r
     "closeMigrationPool",
     `openRuntimePool:${CONFIG.databaseUrl}:12`,
     "wait:10x1000",
+    "countActivePlatformAdmins",
     "listen:127.0.0.1:0"
   ]);
   assert.equal(result.port, 0);
@@ -102,6 +107,50 @@ test("a database that never comes up means the port never opens", async () => {
 
   assert.equal(calls.includes("listen:127.0.0.1:0"), false, "nothing after the readiness wait may run");
   assert.equal(calls.at(-1), `openRuntimePool:${CONFIG.databaseUrl}:12`);
+});
+
+test("an empty platform_admin set warns and still listens", async () => {
+  // The ONE deliberate exception to this repository's refuse-to-start convention, and
+  // it is forced by mechanism rather than chosen: spec 9.10 runs the bootstrap CLI
+  // through `docker compose exec`, so the container must already be up. Refusing here
+  // would make the platform unbootstrappable -- the admin needs the container and the
+  // container would need the admin.
+  const calls = [];
+  const lines = [];
+
+  await start(
+    collaborators(calls, {
+      countActivePlatformAdmins: async () => {
+        calls.push("countActivePlatformAdmins");
+        return 0;
+      },
+      log: (line) => lines.push(line)
+    })
+  );
+
+  assert.ok(lines.some((line) => /platform administrator/i.test(line)));
+  assert.equal(calls.at(-1), "listen:127.0.0.1:0");
+});
+
+test("a failed platform-admin count warns and still listens", async () => {
+  // It runs after waitForDatabase, so a throw here means the database went away in
+  // the gap. Turning that into a refusal to listen would fail the deploy's 90-second
+  // readiness gate AFTER the migration applied -- the failure shape spec 9.5 spends a
+  // page designing away.
+  const calls = [];
+  const lines = [];
+
+  await start(
+    collaborators(calls, {
+      countActivePlatformAdmins: async () => {
+        throw new Error("terminating connection due to administrator command");
+      },
+      log: (line) => lines.push(line)
+    })
+  );
+
+  assert.ok(lines.some((line) => /count platform administrators/i.test(line)));
+  assert.equal(calls.at(-1), "listen:127.0.0.1:0");
 });
 
 const { fatal } = require("../server");

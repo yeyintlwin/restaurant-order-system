@@ -65,6 +65,10 @@ async function start(options = {}) {
   const waitForDb = options.waitForDatabase || waitForDatabase;
   const readiness = options.checkReadiness || (() => checkReadiness({ migrationsDir }));
   const listen = options.listen || listenServer;
+  // Hoisted so the boot warning and createApp's access log write through ONE logger.
+  // The default is byte-for-byte what createApp falls back to when deps.log is
+  // undefined, so passing it below changes nothing about a normal boot.
+  const logLine = options.log || ((line) => process.stdout.write(`${line}\n`));
 
   // §9.4 steps 2 and 10: a dedicated max:1 pool on the OWNER dsn, end()ed before listen, so the
   // process never keeps an idle DDL-capable connection alive for its whole lifetime.
@@ -82,13 +86,33 @@ async function start(options = {}) {
   await openRuntime({ connectionString: config.databaseUrl, max: config.dbPoolMax });
   await waitForDb({ attempts: 10, delayMs: 1000 });
 
+  // Spec §9.10's one deliberate exception to refuse-to-start, and it is forced rather
+  // than chosen: the bootstrap CLI runs through `docker compose exec`, so the
+  // container must be up before the first admin can exist. Refusing here is a
+  // deadlock -- the admin needs the container and the container would need the admin.
+  //
+  // Wrapped, because a throw would turn a transient database blip in the gap after
+  // waitForDatabase into a process that never listens, which fails the deploy's
+  // 90-second readiness gate AFTER the migration applied.
+  const countAdmins = options.countActivePlatformAdmins || usersRepository.countActivePlatformAdmins;
+  try {
+    if ((await countAdmins()) === 0) {
+      logLine(
+        "WARNING: no active platform administrator exists. Create one with: " +
+          "docker compose exec core-api node apps/core-api/scripts/create-platform-admin.js <email>"
+      );
+    }
+  } catch (error) {
+    logLine("WARNING: could not count platform administrators; continuing to listen");
+  }
+
   // Spec §11.7: this is the only place in the repository that builds an e-paper client, and
   // epaper/hub-client.js is the only file that requires the SDK. Built AFTER the database is
   // up so an unconfigured hub can never delay the readiness gate -- it is a plain object
   // that opens no socket until a request arrives.
   const app = createApp({
     checkReadiness: readiness,
-    log: options.log,
+    log: logLine,
     tableDisplay:
       options.tableDisplay ||
       createEpaperHubClient({ hubUrl: config.epaperHubUrl, apiKey: config.epaperApiKey }),

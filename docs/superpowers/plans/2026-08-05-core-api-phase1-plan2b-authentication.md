@@ -6419,7 +6419,7 @@ a private API. `process.stdin.setRawMode()` is the public one and is what the sc
 uses; `node:readline` is not required at all. The Tech Stack line is corrected in
 Task 17.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `apps/core-api/test/scripts.test.js`, reusing that file's existing
 `runScript` helper:
@@ -6524,7 +6524,7 @@ test("a failed platform-admin count warns and still listens", () => {
 > Write both against whatever injection shape `server-bootstrap.test.js` already uses
 > for `start()`'s collaborators. Do **not** invent a second one.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstrap.test.js
@@ -6533,7 +6533,7 @@ node --test apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstr
 Expected: the script tests fail with `Cannot find module`; the bootstrap tests fail
 because nothing counts platform admins.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 Create `apps/core-api/scripts/create-platform-admin.js`:
 
@@ -6772,7 +6772,7 @@ on an array of strings.** This adds a step, so that array moves. Find it with
 `grep -n "deepEqual(calls" apps/core-api/test/server-bootstrap.test.js` and insert the
 new name in the position the code actually calls it — after `waitForDatabase`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/scripts.test.js apps/core-api/test/server-bootstrap.test.js \
@@ -6792,7 +6792,7 @@ node apps/core-api/scripts/create-platform-admin.js ops@example.test
 # then, in another shell, curl the login route and expect 200
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/scripts/create-platform-admin.js apps/core-api/server.js \
