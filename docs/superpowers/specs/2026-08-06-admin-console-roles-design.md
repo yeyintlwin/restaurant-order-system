@@ -154,6 +154,30 @@ validation error on a control it cannot focus.
 This sharpens §9.2 rather than answering it: if every person reliably has a phone and not
 every person reliably has an email, the phone is the better sign-in name.
 
+## 4B. Looking a record up
+
+A row carries four or five columns. Everything else about a record lives at the top of that
+record's own dialog, above the form, as **facts rather than fields** — a quiet read-only
+block with a grey label and a value.
+
+| Record  | Facts shown                                  |
+| ------- | -------------------------------------------- |
+| Person  | Added, Last seen                             |
+| Shop    | Manager phone, Staff, Opened                 |
+| Company | CEO, CEO phone, Email, Shops, Tables, Opened |
+
+**Nothing appears twice.** A person's role and shop are in the dialog's subtitle and in its
+fields already, so they are not repeated as facts; a shop's name, address, table count and
+manager are all fields, so the facts carry only what the form cannot say.
+
+### 4B.1 A phone number is there to be rung
+
+Every phone number in a facts block is a `tel:` link.
+
+Where the number is an editable field rather than a fact — a person's own phone — the link
+sits under the field as *"Call this number"* and follows whatever is typed, appearing when
+there is a number and going away when there is not. The number is never printed twice.
+
 ## 5. Passwords
 
 Nobody can read anyone else's password. Helping someone in means **handing them a new

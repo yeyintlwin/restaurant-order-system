@@ -169,6 +169,16 @@ tbody tr:hover{background:#fcfcfd}
 .modal h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em}
 .modal .sub{margin:2px 0 18px;font-size:13px;color:var(--muted)}
 
+/* What you came to look up, above what you came to change. Read-only: these are facts
+   about the record, not fields on a form. */
+.facts{margin:0 0 18px;padding:4px 14px;border-radius:10px;background:#f7f8f9;
+       border:1px solid var(--line)}
+.facts>div{display:grid;grid-template-columns:104px 1fr;gap:12px;padding:8px 0;font-size:13px}
+.facts>div+div{border-top:1px solid #ecedee}
+.facts .k{color:var(--muted)}
+.facts a{color:var(--accent);font-weight:550;text-decoration:none}
+.facts a:hover{text-decoration:underline;text-underline-offset:3px}
+
 .field{margin-bottom:14px}
 .field label{display:block;margin-bottom:6px;font-weight:550;font-size:13.5px}
 .field .hint{margin:6px 0 0}
@@ -611,6 +621,8 @@ tr.sub .leaf{padding-left:43px}
     <h2 id="co-h">Add company</h2>
     <p class="sub" id="co-sub">Every company starts with one CEO.</p>
 
+    <div class="facts" id="co-facts"></div>
+
     <div class="field">
       <label for="co-name">Company name</label>
       <input id="co-name" />
@@ -685,6 +697,8 @@ tr.sub .leaf{padding-left:43px}
     <h2 id="staff-h">Add staff</h2>
     <p class="sub" id="staff-sub">Bogyoke</p>
 
+    <div class="facts" id="st-facts"></div>
+
     <div class="field">
       <label for="st-name">Name</label>
       <input id="st-name" />
@@ -701,6 +715,7 @@ tr.sub .leaf{padding-left:43px}
     <div class="field">
       <label for="st-phone">Phone</label>
       <input id="st-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+      <p class="hint" id="st-call-line" hidden><a id="st-call" href="#">Call this number</a></p>
       <p class="warn" id="st-phone-warn" role="alert" hidden>A phone number is required.</p>
     </div>
 
@@ -753,6 +768,8 @@ tr.sub .leaf{padding-left:43px}
   <form id="shop-form">
     <h2 id="shop-h">Edit shop</h2>
     <p class="sub" id="shop-sub">Bogyoke</p>
+
+    <div class="facts" id="sh-facts"></div>
 
     <div class="field">
       <label for="sh-name">Shop name</label>
@@ -904,6 +921,49 @@ document.querySelectorAll("[data-go]").forEach(a=>a.addEventListener("click",e=>
   if(!wide.matches) drawer(false);
 }));
 
+/* ── looking something up ─────────────────────────────────────────────────── */
+/* A row can only carry a few columns. Everything else about a record lives at the top of
+   the record's own dialog, above the form, as facts rather than fields. A phone number
+   there is a link, because the reason you looked it up is to ring it. */
+const PHONE={
+  "Thura Zaw":"09 77 201 3344", "Aye Aye Mon":"09 42 118 9021", "Min Min":"09 79 553 6612",
+  "Ko Ko Naing":"09 25 447 8890", "Hnin Wai":"09 66 330 1177", "Zaw Moe":"09 45 902 5561",
+  "Khin Myat":"09 88 771 2200", "Nay Lin":"09 31 664 0912", "Su Su Hlaing":"09 50 228 7734",
+};
+const JOINED={
+  "Thura Zaw":"12 Mar 2026", "Aye Aye Mon":"3 Apr 2026", "Min Min":"3 Apr 2026",
+  "Ko Ko Naing":"22 Feb 2026", "Hnin Wai":"18 May 2026", "Zaw Moe":"9 May 2026",
+  "Khin Myat":"2 Feb 2026", "Nay Lin":"18 Mar 2026", "Su Su Hlaing":"7 Jun 2026",
+};
+const SEEN={
+  "Thura Zaw":"Today, 09:14", "Aye Aye Mon":"Today, 07:02", "Min Min":"14 Jul 2026",
+  "Ko Ko Naing":"Yesterday, 21:40", "Hnin Wai":"Today, 08:31", "Zaw Moe":"2 Aug 2026",
+  "Khin Myat":"Today, 10:05", "Nay Lin":"Yesterday, 18:12", "Su Su Hlaing":"11 Jun 2026",
+};
+const OPENED={
+  Bogyoke:"4 Jan 2026", Hledan:"22 Feb 2026", Insein:"9 May 2026",
+  "Sakura Kitchen":"2 Feb 2026", "Mandalay Grill":"18 Mar 2026", "Shwe Café":"7 Jun 2026",
+};
+
+function facts(el,rows){
+  el.textContent="";
+  const shown=rows.filter(r=>r[1]);
+  el.hidden=!shown.length;
+  for(const [key,value,tel] of shown){
+    const line=document.createElement("div");
+    const k=document.createElement("span"); k.className="k"; k.textContent=key;
+    const v=document.createElement("span");
+    if(tel){
+      const a=document.createElement("a");
+      a.href="tel:"+String(value).replace(/\s+/g,"");
+      a.textContent=value;
+      v.append(a);
+    }else v.textContent=value;
+    line.append(k,v);
+    el.append(line);
+  }
+}
+
 /* ── the platform owner and the companies ─────────────────────────────────── */
 const coDialog=document.getElementById("co-dialog");
 const coDone=document.getElementById("co-done");
@@ -952,8 +1012,9 @@ function openCompany(btn){
   if(!adding) document.querySelector('input[name="co-status"][value="'+btn.dataset.status+'"]').checked=true;
 
   coCeo.hidden=adding;
+  // The name and address are already stated in the facts above; this block is the actions.
   if(!adding) document.getElementById("co-ceo-who").textContent=
-    btn.dataset.ceo+" · "+btn.dataset.ceoEmail;
+    "Reset their password, or hand the company to someone else.";
   document.getElementById("co-reset-out").hidden=true;
 
   // On an existing company the CEO fields stay closed until Replace CEO is pressed.
@@ -967,6 +1028,16 @@ function openCompany(btn){
   document.getElementById("co-phone-warn").hidden=true;
   coPw.value=firstPassword();
   checkExisting();
+
+  const row=adding?null:btn.closest("tr");
+  facts(document.getElementById("co-facts"), adding ? [] : [
+    ["CEO",       btn.dataset.ceo],
+    ["CEO phone", PHONE[btn.dataset.ceo]||"", true],
+    ["Email",     btn.dataset.ceoEmail],
+    ["Shops",     row.querySelector('[data-label="Shops"]').textContent],
+    ["Tables",    row.querySelector('[data-label="Tables"]').textContent],
+    ["Opened",    OPENED[btn.dataset.company]||"Today"],
+  ]);
 
   document.getElementById("co-save").textContent=adding?"Add company":"Save";
   coDone.hidden=true;
@@ -1160,6 +1231,17 @@ function initials(name){
    field and sees managers too — and that difference is spelled out at the bottom rather
    than left as a missing control. */
 let personWho="manager";                    // who is doing the looking
+
+// The number is a form field, so it is not repeated in the facts. What the facts would
+// have added — being able to ring it — sits under the field instead, and follows whatever
+// is typed there.
+function syncCall(){
+  const value=document.getElementById("st-phone").value.trim();
+  const line=document.getElementById("st-call-line");
+  line.hidden=!value;
+  if(value) document.getElementById("st-call").href="tel:"+value.replace(/\s+/g,"");
+}
+document.getElementById("st-phone").addEventListener("input",syncCall);
 function openPerson(btn,who){
   personWho=who;
   staffRow=btn?btn.closest("tr"):null;
@@ -1201,6 +1283,14 @@ function openPerson(btn,who){
   document.getElementById("st-limit").textContent = ceo
     ? "Managers are chosen on the Shops screen, not here."
     : "Only your CEO can make someone a manager or move them to another shop.";
+  // Role, shop and phone are all already on this screen — the subtitle and the fields say
+  // them. Facts carry only what the form cannot.
+  facts(document.getElementById("st-facts"), adding ? [] : [
+    ["Added",     JOINED[name]||"Just now"],
+    ["Last seen", SEEN[name]||"Not yet"],
+  ]);
+  syncCall();
+
   document.getElementById("staff-save").textContent=
     adding ? (ceo?"Add":"Add staff") : "Save";
 
@@ -1384,6 +1474,14 @@ function openShop(btn){
   document.getElementById("sh-mgr-hint").textContent=
     adding ? "You can leave this until someone is hired. Until then the shop is yours to run."
            : "Only one person manages a shop. Choosing someone else replaces them.";
+  const staffHere=adding?"":btn.closest("tr").querySelector('[data-label="Staff"]').textContent;
+  // Name, address, tables and manager are all fields below. Facts carry the rest.
+  facts(document.getElementById("sh-facts"), adding ? [] : [
+    ["Manager phone", wasManager?(PHONE[wasManager]||""):"", true],
+    ["Staff",         staffHere],
+    ["Opened",        OPENED[btn.dataset.shop]||"Today"],
+  ]);
+
   document.getElementById("shop-save").textContent=adding?"Add shop":"Save";
 
   handover.hidden=true;
