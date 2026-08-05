@@ -8,7 +8,7 @@ Restaurant ordering platform with table e-paper monitors, customer ordering, kit
 - `apps/customer-order` - customer phone ordering flow after scanning the table QR code.
 - `apps/kitchen-display` - kitchen monitor for incoming orders and preparation status.
 - `apps/cashier-counter` - checkout, bill review, checkout barcode scanning, and final settlement.
-- `apps/admin-management` - menu management, pricing, daily sales, and transaction history.
+- `apps/admin-management` - management front end at `https://admin.yeyintlwin.com`; serves its own `public/` and proxies `/api` to `core-api`. Sign in, account and password today; menu, pricing and sales reporting follow.
 - `apps/captive-portal` - guest Wi-Fi onboarding and survey flow.
 - `packages/epaper-hub-sdk` - server-side SDK that renders table/status/QR templates and securely updates e-paper screens.
 - `packages/shared` - shared schemas and helpers used across apps.

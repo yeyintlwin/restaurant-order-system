@@ -25,7 +25,7 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 4 of 9 tasks done.**
+**Status: 5 of 9 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -36,6 +36,7 @@ steps are ticked and its commit exists.
 | 2026-08-05 | Task 2: the `/api` proxy. 10/10 pass. Step 2 predicted six red and measured five — "only /api is proxied" is green before the proxy exists, see the note under Step 2. Full suite still at baseline, no mirror moved. | **2/9** | `feat(admin-management): proxy /api, and touch neither Origin nor X-Forwarded-For` | Task 3 |
 | 2026-08-05 | Task 3: `public/api.js`, `fetch` injected. 9/9 pass, 19/19 for the app. **The dual-export footer was KEPT as written** — `require()` did not throw, so the fallback was not taken; see the note under Step 4 for why, and for the Node floor it costs. | **3/9** | `feat(admin-management): the API client, with fetch injected so 401 is testable` | Task 4 |
 | 2026-08-05 | Task 4: the page, the stylesheet, `app.js` and the CSP. 6/6 new, **25/25 for the app** — `server.test.js` stayed green with the fifth header. Step 2's red measured exactly as predicted (0/6, three assertion failures and three `ENOENT`). Step 4's directory-form command still fails the way Task 1 documented; used `npm --prefix apps/admin-management test`. | **4/9** | `feat(admin-management): one page, three states, and the server's own error text` | Task 5 |
+| 2026-08-05 | Task 5: the README, the root `scripts.test` entry, the root README line. 2/2 new, 27/27 for the app. **Full suite green, five suites: 14 + 33 + 69 + 531 + 27.** core-api unchanged at 531 (530 pass, 1 pre-existing `# SKIP` — C6, platform repositories do not exist yet). The root README already listed `apps/admin-management`, so Step 3's "add it" was a rewrite of a stale line, not an insertion — see the note under Step 3. | **5/9** | `feat(admin-management): a README that describes the app, and a suite the root script runs` | Task 6 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -1434,7 +1435,7 @@ not break it — but nothing runs the new suite until it is added, and C11 exist
 precisely because *a suite the root script does not invoke is a suite the deploy gate
 never sees*.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `apps/admin-management/test/public-ui.test.js`:
 
@@ -1457,7 +1458,7 @@ test("this app's README describes what it is, not what it was going to be", () =
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/admin-management/test/public-ui.test.js
@@ -1466,7 +1467,14 @@ node --test apps/admin-management/test/public-ui.test.js
 Expected: both new tests fail — the root script has no `admin-management` entry and
 the README is still the placeholder.
 
-- [ ] **Step 3: Write them**
+> **Measured, and exactly as predicted.** The single-file form of `node --test` works
+> (it is the directory form that Task 1 documented as broken here). 8 tests, 6 pass,
+> 2 fail — `not ok 7` and `not ok 8`, the two just added. Test 7 failed on
+> `scripts.test` having no `admin-management` entry; test 8 failed its first
+> assertion, `/proxy|proxies/i`, against the placeholder README printed verbatim in
+> the diff.
+
+- [x] **Step 3: Write them**
 
 Replace `apps/admin-management/README.md`:
 
@@ -1528,7 +1536,26 @@ In the repository root `README.md`, add `apps/admin-management` beside the other
 in whatever list `monorepo-structure.test.js` reads — find it with
 `grep -n "apps/" README.md` and match the surrounding style.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+> **The root README already had the entry.** `grep -n "apps/" README.md` found
+> `apps/admin-management` already sitting in the Apps list at line 11 — the six app
+> folders were all listed when the monorepo was scaffolded, which is also why
+> `monorepo-structure.test.js` asserts a `README.md` exists under each of the six.
+> So Step 3's "add it" had nothing to add. What it did have was a line describing the
+> app as "menu management, pricing, daily sales, and transaction history" — the same
+> promise the placeholder app README made, and the same one this task's own test
+> forbids there. Leaving it would put the retired promise in the more-read of the two
+> files. The line was rewritten instead: what the app is (the proxy, the origin, sign
+> in and password today) with menu and sales named as later work. Nothing was
+> inserted or removed, so the list is still six entries and
+> `monorepo-structure.test.js`'s two root-README assertions — `/Restaurant Management
+> System/` and `/apps\/epaper-hub/` — never looked at the line that changed.
+>
+> The root README's "Management Requirements" section (line 118) still names menu
+> management, price changes, daily sales reports and transaction history. That one was
+> left alone: it is a statement of what the interface must eventually support, not a
+> claim about what exists, and Plan 2c is what discharges it.
+
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 export CORE_API_TEST_DATABASE_URL='postgres://core_api_owner:devpassword@127.0.0.1:5433/postgres'
@@ -1538,7 +1565,16 @@ npm test
 Expected: five suites now, all green. The core-api count is unchanged at 531; the
 new suite adds its own.
 
-- [ ] **Step 5: Commit**
+> **Five suites, all green: 14 + 33 + 69 + 531 + 27.** core-api is unchanged at 531
+> as predicted — 530 pass and one `# SKIP`, which is C6 (`repositories/platform/ does
+> not exist yet`) and predates this plan. The new fifth entry runs last in the chain,
+> so a red admin-management suite now fails `npm test` and the deploy gate with it.
+> `source-structure.test.js` C11 stayed green, as the plan said it would: it asserts
+> with `includes`, so a fifth `&&` clause is invisible to it. No other mirror moved —
+> `ci-contract.test.js` reads the workflow, not the root script, and the workflow is
+> Task 9's.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/README.md package.json README.md \

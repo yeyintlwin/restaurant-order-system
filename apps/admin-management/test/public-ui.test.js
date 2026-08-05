@@ -56,3 +56,20 @@ test("the stylesheet uses the house palette rather than inventing one", () => {
   assert.match(css, /#f4f5f7/i);
   assert.match(css, /Inter/);
 });
+
+test("the repository test script runs this app's suite", () => {
+  // Without this line the suite exists and nothing runs it -- not locally, not in
+  // the deploy gate. Same reasoning as source-structure.test.js's C11.
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "package.json"), "utf8"));
+  assert.match(rootPackage.scripts.test, /npm --prefix apps\/admin-management test/);
+});
+
+test("this app's README describes what it is, not what it was going to be", () => {
+  const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+  assert.match(readme, /proxy|proxies/i);
+  assert.match(readme, /admin\.yeyintlwin\.com/);
+  // The placeholder promised menu editing and sales reports. Those are Plan 2c and
+  // later; a README that still promises them sends the next reader looking for code
+  // that does not exist.
+  assert.doesNotMatch(readme, /daily sales report/i);
+});

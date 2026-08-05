@@ -5,7 +5,7 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm --prefix packages/epaper-hub-sdk test && npm --prefix apps/epaper-hub test && npm --prefix apps/customer-order test && npm --prefix apps/core-api test",
+    "test": "npm --prefix packages/epaper-hub-sdk test && npm --prefix apps/epaper-hub test && npm --prefix apps/customer-order test && npm --prefix apps/core-api test && npm --prefix apps/admin-management test",
     "start:customer": "npm --prefix apps/customer-order start",
     "demo:epaper": "npm --prefix apps/epaper-hub run demo"
   }
