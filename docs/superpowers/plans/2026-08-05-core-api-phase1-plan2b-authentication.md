@@ -3075,7 +3075,7 @@ there is no `terminal_tokens` row behind it until Phase 3 pairs `customer-order`
 (§11.9). `repositories/auth/terminal-tokens.js` and `pairing.js` are already on
 C4's allowlist and stay unwritten.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/authenticate.test.js`:
 
@@ -3214,7 +3214,7 @@ test("clientAddressOf counts from the right and fails closed", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/authenticate.test.js
@@ -3222,7 +3222,7 @@ node --test apps/core-api/test/authenticate.test.js
 
 Expected: FAIL — `Cannot find module '../http/authenticate'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/http/authenticate.js`:
 
@@ -3303,7 +3303,7 @@ async function authenticateUser(req, deps) {
 module.exports = { sessionTokensPresented, clientAddressOf, authenticateUser, TOKEN_PATTERN };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/authenticate.test.js apps/core-api/test/client-ip.test.js apps/core-api/test/source-structure.test.js
@@ -3312,7 +3312,7 @@ node --test apps/core-api/test/authenticate.test.js apps/core-api/test/client-ip
 Expected: all pass. C7's `CREDENTIAL_QUERY` rule is the one to watch here — this
 module must never read `req.query.<anything>`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/authenticate.js apps/core-api/test/authenticate.test.js
