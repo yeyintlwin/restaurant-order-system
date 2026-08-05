@@ -2785,7 +2785,7 @@ git commit -m "feat(core-api): sessions - read-only resolution, and a renewal SQ
 - Create: `apps/core-api/repositories/auth/scope-materialize.js`
 - Create: `apps/core-api/test/scope-materialize.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/scope-materialize.test.js`:
 
@@ -2918,7 +2918,7 @@ test("teardown", { skip }, async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/scope-materialize.test.js
@@ -2926,7 +2926,7 @@ node --test apps/core-api/test/scope-materialize.test.js
 
 Expected: FAIL — `Cannot find module '../repositories/auth/scope-materialize'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/repositories/auth/scope-materialize.js`:
 
@@ -3028,7 +3028,7 @@ async function readAssignedShops(userId, companyId) {
 module.exports = { PRE_TENANT_REASON, materialiseScope };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/scope-materialize.test.js apps/core-api/test/scope.test.js apps/core-api/test/source-structure.test.js
@@ -3036,7 +3036,7 @@ node --test apps/core-api/test/scope-materialize.test.js apps/core-api/test/scop
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/repositories/auth/scope-materialize.js apps/core-api/test/scope-materialize.test.js
