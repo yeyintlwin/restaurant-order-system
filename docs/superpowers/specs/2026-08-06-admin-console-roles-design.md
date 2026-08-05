@@ -109,6 +109,51 @@ the part that actually matters.
 
 The wording says so: *"Suspending someone keeps their record and their past orders."*
 
+## 4A. What a form asks for
+
+A creation form asks only for what the thing cannot exist without. Everything else waits
+for the person who will know the answer.
+
+### 4A.1 Adding a shop asks four things
+
+| Field      | Required | Why                                                     |
+| ---------- | -------- | ------------------------------------------------------- |
+| Shop name  | Yes      | What everyone calls the branch. Goes on receipts.       |
+| Address    | No       | Shown under the name everywhere the shop is listed.     |
+| **Tables** | Yes      | The number creates the tables. See below.               |
+| Manager    | No       | A branch is usually opened before the manager is hired. |
+
+Phone, opening hours and the receipt footer are **not** asked for. Those belong to the
+manager, and a CEO opening a branch would be guessing. The form says so:
+*"Phone, opening hours and the receipt footer are the manager's to set."*
+
+Requiring a manager would be worse than leaving it blank — CEOs would put their own name in
+as a placeholder and the data would be a lie. §3.2 already handles the empty slot.
+
+### 4A.2 Tables are created, not counted
+
+The number is not a statistic. Entering 12 creates **Table 1 through Table 12**, each a
+real record that can carry its own QR code. The hint says exactly that as the number is
+typed, and on an existing shop it says what the change will do instead:
+
+- adding: *"Adds 3 tables to the end of the list."*
+- removing: *"Removes the last 3 tables. Their QR codes stop working."*
+
+The second line matters. A printed QR code on a physical table stops working when the
+record behind it goes, and nobody should discover that from a customer.
+
+### 4A.3 Every user has a phone number
+
+Required on every person: staff, manager, CEO. In a restaurant the phone is how you
+actually reach someone; the email address is only how the system recognises them.
+
+Enforced in JavaScript rather than with the `required` attribute, because the field sits
+inside containers that are hidden in some modes, and a browser refuses to report a
+validation error on a control it cannot focus.
+
+This sharpens §9.2 rather than answering it: if every person reliably has a phone and not
+every person reliably has an email, the phone is the better sign-in name.
+
 ## 5. Passwords
 
 Nobody can read anyone else's password. Helping someone in means **handing them a new
@@ -255,6 +300,8 @@ sign-in name the manager assigns.
 
 ### 9.3 Not designed yet
 
-- Adding a shop (the button exists; the screen does not).
 - What "Suspend a company" does to sessions already open inside it.
 - Whether a CEO may reassign a person between shops while they hold a manager slot.
+- Managing tables one at a time — renaming them, taking one out of service, reprinting a
+  QR code. §4A.2 creates them in a block; nothing edits them individually yet.
+- Whether removing tables should be blocked while a table has an open session.

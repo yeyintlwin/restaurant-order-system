@@ -278,7 +278,7 @@ tbody tr:hover{background:#fcfcfd}
            no screen here that lists a manager or a member of staff. -->
       <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company" class="on">Companies</a>
       <!-- A CEO owns the level below them: the shops, and everyone working in them. -->
-      <a href="#" data-go="shops" data-for="company" data-title="Shops" data-action="Add shop">Shops</a>
+      <a href="#" data-go="shops" data-for="company" data-title="Shops" data-action="Add shop" data-opens="shop">Shops</a>
       <a href="#" data-go="users" data-for="company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
       <!-- A manager's reach ends at their own staff, so the menu says so. -->
       <a href="#" data-go="users" data-for="manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
@@ -355,19 +355,19 @@ tbody tr:hover{background:#fcfcfd}
         <div class="panel">
           <div class="scroll">
           <table>
-            <thead><tr><th>Shop</th><th>Manager</th><th>Staff</th><th>Status</th><th></th></tr></thead>
-            <tbody>
+            <thead><tr><th>Shop</th><th>Manager</th><th>Tables</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+            <tbody id="shops-rows">
               <tr>
                 <td><div class="who"><span class="av">BG</span><span><span class="nm">Bogyoke</span><br><span class="em">No. 42, Bogyoke Rd</span></span></div></td>
                 <td class="meta state" data-label="Manager"><b>Thura Zaw</b>thura@sakura.mm</td>
-                <td class="meta state" data-label="Staff">2</td>
+                <td class="meta state" data-label="Tables">12</td><td class="meta state" data-label="Staff">2</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-shop="Bogyoke" data-manager="Thura Zaw">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">HL</span><span><span class="nm">Hledan</span><br><span class="em">Hledan Junction</span></span></div></td>
                 <td class="meta state" data-label="Manager"><b>Ko Ko Naing</b>kokonaing@sakura.mm</td>
-                <td class="meta state" data-label="Staff">1</td>
+                <td class="meta state" data-label="Tables">8</td><td class="meta state" data-label="Staff">1</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-shop="Hledan" data-manager="Ko Ko Naing">Edit</button></td>
               </tr>
@@ -376,7 +376,7 @@ tbody tr:hover{background:#fcfcfd}
               <tr>
                 <td><div class="who"><span class="av">IS</span><span><span class="nm">Insein</span><br><span class="em">Insein Rd, Km 9</span></span></div></td>
                 <td class="meta state none" data-label="Manager">No manager</td>
-                <td class="meta state" data-label="Staff">0</td>
+                <td class="meta state" data-label="Tables">20</td><td class="meta state" data-label="Staff">0</td>
                 <td class="meta state ok" data-label="Status">Active</td>
                 <td class="act"><button class="edit" data-shop="Insein" data-manager="">Assign</button></td>
               </tr>
@@ -401,35 +401,35 @@ tbody tr:hover{background:#fcfcfd}
                 <td class="meta state" data-label="Role">Manager</td>
                 <td class="meta state" data-label="Shop">Bogyoke</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-person="Thura Zaw" data-email="thura@sakura.mm" data-role="Manager" data-shop="Bogyoke" data-access="active">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Thura Zaw" data-phone="09 77 201 3344" data-email="thura@sakura.mm" data-role="Manager" data-shop="Bogyoke" data-access="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">AA</span><span><span class="nm">Aye Aye Mon</span><br><span class="em">ayeaye@sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="Role">Staff</td>
                 <td class="meta state" data-label="Shop">Bogyoke</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-person="Aye Aye Mon" data-email="ayeaye@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="active">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Aye Aye Mon" data-phone="09 42 118 9021" data-email="ayeaye@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">MM</span><span><span class="nm">Min Min</span><br><span class="em">minmin@sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="Role">Staff</td>
                 <td class="meta state" data-label="Shop">Bogyoke</td>
                 <td class="meta state" data-label="Status">Suspended</td>
-                <td class="act"><button class="edit" data-person="Min Min" data-email="minmin@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="suspended">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Min Min" data-phone="09 79 553 6612" data-email="minmin@sakura.mm" data-role="Staff" data-shop="Bogyoke" data-access="suspended">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">KK</span><span><span class="nm">Ko Ko Naing</span><br><span class="em">kokonaing@sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="Role">Manager</td>
                 <td class="meta state" data-label="Shop">Hledan</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-person="Ko Ko Naing" data-email="kokonaing@sakura.mm" data-role="Manager" data-shop="Hledan" data-access="active">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Ko Ko Naing" data-phone="09 25 447 8890" data-email="kokonaing@sakura.mm" data-role="Manager" data-shop="Hledan" data-access="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">HW</span><span><span class="nm">Hnin Wai</span><br><span class="em">hninwai@sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="Role">Staff</td>
                 <td class="meta state" data-label="Shop">Hledan</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-person="Hnin Wai" data-email="hninwai@sakura.mm" data-role="Staff" data-shop="Hledan" data-access="active">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Hnin Wai" data-phone="09 66 330 1177" data-email="hninwai@sakura.mm" data-role="Staff" data-shop="Hledan" data-access="active">Edit</button></td>
               </tr>
               <!-- He left. The account is suspended rather than deleted, because every
                    order and audit entry he touched still points at it. -->
@@ -438,7 +438,7 @@ tbody tr:hover{background:#fcfcfd}
                 <td class="meta state" data-label="Role">Manager</td>
                 <td class="meta state none" data-label="Shop">None</td>
                 <td class="meta state" data-label="Status">Suspended</td>
-                <td class="act"><button class="edit" data-person="Zaw Moe" data-email="zawmoe@sakura.mm" data-role="Manager" data-shop="None" data-access="suspended">Edit</button></td>
+                <td class="act"><button class="edit" data-person="Zaw Moe" data-phone="09 45 902 5561" data-email="zawmoe@sakura.mm" data-role="Manager" data-shop="None" data-access="suspended">Edit</button></td>
               </tr>
             </tbody>
           </table>
@@ -456,12 +456,12 @@ tbody tr:hover{background:#fcfcfd}
               <tr>
                 <td><div class="who"><span class="av">AA</span><span><span class="nm">Aye Aye Mon</span><br><span class="em">ayeaye@sakura.mm</span></span></div></td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-staff="Aye Aye Mon" data-email="ayeaye@sakura.mm" data-access="active">Edit</button></td>
+                <td class="act"><button class="edit" data-staff="Aye Aye Mon" data-phone="09 42 118 9021" data-email="ayeaye@sakura.mm" data-access="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">MM</span><span><span class="nm">Min Min</span><br><span class="em">minmin@sakura.mm</span></span></div></td>
                 <td class="meta state" data-label="Status">Suspended</td>
-                <td class="act"><button class="edit" data-staff="Min Min" data-email="minmin@sakura.mm" data-access="suspended">Edit</button></td>
+                <td class="act"><button class="edit" data-staff="Min Min" data-phone="09 79 553 6612" data-email="minmin@sakura.mm" data-access="suspended">Edit</button></td>
               </tr>
             </tbody>
           </table>
@@ -483,6 +483,10 @@ tbody tr:hover{background:#fcfcfd}
           <div class="row">
             <div><label for="a2">Email</label><p>Also your sign-in name.</p></div>
             <input id="a2" value="yeyintlwin.dev@gmail.com" disabled />
+          </div>
+          <div class="row">
+            <div><label for="a4">Phone</label><p>How people reach you when something is wrong.</p></div>
+            <input id="a4" type="tel" inputmode="tel" value="09 77 123 4567" />
           </div>
 
           <!-- A row of dots in a text field says nothing about what it is for. This row
@@ -626,6 +630,11 @@ tbody tr:hover{background:#fcfcfd}
              company. -->
         <p class="hint" id="co-known" hidden></p>
       </div>
+      <div class="field">
+        <label for="co-pphone">CEO phone</label>
+        <input id="co-pphone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+        <p class="warn" id="co-phone-warn" role="alert" hidden>A phone number is required.</p>
+      </div>
       <div class="field" id="co-pw-field">
         <label for="co-ppw">First password</label>
         <input id="co-ppw" readonly />
@@ -667,6 +676,14 @@ tbody tr:hover{background:#fcfcfd}
       <label for="st-email">Sign-in email</label>
       <input id="st-email" type="email" />
       <p class="hint" id="st-email-hint">They use this to sign in.</p>
+    </div>
+
+    <!-- Required for everyone. In a restaurant the phone is how you actually reach a
+         person; the address is only how the system recognises them. -->
+    <div class="field">
+      <label for="st-phone">Phone</label>
+      <input id="st-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+      <p class="warn" id="st-phone-warn" role="alert" hidden>A phone number is required.</p>
     </div>
 
     <!-- A CEO can move someone between their own shops. A manager cannot, so this field
@@ -722,6 +739,18 @@ tbody tr:hover{background:#fcfcfd}
     <div class="field">
       <label for="sh-name">Shop name</label>
       <input id="sh-name" value="Bogyoke" />
+      <p class="hint">What everyone calls this branch. It goes on receipts and reports.</p>
+    </div>
+    <div class="field">
+      <label for="sh-addr">Address</label>
+      <input id="sh-addr" value="No. 42, Bogyoke Rd" />
+    </div>
+    <!-- A bare count is a fact nobody can act on. The number creates the tables, and each
+         one is a real record that can carry a QR code. -->
+    <div class="field">
+      <label for="sh-tables">Tables</label>
+      <input id="sh-tables" type="number" min="0" max="200" inputmode="numeric" value="12" />
+      <p class="hint" id="sh-tables-hint"></p>
     </div>
     <div class="field">
       <label for="sh-mgr">Manager</label>
@@ -733,7 +762,7 @@ tbody tr:hover{background:#fcfcfd}
         <option>Min Min</option>
         <option>Hnin Wai</option>
       </select>
-      <p class="hint">Only one person manages a shop. Choosing someone else replaces them.</p>
+      <p class="hint" id="sh-mgr-hint">Only one person manages a shop. Choosing someone else replaces them.</p>
     </div>
 
     <!-- Appears the moment a different name is picked, because that is the moment the
@@ -745,9 +774,13 @@ tbody tr:hover{background:#fcfcfd}
       <label><input type="radio" name="handover" value="suspend" /><span>Suspend their access — they have left</span></label>
     </div>
 
+    <!-- Everything else about a shop belongs to whoever runs it day to day. Asking the CEO
+         for opening hours at the moment they open a branch is asking them to guess. -->
+    <p class="limit">Phone, opening hours and the receipt footer are the manager's to set.</p>
+
     <div class="pair">
       <button type="button" class="ghost" id="shop-cancel">Cancel</button>
-      <button type="submit" class="btn">Save</button>
+      <button type="submit" class="btn" id="shop-save">Save</button>
     </div>
   </form>
 </dialog>
@@ -844,6 +877,7 @@ document.getElementById("action").addEventListener("click",e=>{
   if(opens==="staff")   openPerson(null,"manager");
   if(opens==="person")  openPerson(null,"ceo");
   if(opens==="company") openCompany(null);
+  if(opens==="shop")    openShop(null);
 });
 
 document.querySelectorAll("[data-go]").forEach(a=>a.addEventListener("click",e=>{
@@ -911,6 +945,8 @@ function openCompany(btn){
   document.getElementById("co-pemail-l").textContent="CEO sign-in email";
   document.getElementById("co-pname").value="";
   document.getElementById("co-pemail").value="";
+  document.getElementById("co-pphone").value="";
+  document.getElementById("co-phone-warn").hidden=true;
   coPw.value=firstPassword();
   checkExisting();
 
@@ -952,6 +988,12 @@ document.getElementById("co-form").addEventListener("submit",e=>{
   const email=document.getElementById("co-pemail").value.trim();
   if(!name) return;
   if((!coRow || coReplacing) && !person) return;
+  // A CEO is a user too, so the same rule applies.
+  if(!coRow || coReplacing){
+    const phone=document.getElementById("co-pphone").value.trim();
+    document.getElementById("co-phone-warn").hidden=!!phone;
+    if(!phone){ document.getElementById("co-pphone").focus(); return; }
+  }
 
   if(coRow){
     const status=document.querySelector('input[name="co-status"]:checked').value;
@@ -1046,6 +1088,8 @@ function openPerson(btn,who){
   stName.value=name;
   stEmail.value=adding?"":btn.dataset.email;
   stEmail.readOnly=!adding;
+  document.getElementById("st-phone").value=adding?"":(btn.dataset.phone||"");
+  document.getElementById("st-phone-warn").hidden=true;
   document.getElementById("st-email-hint").textContent=adding
     ? "They use this to sign in."
     : "This is how they sign in, so it cannot be changed here.";
@@ -1108,6 +1152,13 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
   e.preventDefault();
   const name=stName.value.trim();
   if(!name) return;
+  // Every person has a phone number. Enforced here rather than with `required`, because
+  // the field sits in a container that is hidden in some modes and the browser refuses to
+  // report a validation error on something it cannot focus.
+  const phone=document.getElementById("st-phone").value.trim();
+  const phoneWarn=document.getElementById("st-phone-warn");
+  phoneWarn.hidden=!!phone;
+  if(!phone){ document.getElementById("st-phone").focus(); return; }
   const access=document.querySelector('input[name="access"]:checked').value;
   const label=access==="active"?"Active":"Suspended";
   const ceo=personWho==="ceo";
@@ -1121,6 +1172,7 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
     const btn=staffRow.querySelector("[data-person],[data-staff]");
     if(btn.dataset.person!==undefined) btn.dataset.person=name; else btn.dataset.staff=name;
     btn.dataset.access=access;
+    btn.dataset.phone=phone;
     let note=name+" is now "+label.toLowerCase()+".";
     if(ceo){
       const shop=document.getElementById("st-shop").value;
@@ -1166,6 +1218,7 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
     tr.querySelector(".em").textContent=stEmail.value;
     const b=tr.querySelector("[data-access]");
     b.dataset.email=stEmail.value;
+    b.dataset.phone=phone;
     if(ceo){
       tr.querySelector('[data-label="Shop"]').textContent=shop;
       b.dataset.person=name; b.dataset.role="Staff"; b.dataset.shop=shop;
@@ -1191,23 +1244,67 @@ const EMAIL={
 const shopDialog=document.getElementById("shop-dialog");
 const shopMgr=document.getElementById("sh-mgr");
 const shopName=document.getElementById("sh-name");
+const shopTables=document.getElementById("sh-tables");
+let wasTables=0;
+
+// Say what the number will actually do, and keep saying it as the number changes.
+function tablesHint(){
+  const n=Math.max(0,Number(shopTables.value)||0);
+  const hint=document.getElementById("sh-tables-hint");
+  if(!shopRow){
+    hint.textContent = n
+      ? "We will create Table 1 to Table "+n+", each with its own QR code."
+      : "None yet. Your manager can add them later.";
+    return;
+  }
+  const diff=n-wasTables;
+  hint.textContent = diff>0
+    ? "Adds "+diff+" table"+(diff>1?"s":"")+" to the end of the list."
+    : diff<0
+      ? "Removes the last "+(-diff)+" table"+(diff<-1?"s":"")+". Their QR codes stop working."
+      : "Each table has its own QR code.";
+}
+shopTables.addEventListener("input",tablesHint);
 const handover=document.getElementById("handover");
 const shopDone=document.getElementById("shop-done");
 let shopRow=null, wasManager="";
 
-document.querySelectorAll("[data-shop]").forEach(btn=>btn.addEventListener("click",()=>{
-  shopRow=btn.closest("tr");
-  wasManager=btn.dataset.manager;
-  shopName.value=btn.dataset.shop;
+/* A new shop is asked for the three things it cannot be without: what it is called, where
+   it is, and who runs it — and even the last of those is optional, because a branch is
+   usually opened before the manager is hired. Anything the manager will know better is
+   left for them. */
+function openShop(btn){
+  shopRow=btn?btn.closest("tr"):null;
+  const adding=!btn;
+  wasManager=adding?"":btn.dataset.manager;
+
+  shopName.value=adding?"":btn.dataset.shop;
+  document.getElementById("sh-addr").value=adding?"":
+    (btn.closest("tr").querySelector(".who .em").textContent);
+  shopTables.value=adding ? 12
+    : btn.closest("tr").querySelector('[data-label="Tables"]').textContent;
+  wasTables=Number(shopTables.value);
   shopMgr.value=wasManager;
-  document.getElementById("shop-h").textContent=wasManager?"Edit shop":"Assign a manager";
-  document.getElementById("shop-sub").textContent=wasManager
-    ? btn.dataset.shop
-    : btn.dataset.shop+" has been running without one.";
+  tablesHint();
+
+  document.getElementById("shop-h").textContent=
+    adding ? "Add shop" : (wasManager?"Edit shop":"Assign a manager");
+  document.getElementById("shop-sub").textContent=
+    adding ? "A new branch of Sakura Kitchen."
+           : (wasManager ? btn.dataset.shop : btn.dataset.shop+" has been running without one.");
+  document.getElementById("sh-mgr-hint").textContent=
+    adding ? "You can leave this until someone is hired. Until then the shop is yours to run."
+           : "Only one person manages a shop. Choosing someone else replaces them.";
+  document.getElementById("shop-save").textContent=adding?"Add shop":"Save";
+
   handover.hidden=true;
   shopDone.hidden=true;
   shopDialog.showModal();
-}));
+}
+document.getElementById("shops-rows").addEventListener("click",e=>{
+  const btn=e.target.closest("[data-shop]");
+  if(btn) openShop(btn);
+});
 
 // Only ask about the outgoing manager when there is one and they are being replaced.
 shopMgr.addEventListener("change",()=>{
@@ -1241,8 +1338,48 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
   e.preventDefault();
   const picked=shopMgr.value;
   const kept=document.querySelector('input[name="handover"]:checked').value;
+  const label=shopName.value.trim();
+  if(!label) return;
+
+  // A brand-new shop starts empty: no staff, no history, and usually no manager yet.
+  if(!shopRow){
+    const tr=document.createElement("tr");
+    tr.innerHTML=
+      '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
+      '<td class="meta state" data-label="Manager"></td>'+
+      '<td class="meta state" data-label="Tables"></td>'+
+      '<td class="meta state" data-label="Staff">0</td>'+
+      '<td class="meta state ok" data-label="Status">Active</td>'+
+      '<td class="act"><button class="edit"></button></td>';
+    tr.querySelector('[data-label="Tables"]').textContent=Math.max(0,Number(shopTables.value)||0);
+    const two=label.trim().split(/\s+/);
+    tr.querySelector(".av").textContent=(two.length>1
+      ? two[0][0]+two[1][0] : label.slice(0,2)).toUpperCase();
+    tr.querySelector(".nm").textContent=label;
+    tr.querySelector(".em").textContent=document.getElementById("sh-addr").value;
+    const nb=tr.querySelector(".edit");
+    nb.dataset.shop=label; nb.dataset.manager=picked;
+    nb.textContent=picked?"Edit":"Assign";
+    const mc=tr.querySelector('[data-label="Manager"]');
+    if(picked){ mc.innerHTML="<b></b>"; mc.querySelector("b").textContent=picked; mc.append(EMAIL[picked]||""); }
+    else { mc.classList.add("none"); mc.textContent="No manager"; }
+    document.getElementById("shops-rows").appendChild(tr);
+
+    const made=Math.max(0,Number(shopTables.value)||0);
+    shopDone.textContent=label+" is open with "+made+" table"+(made===1?"":"s")+". "+
+      (picked ? picked+" manages it." : "It has no manager yet, so it is yours to run.");
+    shopDialog.close();
+    shopDone.hidden=false;
+    refreshShopGaps();
+    shopDone.scrollIntoView({block:"nearest"});
+    return;
+  }
+
   const cell=shopRow.querySelector('[data-label="Manager"]');
   const btn=shopRow.querySelector("[data-shop]");
+  shopRow.querySelector(".who .em").textContent=document.getElementById("sh-addr").value;
+  const nowTables=Math.max(0,Number(shopTables.value)||0);
+  shopRow.querySelector('[data-label="Tables"]').textContent=nowTables;
 
   if(picked){
     cell.classList.remove("none");
