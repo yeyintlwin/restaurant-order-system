@@ -32,12 +32,30 @@ const AUDIT_ACTIONS = Object.freeze({
   // anonymous: the caller presented a mailed token, not a session.
   "auth.email_verified": entry(["anonymous"], ["success"], "user", []),
   "auth.email_verify_requested": entry(["user"], ["success"], "user", []),
+  "auth.login": entry(["user"], ["success"], "user", []),
+  // No target and no detail beyond the probed address. actor_kind 'anonymous'
+  // because nobody authenticated -- audit_events_actor_arc then requires BOTH
+  // actor id columns NULL, which is exactly right for a failed sign-in.
+  "auth.login_failed": entry(["anonymous"], ["failure"], null, ["email"]),
+  "auth.logout": entry(["user"], ["success"], "user", []),
+  "auth.logout_all": entry(["user"], ["success"], "user", ["revokedSessionCount"]),
+  "auth.password_changed": entry(["user"], ["success"], "user", []),
   "auth.password_reset_completed": entry(["anonymous"], ["success"], "user", []),
   // The one row whose target is CONDITIONAL. When the probed address matches no
   // row there is no user to name, and audit_events_target_pair requires
   // (target_kind IS NULL) = (target_id IS NULL) -- so both are NULL and the
   // address survives only in detail.email.
   "auth.password_reset_requested": entry(["anonymous"], ["success", "failure"], "user", ["email"]),
+  // 'system' as well as 'user': scripts/create-platform-admin.js is the CLI that
+  // writes the FIRST one, and there is no authenticated actor at that moment.
+  // POST /api/platform/admins (Plan 2c) writes it as 'user'.
+  "platform.admin_created": entry(["user", "system"], ["success"], "user", ["email"]),
+  // Clearing a selection names no company, so both target columns are NULL --
+  // the same conditional-target shape auth.password_reset_requested carries.
+  "scope.cleared": entry(["user"], ["success"], null, []),
+  // 'failure' is declared because 6.2 lists 404 not_found and 409 company_suspended
+  // on this route, and a platform admin probing company ids is worth a row.
+  "scope.selected": entry(["user"], ["success", "failure"], "company", []),
   // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc
   // requires actor_user_id NOT NULL for 'user' and actor_terminal_id NOT NULL for
   // 'terminal'; POST /api/terminal/table-displays/:tableNumber authenticates a CONFIGURED
@@ -50,7 +68,8 @@ const AUDIT_ACTIONS = Object.freeze({
   // `url` is not on audit_events_detail_no_credentials' banned-key list -- so the only
   // thing keeping a live table credential out of a 365-day retention window is this list
   // being short on purpose.
-  "table_display.updated": entry(["system"], ["success", "failure"], "table_display", ["status"])
+  "table_display.updated": entry(["system"], ["success", "failure"], "table_display", ["status"]),
+  "user.password_change_abuse": entry(["user"], ["failure"], "user", ["consecutiveFailures"])
 });
 
 function assertAuditEvent(event) {

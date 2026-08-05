@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const express = require("express");
 const { sendError } = require("./respond");
 const { LIMITERS } = require("../lib/rate-limit");
+const { AUDIT_ACTIONS } = require("../lib/audit-vocabulary");
 
 // Spec §3.2 rule 2: this is the ONLY file in the service that may require("express"), and
 // source-structure.test.js rule C3 asserts that by name. One registration function means one
@@ -85,10 +86,10 @@ function listRoutes() {
 //   rule 2  (the public set equals the settled four) and rule 3 (the exempt set) — a census at
 //           boot makes the service un-bootable at every intermediate commit; both live in
 //           route-auth.test.js, which asserts set EQUALITY and so fails on an addition too.
-//   rule 4's audit-vocabulary membership (§5.9) — Task 3 of Plan 2b, once the
-//           vocabulary names every action a registered route emits.
-//           The §5.7 limiter roster check IS here, above: it reads lib/rate-limit.js's
-//           LIMITERS, which is the one place the roster is written.
+//           Rule 4's audit-vocabulary membership (§5.9) and the §5.7 limiter roster check
+//           are both HERE, above, as of Plan 2b: they read lib/audit-vocabulary.js's
+//           AUDIT_ACTIONS and lib/rate-limit.js's LIMITERS, which are the one place each
+//           list is written.
 //   rule 6  (terminal-administration nesting) and rule 7 (a Location emitter has a GET) — Plan 2.
 //   rule 9  is dispatch behaviour, in createApp(). Rule 10 is a test assertion.
 // Takes `entries` as a parameter so the rules can be unit-tested on synthetic tables.
@@ -119,6 +120,19 @@ function validateRouteTable(entries = routes) {
       }
       if (typeof options.audit !== "string" || !AUDIT_ACTION_SHAPE.test(options.audit)) {
         throw new Error(`route table: ${where} must declare an audit action of the form "noun.verb"`);
+      }
+      // Spec 8.5 rule 4's second half, and spec 11.6 explains why it waited: the
+      // shape check alone lets a route declare user.frobnicated, which reaches
+      // audit_events -- whose CHECK is ALSO only a shape regex -- and is written.
+      // It could not land in Plan 2a because the vocabulary then held five actions
+      // and roughly twenty-five routes were still unwritten. It lands here because
+      // this is the plan whose routes complete the auth.* half of the table.
+      if (!Object.prototype.hasOwnProperty.call(AUDIT_ACTIONS, options.audit)) {
+        throw new Error(
+          `route table: ${where} declares audit action ${JSON.stringify(
+            options.audit
+          )}, which is not in the spec 5.9 vocabulary (apps/core-api/lib/audit-vocabulary.js)`
+        );
       }
     }
 

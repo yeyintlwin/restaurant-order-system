@@ -888,7 +888,7 @@ That returns five sites in `router-registration.test.js`, and one of them —
 `route("POST", "/__probe/ok", …)` at the top of the file — registers into the live
 table, so `createApp()` in that same file throws the moment the check lands.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `apps/core-api/test/audit-vocabulary.test.js`, beside the existing
 `"the five identity-slice actions are declared"` test:
@@ -965,7 +965,7 @@ test("validateRouteTable accepts every action in the vocabulary", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/audit-vocabulary.test.js apps/core-api/test/router-registration.test.js
@@ -974,7 +974,7 @@ node --test apps/core-api/test/audit-vocabulary.test.js apps/core-api/test/route
 Expected: FAIL — the nine actions are undeclared, and the two membership cases
 report `Missing expected exception`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 **(a)** In `apps/core-api/lib/audit-vocabulary.js`, insert the nine entries into
 `AUDIT_ACTIONS`. **The object must stay sorted** —
@@ -1056,7 +1056,7 @@ route("POST", "/__probe/ok", { auth: "public", body: null, audit: "auth.logout" 
 );
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/audit-vocabulary.test.js \
@@ -1070,7 +1070,7 @@ Expected: all pass. `table-displays.test.js` matters here: its route declares
 `table_display.updated`, which is already in the vocabulary, and this is the proof
 the check does not break the one route in the service that emits an audit row.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/lib/audit-vocabulary.js apps/core-api/http/router.js \
@@ -3551,11 +3551,16 @@ test("a rejected request never extends a session; a successful one does", async 
   });
 });
 
-test("a renewal failure never turns a successful response into an error", async () => {
-  // Step 14 runs after the response is written. A throw there must be logged, not
+test("a renewal failure is logged on its own line and never surfaces", async () => {
+  // Step 14 runs after the response is written, so a throw there must not be
   // surfaced: the request succeeded, and the only casualty is an idle window that
-  // slides a minute later.
+  // slides a minute later. The log half is asserted because the obvious way to
+  // write it -- req.core.logExtra.renewal = "failed" -- is a DEAD WRITE: the access
+  // line is built inside res.on("finish"), which fired before this catch ran. That
+  // mistake passes a status-only test, so this test reads the lines.
+  const lines = [];
   const { deps } = harness({
+    log: (line) => lines.push(line),
     sessions: {
       resolveSession: async () => ({
         sessionId: SESSION_ID, userId: USER, actingCompanyId: null,
@@ -3571,6 +3576,21 @@ test("a renewal failure never turns a successful response into an error", async 
     const response = await fetch(`${base}/__pipe/me`, { headers: cookie });
     assert.equal(response.status, 200);
   });
+
+  // Two lines for one request: the access line from res.on("finish") and the
+  // renewal failure. Selected by `level`, never by index -- whether "finish" beats
+  // the catch depends on whether the socket write completes in a nextTick or in an
+  // I/O callback, and a test that pins that ordering pins the wrong thing.
+  const parsed = lines.map((line) => JSON.parse(line));
+  assert.equal(parsed.length, 2, lines.join(" | "));
+  const access = parsed.find((line) => line.level === undefined);
+  const failure = parsed.find((line) => line.level === "error");
+  assert.equal(access.status, 200);
+  assert.equal(access.renewal, undefined, "the access log is one line per request and carries no renewal field");
+  assert.equal(failure.route, "/__pipe/me");
+  assert.equal(failure.status, 200);
+  assert.equal(failure.requestId, access.requestId, "the two lines must be joinable on requestId");
+  assert.match(failure.message, /^renewSession: connection terminated unexpectedly$/);
 });
 
 test("the existing terminal route still works: the pipeline resolves nothing for it", async () => {
@@ -3722,7 +3742,12 @@ function consumeLimit(entry, req, res, deps, stage, bucketKey) {
 // Step 14 -- sliding renewal, at most once per 60 seconds, and ONLY on a request
 // that reached the handler and succeeded. The throttle itself lives in the SQL so
 // two concurrent requests cannot both decide they are the one allowed to renew.
-async function renewIfSucceeded(entry, req, res, deps) {
+//
+// `log` is createApp's NORMALISED local, threaded in by the caller, not deps.log.
+// server.js passes `log: options.log`, which is undefined on a normal boot, so
+// deps.log(...) here is a TypeError in production on the one path that only fires
+// when the database is already in trouble.
+async function renewIfSucceeded(entry, req, res, deps, log) {
   if (entry.options.auth !== "user" || req.core.session === undefined) return;
   if (res.statusCode >= 400) return;
   try {
@@ -3735,7 +3760,22 @@ async function renewIfSucceeded(entry, req, res, deps) {
     // The response is already written. A failure here costs one minute of idle
     // window, and turning a successful request into a 500 because of it would be
     // strictly worse.
-    req.core.logExtra.renewal = "failed";
+    //
+    // NOT req.core.logExtra. Step 14 runs after the handler resolved, and the
+    // access line is assembled inside res.on("finish"), which has already fired
+    // and already spread logExtra -- a write there is discarded unread, and the
+    // renewal failure would be invisible everywhere. So this is a second line for
+    // the same request, in the shape of the error tail's, and `level` is what keeps
+    // the access log one line per request.
+    log(
+      JSON.stringify({
+        level: "error",
+        requestId: req.core.requestId,
+        route: req.core.routePattern,
+        status: res.statusCode,
+        message: `renewSession: ${String((error && error.message) || error)}`
+      })
+    );
   }
 }
 ```
@@ -3753,7 +3793,10 @@ async function renewIfSucceeded(entry, req, res, deps) {
       (async () => {
         if (!(await runPipeline(entry, req, res, deps))) return;
         await entry.handler(req, res);
-        await renewIfSucceeded(entry, req, res, deps);
+        // `log`, not `deps.log`: this loop already sits inside createApp, one scope
+        // below the `const log = typeof deps.log === "function" ? ... ` normalisation,
+        // and that default is the only reason a normal boot logs at all.
+        await renewIfSucceeded(entry, req, res, deps, log);
       })().catch(next);
     });
   }
@@ -4298,6 +4341,40 @@ test("a missing field is 422 and names both fields at once", async () => {
   });
 });
 
+test("an over-long address is refused before the lookup, and 254 exactly is not", async () => {
+  // The bound the users.email CHECK already carries. Without it the folded address
+  // lands in audit_events.detail on every failure -- see the login_failed row above,
+  // which is written for an address that matches nothing -- and that column has no
+  // length CHECK and no sweeper until Plan 2d.
+  let looked = 0;
+  const { deps, audits } = harness({
+    users: {
+      findByEmailForLogin: async () => { looked += 1; return null; },
+      recordFailedLogin: async () => null,
+      recordSuccessfulLogin: async () => {}
+    }
+  });
+  await withServer(deps, async (base) => {
+    const tooLong = await login(base, { email: `${"a".repeat(242)}@example.test`, password: PASSWORD });
+    assert.equal(tooLong.status, 422);
+    const body = await tooLong.json();
+    assert.equal(body.error.code, "validation_failed");
+    assert.deepEqual(body.error.errors, [{ field: "email", code: "too_long" }]);
+    // The two properties that make this a shape check rather than an oracle: nothing
+    // was looked up, and nothing was written. A 422 that reached the database would
+    // tell an anonymous caller which addresses are cheap to ask about.
+    assert.equal(looked, 0);
+    assert.deepEqual(audits, []);
+
+    // 254 is legal, so it must reach the uniform 401. An exclusive bound here would
+    // lock out an address the database would have stored, and the account holder
+    // would read it as a wrong password.
+    const legal = await login(base, { email: `${"a".repeat(241)}@example.test`, password: PASSWORD });
+    assert.equal(legal.status, 401, "254 characters is inside the CHECK, not outside it");
+    assert.equal(looked, 1);
+  });
+});
+
 test("login is origin-gated and content-type-gated, and Origin is answered first", async () => {
   // The one public route that carries the gate (Task 6's ORIGIN_GATED_PUBLIC_KEYS).
   // Origin before Content-Type: answering 415 to a request from evil.test would
@@ -4530,10 +4607,31 @@ route(
     const errors = [];
     if (typeof body.email !== "string" || body.email.trim() === "") {
       errors.push({ field: "email", code: "required" });
+    } else if (body.email.trim().length > 254) {
+      // 254 is the users.email CHECK -- `length(email) BETWEEN 3 AND 254` in
+      // migrations/0001_init.sql -- and the same bound the bootstrap CLI applies
+      // before it opens a pool. Unbounded here, the folded address is written into
+      // audit_events.detail on EVERY failure including one that matches no row, and
+      // that table has no length CHECK on detail and nothing sweeping it until
+      // Plan 2d: an unauthenticated caller would choose the row size.
+      //
+      // Still shape, not semantics. It runs before findByEmailForLogin, so it says
+      // nothing about whether any address exists, and no legal address reaches it --
+      // an address the database would accept cannot be longer than the bound.
+      errors.push({ field: "email", code: "too_long" });
     }
     if (typeof body.password !== "string" || body.password === "") {
       errors.push({ field: "password", code: "required" });
     }
+    // THERE IS DELIBERATELY NO COMPANION `too_long` ON password, and this is the
+    // note that exists so nobody adds one. lib/password.js says it in as many words:
+    // "The length policy is deliberately NOT applied here. It guards what is
+    // written; applying it on the read path would lock out every existing account
+    // the day the minimum is raised." A check here would also measure the raw
+    // string while normalise() measures after NFKC, so it would reject a password
+    // that hashPassword accepted and contracted. And it buys no work: scrypt's cost
+    // is fixed by the N, r and p in the stored hash, not by how long the candidate
+    // is -- unlike the email, the password reaches no durable row on this path.
     if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
 
     // Folded the way the users.email CHECK folds it -- lower(btrim(...)). The
@@ -6378,8 +6476,15 @@ Create `apps/core-api/scripts/create-platform-admin.js`:
 // Spec 5.6 and 9.10. The ONLY way the first account comes into existence.
 //
 //   cd ~/restaurant-order-system
-//   CORE_ENV_FILE=../core-api.env docker compose exec core-api \
+//   CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env \
+//     docker compose exec core-api \
 //     node apps/core-api/scripts/create-platform-admin.js you@example.com
+//
+// BOTH variables, on a subcommand that touches only core-api. Compose validates
+// every service's env_file on every subcommand, so a one-variable invocation dies at
+// project load complaining about the OTHER file and never reaches this script. This
+// is the form apps/core-api/README.md ships, and deploy-config.test.js enforces it
+// per line -- but only in .md files, so these two copies are on their author.
 //
 // `docker compose exec`, NEVER `exec -T`: this reads the password from a TTY with
 // echo disabled and REFUSES a pipe. The path inside the container is
@@ -6412,8 +6517,10 @@ function usage() {
   return [
     "usage: node apps/core-api/scripts/create-platform-admin.js <email> [display name]",
     "",
-    "Run it through an interactive session -- `docker compose exec`, without -T:",
-    "  CORE_ENV_FILE=../core-api.env docker compose exec core-api \\",
+    "Run it through an interactive session -- `docker compose exec`, without -T.",
+    "Both env-file variables, or compose refuses the project before this runs:",
+    "  CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env \\",
+    "    docker compose exec core-api \\",
     "    node apps/core-api/scripts/create-platform-admin.js you@example.com"
   ].join("\n");
 }

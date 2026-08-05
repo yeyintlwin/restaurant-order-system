@@ -161,6 +161,41 @@ test("the five identity-slice actions are declared", () => {
   }
 });
 
+test("the nine actions Plan 2b's routes and CLI emit are declared", () => {
+  for (const action of [
+    "auth.login",
+    "auth.login_failed",
+    "auth.logout",
+    "auth.logout_all",
+    "auth.password_changed",
+    "platform.admin_created",
+    "scope.cleared",
+    "scope.selected",
+    "user.password_change_abuse"
+  ]) {
+    assert.ok(AUDIT_ACTIONS[action], `${action} is not declared`);
+  }
+});
+
+test("the two actions with no target declare targetKind null, not a sentinel", () => {
+  // audit_events_target_pair is (target_kind IS NULL) = (target_id IS NULL), so a
+  // uniform-looking target_kind = 'user' with a NULL id is a CHECK violation, and
+  // inventing a sentinel id would make "everything done to this user" return rows
+  // for an account that never existed. Spec 5.9 writes both of these as "—".
+  assert.equal(AUDIT_ACTIONS["auth.login_failed"].targetKind, null);
+  assert.equal(AUDIT_ACTIONS["scope.cleared"].targetKind, null);
+});
+
+test("auth.login_failed carries the probed address and nothing else", () => {
+  // Spec 5.7: "every failed login writes an audit_events row ... and the probed
+  // address in detail.email. That row is not only for forensics: it is the only
+  // externally observable evidence of what the server derived as the client IP,
+  // and the deploy gate in 9.5 asserts against it."
+  assert.deepEqual([...AUDIT_ACTIONS["auth.login_failed"].detail], ["email"]);
+  assert.deepEqual([...AUDIT_ACTIONS["auth.login_failed"].actorKinds], ["anonymous"]);
+  assert.deepEqual([...AUDIT_ACTIONS["auth.login_failed"].outcomes], ["failure"]);
+});
+
 test("no declared detail key is credential-shaped", () => {
   // audit_events_detail_no_credentials rejects these at the database. Catching
   // it here means the failure is a test, not a 500 in production. The list is

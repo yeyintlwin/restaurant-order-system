@@ -6,7 +6,10 @@ const { sendJson } = require("../http/respond");
 // Scratch routes for this file only. They exist so the dispatch tests in later tasks have
 // something to hit; route-auth.test.js deliberately registers nothing.
 route("GET", "/__probe/ok", { auth: "public" }, (req, res) => sendJson(res, 200, { probe: "get" }));
-route("POST", "/__probe/ok", { auth: "public", body: null, audit: "shop.updated" }, (req, res) =>
+// auth.logout, not shop.updated: validateRouteTable now asserts membership of the
+// spec 5.9 vocabulary, and shop.* arrives with the shop routes in Plan 2c. This
+// route registers into the LIVE table, so createApp() below validates it.
+route("POST", "/__probe/ok", { auth: "public", body: null, audit: "auth.logout" }, (req, res) =>
   sendJson(res, 201, { probe: "post" })
 );
 route("GET", "/__probe/items/:itemId", { auth: "public", params: { itemId: "uuid" } }, (req, res) =>
@@ -108,7 +111,7 @@ test("rule 4: a :param with no params entry is fatal", () => {
 
 test("rule 4: a non-GET route must declare body and an audit action", () => {
   assert.throws(
-    () => validateRouteTable([entry("POST", "/x", { auth: "public", audit: "shop.created" })]),
+    () => validateRouteTable([entry("POST", "/x", { auth: "public", audit: "auth.logout" })]),
     /must declare body \(null when it takes none\)/
   );
   assert.throws(() => validateRouteTable([entry("POST", "/x", { auth: "public", body: null })]), /must declare an audit action/);
@@ -116,7 +119,7 @@ test("rule 4: a non-GET route must declare body and an audit action", () => {
     () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "shopCreated" })]),
     /must declare an audit action/
   );
-  assert.doesNotThrow(() => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "shop.created" })]));
+  assert.doesNotThrow(() => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "auth.logout" })]));
 });
 
 test("rule 5: an auth:'terminal' route outside /api/terminal/ is fatal", () => {
@@ -141,7 +144,7 @@ test("rule 8: a principal-keyed rate limit on a public route is fatal", () => {
         entry("POST", "/api/terminal/pair", {
           auth: "public",
           body: null,
-          audit: "terminal.paired",
+          audit: "auth.logout",
           limit: { key: "user", name: "create-user" }
         })
       ]),
@@ -152,7 +155,7 @@ test("rule 8: a principal-keyed rate limit on a public route is fatal", () => {
       entry("POST", "/api/terminal/pair", {
         auth: "public",
         body: null,
-        audit: "terminal.paired",
+        audit: "auth.logout",
         limit: { key: "ip", name: "pair-global" }
       })
     ])
@@ -222,6 +225,37 @@ test("validateRouteTable rejects a limit that is not an object", () => {
       () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "auth.login", limit: bad })]),
       /must be an object/,
       JSON.stringify(bad)
+    );
+  }
+});
+
+const { AUDIT_ACTIONS } = require("../lib/audit-vocabulary");
+
+test("validateRouteTable rejects an audit action outside the 5.9 vocabulary", () => {
+  // The shape check has always been here: user.frobnicated is a legal noun.verb,
+  // and audit_events' CHECK is ALSO only a shape regex, so the row would be
+  // written. The closed vocabulary is what audit_events_detail_no_credentials is
+  // protecting, and it is worthless if any handler can name an action nobody chose.
+  assert.throws(
+    () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "user.frobnicated" })]),
+    /not in the .*vocabulary/
+  );
+});
+
+test("validateRouteTable still rejects a malformed audit action before checking membership", () => {
+  // Ordering matters for the message: "Frobnicated" fails the SHAPE, and reporting
+  // it as "not in the vocabulary" would send the reader to the wrong file.
+  assert.throws(
+    () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: "Frobnicated" })]),
+    /must declare an audit action of the form/
+  );
+});
+
+test("validateRouteTable accepts every action in the vocabulary", () => {
+  for (const action of Object.keys(AUDIT_ACTIONS)) {
+    assert.doesNotThrow(
+      () => validateRouteTable([entry("POST", "/x", { auth: "public", body: null, audit: action })]),
+      action
     );
   }
 });
