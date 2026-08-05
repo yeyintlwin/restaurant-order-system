@@ -32,6 +32,39 @@ function proxySnippet() {
   return stripComments(readText(repoRoot, "infra", "nginx", "core-api-proxy.conf"));
 }
 
+function adminConf() {
+  return stripComments(readText(repoRoot, "infra", "nginx", "admin.conf"));
+}
+
+test("the admin block serves the front end and adds exactly one proxy hop", () => {
+  const admin = adminConf();
+
+  assert.match(admin, /^\s*server_name admin\.yeyintlwin\.com;$/m);
+  assert.match(
+    admin,
+    /^\s*ssl_certificate\s+\/etc\/letsencrypt\/live\/admin\.yeyintlwin\.com\/fullchain\.pem;$/m
+  );
+
+  // It proxies to the ADMIN APP, which does the /api forwarding itself. A second
+  // location here sending /api straight to core-api would be a third path to the
+  // same API with different headers, and the one nobody tests is the one that
+  // quietly stops sending Origin.
+  assert.match(admin, /^\s*proxy_pass\s+http:\/\/127\.0\.0\.1:3400;$/m);
+  assert.doesNotMatch(admin, /3200/);
+
+  // THE HOP COUNT, which is why this assertion exists at all. nginx appends the
+  // client here exactly once and the admin app appends nothing, so core-api still
+  // sees a one-entry chain and TRUSTED_PROXY_HOPS stays 1. Appending on both sides
+  // would make the depth 2 through /api and 1 everywhere else -- no single hop count
+  // right for both, and the derived address lands on an entry the client controls.
+  const appends = (admin.match(/\$proxy_add_x_forwarded_for/g) || []).length;
+  assert.equal(appends, 1, "admin.conf must append X-Forwarded-For exactly once");
+
+  // Origin must arrive as the browser sent it: core-api compares it to
+  // API_PUBLIC_ORIGIN, and that comparison IS the CSRF control.
+  assert.doesNotMatch(admin, /proxy_set_header\s+Origin/i);
+});
+
 test("the proxy snippet sets the X-Forwarded-For header TRUSTED_PROXY_HOPS=1 depends on", () => {
   const snippet = proxySnippet();
 

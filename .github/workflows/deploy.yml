@@ -104,6 +104,7 @@ jobs:
           # would silently never ship while every text assertion stayed green.
           scp -i ~/.ssh/lightsail.pem infra/nginx/api.conf "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/api.conf"
           scp -i ~/.ssh/lightsail.pem infra/nginx/core-api-proxy.conf "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/core-api-proxy.conf"
+          scp -i ~/.ssh/lightsail.pem infra/nginx/admin.conf "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/admin.conf"
           # Both host scripts live under config/. restore-drill.sh drives `docker
           # compose`, which does not exist inside the image -- that is why spec 9.7's
           # scripts/ path is superseded by config/ here.
@@ -227,11 +228,17 @@ jobs:
           # Remove last run's snapshots FIRST, so `[ -f … .bak ]` means "this run
           # snapshotted a file that existed" and the rollback cannot restore a config
           # from an unrelated deploy. sudo, because `sudo cp -a` writes them as root.
-          sudo rm -f /tmp/api.conf.bak /tmp/core-api-proxy.conf.bak
+          sudo rm -f /tmp/api.conf.bak /tmp/core-api-proxy.conf.bak /tmp/admin.conf.bak
           sudo cp -a /etc/nginx/conf.d/api.yeyintlwin.com.conf /tmp/api.conf.bak 2>/dev/null || :
           sudo cp -a /etc/nginx/snippets/core-api-proxy.conf /tmp/core-api-proxy.conf.bak 2>/dev/null || :
+          sudo cp -a /etc/nginx/conf.d/admin.yeyintlwin.com.conf /tmp/admin.conf.bak 2>/dev/null || :
           sudo install -m0644 /tmp/api.conf               /etc/nginx/conf.d/api.yeyintlwin.com.conf
           sudo install -m0644 -D /tmp/core-api-proxy.conf /etc/nginx/snippets/core-api-proxy.conf
+          # Third file, same breath, same rollback. It names a Let's Encrypt
+          # certificate, and nginx reads ssl_certificate at PARSE time -- so if that
+          # certificate is ever missing this is the file that fails `nginx -t`, and it
+          # has to be restorable with the other two rather than left behind.
+          sudo install -m0644 /tmp/admin.conf             /etc/nginx/conf.d/admin.yeyintlwin.com.conf
           if ! sudo nginx -t; then
             # BOTH files roll back. The snippet is installed in the same breath and is
             # equally able to fail nginx -t; restoring only api.conf leaves the box in a
@@ -240,6 +247,8 @@ jobs:
             else sudo rm -f /etc/nginx/conf.d/api.yeyintlwin.com.conf; fi
             if [ -f /tmp/core-api-proxy.conf.bak ]; then sudo cp -a /tmp/core-api-proxy.conf.bak /etc/nginx/snippets/core-api-proxy.conf
             else sudo rm -f /etc/nginx/snippets/core-api-proxy.conf; fi
+            if [ -f /tmp/admin.conf.bak ]; then sudo cp -a /tmp/admin.conf.bak /etc/nginx/conf.d/admin.yeyintlwin.com.conf
+            else sudo rm -f /etc/nginx/conf.d/admin.yeyintlwin.com.conf; fi
             sudo nginx -t          # prove the box is left loadable
             exit 1
           fi

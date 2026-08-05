@@ -972,9 +972,13 @@ test("the deploy builds, tests and ships admin-management", () => {
   assert.match(workflow, /docker build -f apps\/admin-management\/Dockerfile -t admin-management:/);
   assert.match(workflow, /ADMIN_MANAGEMENT_IMAGE=admin-management:/);
 
-  // The plan's fourth assertion -- that admin.conf is installed -- belongs to Task 8
-  // and is deliberately NOT here. Its nginx server block names a certificate that does
-  // not exist yet, and nginx reads ssl_certificate at PARSE time, so shipping the block
-  // first makes `nginx -t` fail and the deploy roll back. Task 8 adds both the install
-  // step and this assertion once the certificate is issued.
+  // The certificate was issued, so Task 8 landed and this is its half: the block has
+  // to be uploaded, installed, and ROLLED BACK with the other two. It names a Let's
+  // Encrypt certificate and nginx reads ssl_certificate at parse time, so it is the
+  // file most able to fail `nginx -t` -- restoring only the other two would leave the
+  // box in a state neither version produced.
+  assert.match(workflow, /scp .* infra\/nginx\/admin\.conf /);
+  assert.match(workflow, /sudo install -m0644 \/tmp\/admin\.conf\s+\/etc\/nginx\/conf\.d\/admin\.yeyintlwin\.com\.conf/);
+  assert.match(workflow, /sudo cp -a \/etc\/nginx\/conf\.d\/admin\.yeyintlwin\.com\.conf \/tmp\/admin\.conf\.bak/);
+  assert.match(workflow, /if \[ -f \/tmp\/admin\.conf\.bak \]/);
 });

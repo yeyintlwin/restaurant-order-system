@@ -6,8 +6,34 @@ Production services:
 
 - E-paper hub: `https://epaper-hub.yeyintlwin.com`
 - Customer ordering: `https://order.yeyintlwin.com`
+- Core API: `https://api.yeyintlwin.com`
+- Admin management: `https://admin.yeyintlwin.com`
 - Host: AWS Lightsail Ubuntu
 - Runtime: Docker Compose
+
+## The admin subdomain, and why the API answers under it
+
+`admin.yeyintlwin.com` serves the management front end from `127.0.0.1:3400`, and
+**that app forwards `/api/*` to core-api itself** rather than nginx doing it. The
+result is that a browser only ever talks to one origin, which is what lets
+core-api's `__Host-` session cookie work with no CORS and no
+`Access-Control-Allow-Credentials` — a header parent §6.5 forbids on `/api/admin/*`.
+
+Two consequences worth knowing before changing anything here:
+
+- **`API_PUBLIC_ORIGIN` is `https://admin.yeyintlwin.com`**, not the API's own name.
+  core-api compares the browser's `Origin` to it exactly, and the browser's origin is
+  the admin app. `api.yeyintlwin.com` keeps answering for terminal and service
+  callers, which authenticate by bearer token and are exempt from the check.
+- **The chain is one hop deep, deliberately.** nginx appends the client to
+  `X-Forwarded-For` once; the admin app forwards the header untouched. So
+  `TRUSTED_PROXY_HOPS` stays `1`. If either side is ever made to append, the depth
+  becomes 2 through `/api` and 1 everywhere else, no single value is correct, and the
+  address core-api derives lands on an entry the client controls.
+
+Its certificate is separate: `sudo certbot certonly --nginx -d admin.yeyintlwin.com`,
+issued 2026-08-05. If it lapses the admin UI is unreachable while the API is fine,
+which will present as "the API is broken".
 
 The deployed project folder is `~/restaurant-order-system`. It should contain only `docker-compose.yml` and optional `config/`. Runtime secrets stay in `~/restaurant-order-system.env`.
 
