@@ -25,7 +25,7 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 3 of 9 tasks done.**
+**Status: 4 of 9 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -35,6 +35,7 @@ steps are ticked and its commit exists.
 | 2026-08-05 | Task 1: manifest, stub `index.html`, static server. 4/4 pass. Found that `node --test <dir>` does not work in this checkout — see the note under Task 1 Step 4; use `npm --prefix apps/admin-management test`. | **1/9** | `feat(admin-management): serve public/, and resolve the path before trusting it` | Task 2 |
 | 2026-08-05 | Task 2: the `/api` proxy. 10/10 pass. Step 2 predicted six red and measured five — "only /api is proxied" is green before the proxy exists, see the note under Step 2. Full suite still at baseline, no mirror moved. | **2/9** | `feat(admin-management): proxy /api, and touch neither Origin nor X-Forwarded-For` | Task 3 |
 | 2026-08-05 | Task 3: `public/api.js`, `fetch` injected. 9/9 pass, 19/19 for the app. **The dual-export footer was KEPT as written** — `require()` did not throw, so the fallback was not taken; see the note under Step 4 for why, and for the Node floor it costs. | **3/9** | `feat(admin-management): the API client, with fetch injected so 401 is testable` | Task 4 |
+| 2026-08-05 | Task 4: the page, the stylesheet, `app.js` and the CSP. 6/6 new, **25/25 for the app** — `server.test.js` stayed green with the fifth header. Step 2's red measured exactly as predicted (0/6, three assertion failures and three `ENOENT`). Step 4's directory-form command still fails the way Task 1 documented; used `npm --prefix apps/admin-management test`. | **4/9** | `feat(admin-management): one page, three states, and the server's own error text` | Task 5 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -969,7 +970,7 @@ git commit -m "feat(admin-management): the API client, with fetch injected so 40
 - Create: `apps/admin-management/test/public-ui.test.js`
 - Modify: `apps/admin-management/server.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/admin-management/test/public-ui.test.js`:
 
@@ -1034,7 +1035,7 @@ test("the stylesheet uses the house palette rather than inventing one", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/admin-management/test/public-ui.test.js
@@ -1043,7 +1044,13 @@ node --test apps/admin-management/test/public-ui.test.js
 Expected: FAIL — `index.html` is the Task 1 stub and `styles.css` and `app.js` do
 not exist.
 
-- [ ] **Step 3: Write the page**
+> **Measured, exactly as predicted:** 0 pass / 6 fail. The split is worth recording
+> because it is two different failures: tests 1–3 read the Task 1 stub and fail on
+> `assert.match` (no viewport, no `id="signedOut"`, no `12`), while tests 4–6 never
+> get to an assertion — `ENOENT ... public\app.js` and `ENOENT ... public\styles.css`
+> are thrown by `readFileSync` inside the helper.
+
+- [x] **Step 3: Write the page**
 
 Replace `apps/admin-management/public/index.html`:
 
@@ -1359,7 +1366,7 @@ const SECURITY_HEADERS = Object.freeze({
 });
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/admin-management/
@@ -1368,7 +1375,33 @@ node --test apps/admin-management/
 Expected: all three suites pass. **`server.test.js` must still be green** — the CSP
 addition changes every response's headers and its assertions run over them.
 
-- [ ] **Step 5: Commit**
+> **Ran `npm --prefix apps/admin-management test` instead, as the Task 1 Step 4 note
+> instructs.** The directory form still fails the documented way on this checkout
+> (node v22.20.0): it runs `package.json`'s `main`, `start()` throws for want of
+> `CORE_API_URL`, and the run reports one failed "test". Confirmed pre-existing by
+> running the same command against `git show HEAD:apps/admin-management/server.js` —
+> identical failure, so it is not the CSP edit's doing.
+>
+> **25/25 pass**: api.test.js's 9, public-ui.test.js's 6, server.test.js's 10.
+> **`server.test.js` is green with the CSP present** — in particular "every response
+> carries the security headers, including on the 404", which sets no expectation
+> about the header *count*, so adding a fifth header does not disturb it.
+>
+> Also smoke-tested the delivery, since the CSP is only useful if the browser can
+> still load the page: served on port 3487 and curled it. `/` is 200 `text/html`,
+> `/app.js` and `/api.js` are 200 `application/javascript`, `/styles.css` is 200
+> `text/css`, and the CSP rides on all of them. Nothing the page loads is outside
+> `'self'`: `Inter` is a bare family name with no `@font-face`, so `font-src` never
+> comes into play, and the forms are all `preventDefault`-ed JS submits, so
+> `form-action 'none'` blocks nothing that is meant to happen.
+>
+> **The import specifier is `/api.js`, as this task's code block writes it** — not
+> the `./api.js` Task 3's closing note mentioned in passing. Both are ES-module
+> imports resolving to the same URL from `/app.js`; the block is the load-bearing
+> text and was typed verbatim. The `window.adminApi` global fallback was NOT
+> introduced, per Task 3 Step 4.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/public apps/admin-management/server.js \

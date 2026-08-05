@@ -2,7 +2,68 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f5f7" />
     <title>Restaurant Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body></body>
+  <body>
+    <main class="card" id="card">
+      <div class="brand" aria-hidden="true">R</div>
+
+      <!-- Shown until we know. Replaced by whichever state applies. -->
+      <section id="loading" class="state">
+        <p class="muted">Checking your session…</p>
+      </section>
+
+      <section id="signedOut" class="state" hidden>
+        <h1>Restaurant Admin</h1>
+        <p class="muted">Sign in to continue</p>
+        <form id="signInForm" novalidate>
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required />
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+          <p class="error" id="signInError" role="alert" hidden></p>
+          <button type="submit" id="signInButton">Sign in</button>
+        </form>
+      </section>
+
+      <section id="signedIn" class="state" hidden>
+        <p class="label">Signed in as</p>
+        <p class="identity" id="identityEmail"></p>
+        <p class="muted" id="identityRole"></p>
+        <hr />
+        <p class="label">Change password</p>
+        <form id="changeForm" novalidate>
+          <label for="currentPassword">Current password</label>
+          <input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" required />
+          <label for="newPassword">New password <span class="hint">at least 12 characters</span></label>
+          <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" required />
+          <p class="error" id="changeError" role="alert" hidden></p>
+          <p class="ok" id="changeOk" role="status" hidden></p>
+          <button type="submit" id="changeButton">Update password</button>
+        </form>
+        <div class="row">
+          <button type="button" id="signOut" class="secondary">Sign out</button>
+          <button type="button" id="signOutAll" class="secondary">Sign out everywhere</button>
+        </div>
+      </section>
+
+      <section id="mustChange" class="state" hidden>
+        <h1>Change your password</h1>
+        <p class="muted">Your account needs a new password before you can do anything else.</p>
+        <form id="forcedForm" novalidate>
+          <label for="forcedCurrent">Current password</label>
+          <input id="forcedCurrent" name="forcedCurrent" type="password" autocomplete="current-password" required />
+          <label for="forcedNew">New password <span class="hint">at least 12 characters</span></label>
+          <input id="forcedNew" name="forcedNew" type="password" autocomplete="new-password" required />
+          <p class="error" id="forcedError" role="alert" hidden></p>
+          <button type="submit" id="forcedButton">Update password</button>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
 </html>

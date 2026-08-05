@@ -13,13 +13,17 @@ const path = require("node:path");
 
 const PUBLIC_ROOT = path.join(__dirname, "public");
 
-// The same four headers core-api puts on every response (http/respond.js), minus the
-// CSP, which Task 4 adds once there is a script to allow. Repeated here rather than
-// imported because this app must not depend on core-api's source.
+// The same four headers core-api puts on every response (http/respond.js). Repeated
+// here rather than imported because this app must not depend on core-api's source.
 const SECURITY_HEADERS = Object.freeze({
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
-  "X-Frame-Options": "DENY"
+  "X-Frame-Options": "DENY",
+  // No inline script, no external anything. 'self' covers /app.js and /api.js;
+  // connect-src 'self' covers the proxied /api calls. If a later screen needs an
+  // inline script, add a hash -- never 'unsafe-inline'.
+  "Content-Security-Policy":
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
 });
 
 const CONTENT_TYPES = Object.freeze({
