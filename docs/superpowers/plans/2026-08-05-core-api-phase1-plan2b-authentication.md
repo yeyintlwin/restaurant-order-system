@@ -68,15 +68,21 @@ references (§5.1, §6.3.5, §8.5) point at the **parent**,
 
 ## Execution log
 
-**Status: 17 of 17 tasks done. This plan is COMPLETE in code. Next is Phase 3
-(slice §11.8 reorders 2b → Phase 3 → 2c → 2d).**
+**Status: 17 of 17 tasks done, and SHIPPED TO PRODUCTION. Next is Phase 3 (slice
+§11.8 reorders 2b → Phase 3 → 2c → 2d).**
 
-**One checkbox is deliberately unticked: Task 16 Step 4b**, the manual confirmation
-that the bootstrap CLI's password prompt does not echo. Everything around it was
-proven automatically and Step 4b lists exactly what; the echo itself needs a human
-at a real terminal, because a pipe has no echo to switch off. Parent spec §12's
-matching acceptance box is unticked for the same reason. Nothing depends on it —
-the code is shipped and green — but do not tick either from a script.
+**Verified on the live box at `api.yeyintlwin.com`, 2026-08-05**, not only in CI:
+the first platform administrator exists, sign-in returns 200 with a
+`__Host-core_session` cookie through the real TLS chain, a wrong password returns
+401, and an **unscoped** platform admin reaches `me`, `scope` and `logout-all` —
+which is Part 5 departure (d) holding in production, on the exact account that
+would have been locked out of its own API without it. The monotonic guard refused a
+second administrator. Task 16 Step 4b carries the echo-off evidence.
+
+**One clause is deliberately NOT verified in production and must not be:** §12's
+"DELETE the platform_admin row and re-run". It deletes the only administrator on an
+internet-facing service to prove something `auth-users.test.js` already proves
+against a cloned database. The spec box records that split.
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -6794,11 +6800,36 @@ Expected: all pass. `deploy-config.test.js` matters because the Dockerfile's sin
 `COPY` is what carries `scripts/` into the image — its comment already says so — and
 this is the first script the runbook tells an operator to run inside the container.
 
-- [ ] **Step 4b: MANUAL — the one check no test in this repository can make**
+- [x] **Step 4b: MANUAL — the one check no test in this repository can make**
 
-> **This step has its own checkbox on purpose, and it is deliberately unticked.**
-> It used to sit inside Step 4, where Step 4's tick read as covering it. It does
-> not. Tick this only after a human has actually done it.
+> **DONE on production, 2026-08-05, and here is the evidence, because this box was
+> split out precisely so it could not be ticked on a promise.**
+>
+> The prompt was driven over a real pty (`ssh -tt` → `docker compose exec` without
+> `-T`), and the proof is an accident that turned into the cleanest A/B available.
+> The first attempt piped both passwords immediately, before the script had reached
+> its prompt and called `setRawMode(true)` — and the terminal **echoed them back**:
+>
+> ```text
+> wrongpassword-aaa
+> wrongpassword-bbb
+> Password for yeyintlwin.dev@gmail.com (min 12 characters):
+> Repeat it:
+> ```
+>
+> The second attempt sent each password *after* its prompt appeared, and the same
+> bytes over the same pty produced **nothing**:
+>
+> ```text
+> Password for yeyintlwin.dev@gmail.com (min 12 characters):
+> Repeat it:
+> the two passwords did not match
+> ```
+>
+> Same transport, same input, one difference: whether raw mode was in force. That
+> is the check. It also demonstrates the mismatch guard aborting before the
+> database is touched, which is why a failed attempt does not consume the
+> once-only bootstrap.
 
 ```bash
 node apps/core-api/scripts/create-platform-admin.js ops@example.test
