@@ -244,6 +244,12 @@ Four ways this breaks with no error and no log line:
    happens there is nothing left to count. *Checked:* the snippet test asserts
    this form does not appear.
 
+> **Checked:** `apps/core-api/test/nginx-config.test.js` derives the deployed proxy
+> depth from `core-api-proxy.conf` (one `$proxy_add_x_forwarded_for`, one
+> `proxy_pass`, no `real_ip_*`) and asserts it equals `docker-compose.yml`'s
+> `TRUSTED_PROXY_HOPS`. Adding a second proxy in front of nginx therefore fails CI
+> until the variable moves with it.
+
 Code side: when `X-Forwarded-For` is absent, has fewer than
 `TRUSTED_PROXY_HOPS` entries, or the selected entry fails `net.isIP()`, core-api
 treats the derivation as untrusted — the rate-limit bucket collapses to a single

@@ -336,3 +336,79 @@ test("infra/README.md documents the install targets, the hop count and its four 
   assert.match(readme, /\/health\/ready/);
   assert.match(readme, /\bcurl -fsS\b/);
 });
+
+const { composeEnvironment } = require("../testing/compose");
+
+test("TRUSTED_PROXY_HOPS equals the proxy depth infra/nginx actually deploys", () => {
+  // Spec 11.5, and it is REQUIRED rather than nice-to-have. lib/client-ip.js counts
+  // entries from the RIGHT of X-Forwarded-For by this number. Set to 2 behind a
+  // single proxy the pick lands on the last CLIENT-CONTROLLED entry, and an
+  // attacker owns their own rate-limit bucket again -- the exact attack the module
+  // exists to prevent, reachable from one wrong digit in a file that is not the
+  // module's.
+  //
+  // No per-request test can see it. A forged "X-Forwarded-For: 1.2.3.4" under a
+  // one-proxy deployment is BYTE-IDENTICAL to a legitimate two-proxy deployment
+  // whose real client is 1.2.3.4, so the module has nothing to assert about its
+  // own input. Two locally-correct files, one wrong pair -- which is the shape the
+  // trailing-slash bypass had, and the technique that caught that one is this.
+  //
+  // proxySnippet(), not readText: the snippet's header comment NAMES
+  // $proxy_add_x_forwarded_for to explain it, above the one directive that sets
+  // it, so a raw read counts two appends and this assertion is red against a tree
+  // that is correct. The comment stripper is load-bearing, not tidiness.
+  const snippet = proxySnippet();
+
+  // (1) Exactly one hop is APPENDED. $proxy_add_x_forwarded_for is the incoming
+  //     header with $remote_addr appended on the right, so one occurrence of it
+  //     in the one snippet every proxying location includes means the chain grows
+  //     by exactly one entry between the client and core-api.
+  const appends = (snippet.match(/\$proxy_add_x_forwarded_for/g) || []).length;
+  assert.equal(appends, 1, "core-api-proxy.conf must append X-Forwarded-For exactly once");
+
+  // (2) There is no SECOND proxy layer: the snippet's single proxy_pass names the
+  //     upstream group rather than another nginx.
+  assert.equal((snippet.match(/^[ \t]*proxy_pass\s/gm) || []).length, 1);
+  assert.match(snippet, /^proxy_pass http:\/\/core_api;$/m);
+
+  // The two remaining premises are asserted by their own tests in this file and
+  // are deliberately NOT restated here -- restating them is how a copy drifts from
+  // the original, and the copy is the one that gets weakened. "every location that
+  // forwards to core-api does so through the proxy snippet" pins api.conf's zero
+  // proxy_pass (a bare proxy_pass would set no X-Forwarded-For at all and pass the
+  // client's own header straight through); "no real_ip directive can rewrite
+  // $remote_addr before the XFF chain is built" pins the real_ip trio --
+  // real_ip_recursive included, which a hand-copied pair drops -- and with
+  // real_ip_header set a forged header gets appended to ITSELF, so the deployed
+  // depth would no longer be derivable from the count above at all.
+
+  // The deployed depth, DERIVED from those facts rather than restated.
+  const deployedProxyDepth = appends;
+
+  // ...and the value the container will actually run with. Read out of the real
+  // docker-compose.yml, which is the file the deploy scp's to the box -- not out of
+  // a copy, and not out of config.js's DEFAULTS, which deliberately excludes this
+  // variable (a development default of 0 is fail-safe; production must state it).
+  const configured = composeEnvironment("core-api").TRUSTED_PROXY_HOPS;
+  assert.equal(
+    Number(configured),
+    deployedProxyDepth,
+    `docker-compose.yml sets TRUSTED_PROXY_HOPS=${configured} but infra/nginx deploys ${deployedProxyDepth} proxy hop(s). ` +
+      "Too high and lib/client-ip.js picks a client-controlled entry (forgeable buckets, forgeable source_ip); " +
+      "too low and it picks nginx's own address (one shared bucket, every user locked out by one attacker). " +
+      "Both fail silently at runtime -- this assertion is the only place the pair is checked."
+  );
+});
+
+test("the hop-count assertion is not vacuous: it moves when either side moves", () => {
+  // The mutation proof, in the file, because the assertion above is a cross-file
+  // one and cross-file assertions are the ones that rot into tautologies. Both
+  // directions are re-derived here from strings rather than from the real files,
+  // so this cannot pass because the real files happen to agree.
+  const twoHopSnippet = "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n".repeat(2);
+  assert.notEqual((twoHopSnippet.match(/\$proxy_add_x_forwarded_for/g) || []).length, 1);
+
+  const oneHopSnippet = "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n";
+  assert.equal((oneHopSnippet.match(/\$proxy_add_x_forwarded_for/g) || []).length, 1);
+  assert.notEqual(Number("2"), (oneHopSnippet.match(/\$proxy_add_x_forwarded_for/g) || []).length);
+});

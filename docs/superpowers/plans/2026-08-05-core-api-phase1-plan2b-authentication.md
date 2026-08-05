@@ -1105,7 +1105,7 @@ assertion derives (`proxy_pass` appears only in the snippet, the snippet appends
 exactly one entry, no `real_ip` directive rewrites `$remote_addr`) is already
 asserted in that file. Putting it anywhere else means restating them.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/core-api/test/nginx-config.test.js`:
 
@@ -1198,7 +1198,7 @@ test("the hop-count assertion is not vacuous: it moves when either side moves", 
 > it throws names the variable, not the shadowing, so it reads like a missing
 > helper.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Temporarily change `docker-compose.yml`'s `TRUSTED_PROXY_HOPS: 1` to `2`, then:
 
@@ -1217,7 +1217,7 @@ If instead the run dies on `appends` with `2 !== 1`, the reads were pasted as
 and **pass**. The proof that the assertion is not vacuous only exists once the
 stripping is in place.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Nothing to implement. The assertion passes against the tree as it stands **because
 every read goes through the comment strippers**; Step 2 is the proof it is not
@@ -1245,7 +1245,7 @@ failure and no comment telling them why they must not. The comments are the
 documentation the assertions exist to keep honest; the fix is always on the reading
 side.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 git diff --stat docker-compose.yml
@@ -1255,7 +1255,7 @@ node --test apps/core-api/test/nginx-config.test.js apps/core-api/test/config.te
 Expected: `git diff --stat` prints nothing (the Step 2 edit is reverted), and both
 suites pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Also record it in `infra/README.md`'s `### TRUSTED_PROXY_HOPS=1, and the four ways
 it breaks silently` section — one line, because
@@ -3555,9 +3555,11 @@ test("a renewal failure is logged on its own line and never surfaces", async () 
   // Step 14 runs after the response is written, so a throw there must not be
   // surfaced: the request succeeded, and the only casualty is an idle window that
   // slides a minute later. The log half is asserted because the obvious way to
-  // write it -- req.core.logExtra.renewal = "failed" -- is a DEAD WRITE: the access
-  // line is built inside res.on("finish"), which fired before this catch ran. That
-  // mistake passes a status-only test, so this test reads the lines.
+  // write it -- req.core.logExtra.renewal = "failed" -- is a DEAD WRITE. A real
+  // renewSession awaits a database round trip, so res.on("finish") has long since
+  // fired and spread logExtra by the time the catch runs, and the write is
+  // discarded unread. That mistake passes a status-only test, which is why this
+  // one reads the lines.
   const lines = [];
   const { deps } = harness({
     log: (line) => lines.push(line),
@@ -4355,6 +4357,7 @@ test("an over-long address is refused before the lookup, and 254 exactly is not"
     }
   });
   await withServer(deps, async (base) => {
+    // 242 + "@example.test" (13) = 255, one character past the CHECK.
     const tooLong = await login(base, { email: `${"a".repeat(242)}@example.test`, password: PASSWORD });
     assert.equal(tooLong.status, 422);
     const body = await tooLong.json();
@@ -4366,9 +4369,9 @@ test("an over-long address is refused before the lookup, and 254 exactly is not"
     assert.equal(looked, 0);
     assert.deepEqual(audits, []);
 
-    // 254 is legal, so it must reach the uniform 401. An exclusive bound here would
-    // lock out an address the database would have stored, and the account holder
-    // would read it as a wrong password.
+    // 241 + 13 = 254, the last legal length, so it must reach the uniform 401. An
+    // exclusive bound here would lock out an address the database would have stored,
+    // and the account holder would read it as a wrong password.
     const legal = await login(base, { email: `${"a".repeat(241)}@example.test`, password: PASSWORD });
     assert.equal(legal.status, 401, "254 characters is inside the CHECK, not outside it");
     assert.equal(looked, 1);
@@ -4629,9 +4632,9 @@ route(
     // written; applying it on the read path would lock out every existing account
     // the day the minimum is raised." A check here would also measure the raw
     // string while normalise() measures after NFKC, so it would reject a password
-    // that hashPassword accepted and contracted. And it buys no work: scrypt's cost
+    // that hashPassword accepted and contracted. And it saves nothing: scrypt's cost
     // is fixed by the N, r and p in the stored hash, not by how long the candidate
-    // is -- unlike the email, the password reaches no durable row on this path.
+    // is -- and unlike the email, the password reaches no durable row on this path.
     if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
 
     // Folded the way the users.email CHECK folds it -- lower(btrim(...)). The
@@ -6476,8 +6479,7 @@ Create `apps/core-api/scripts/create-platform-admin.js`:
 // Spec 5.6 and 9.10. The ONLY way the first account comes into existence.
 //
 //   cd ~/restaurant-order-system
-//   CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env \
-//     docker compose exec core-api \
+//   CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
 //     node apps/core-api/scripts/create-platform-admin.js you@example.com
 //
 // BOTH variables, on a subcommand that touches only core-api. Compose validates
@@ -6519,8 +6521,7 @@ function usage() {
     "",
     "Run it through an interactive session -- `docker compose exec`, without -T.",
     "Both env-file variables, or compose refuses the project before this runs:",
-    "  CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env \\",
-    "    docker compose exec core-api \\",
+    "  CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \\",
     "    node apps/core-api/scripts/create-platform-admin.js you@example.com"
   ].join("\n");
 }
@@ -6911,6 +6912,24 @@ Every site the greps found. The four that carry real operator consequences:
 `apps/core-api/README.md` already matches `/create-platform-admin/` (spec §12's grep),
 so that test stays green either way — which is precisely why the entry has to be
 checked by eye rather than by grep. Make it a runbook entry with the real command.
+
+**Every `docker compose` line this step writes carries BOTH env-file variables.**
+Compose validates every service's `env_file` on every subcommand, so
+`CORE_ENV_FILE=../core-api.env docker compose exec core-api …` dies at project load
+complaining about the *other* file, and the operator reading a fresh-instance runbook
+has nothing to fall back on. The shipped form to copy is the Bootstrapping line in
+`apps/core-api/README.md`:
+
+```bash
+grep -n "EPAPER_ENV_FILE" apps/core-api/README.md infra/README.md
+```
+
+The `.md` sites are guarded and the script is not. `deploy-config.test.js` asserts the
+rule **per line** across the four `.md` files, so a one-variable line in either README
+goes red and the message names the offending line — but the same command also appears
+twice inside `scripts/create-platform-admin.js`, in the header comment and in `usage()`,
+and no assertion reaches those. Task 16 writes both with both variables; if this step
+rewords the invocation, reword all four copies together.
 
 - [ ] **Step 3: Raise the walker floor, with one sentinel per load-bearing new file**
 
