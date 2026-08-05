@@ -262,8 +262,19 @@ test("validateRouteTable accepts every action in the vocabulary", () => {
 
 const { createApp } = require("../http/router");
 
-// Plan 2 extracts this into testing/http.js when the explicit cookie jar arrives (spec §8.1);
-// twelve duplicated lines is cheaper than a helper nothing else uses yet.
+// Spec §8.1's harness. This comment used to say "Plan 2 extracts this into testing/http.js
+// when the explicit cookie jar arrives; twelve duplicated lines is cheaper than a helper
+// nothing else uses yet." Both halves are now false and neither goes red on its own.
+//
+// The jar ARRIVED in Plan 2b and the extraction did NOT happen: testing/ holds compose.js,
+// database.js and fixtures/, and no http.js. And "nothing else uses yet" is wrong by three
+// — there are FIVE copies of this function now (auth-routes, health, pipeline,
+// router-registration, table-displays), which is what turns the arithmetic over.
+//
+// Left duplicated on purpose rather than by neglect: the refactor touches five suites, no
+// plan has scoped it, and it is not something to land at the end of a green run on the way
+// past. It is owed by whichever plan next works in these harnesses — Phase 3 or Plan 2c —
+// and health.test.js carries the same note over the same twelve lines.
 async function withServer(deps, run) {
   const app = createApp(deps);
   const server = app.listen(0, "127.0.0.1");

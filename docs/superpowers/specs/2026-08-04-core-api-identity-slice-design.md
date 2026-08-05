@@ -473,9 +473,38 @@ GET  /admin/verify-email
 Asserted by `deepEqual`, so an addition fails and so does a removal. It becomes
 nine when the terminal plan adds `POST /api/terminal/pair`.
 
-The literal "the settled four" is written in three places and all three move
-together: `route-auth.test.js:33-36`, `router.js:75`, and the parent spec at
-§6.1 and §8.5 rule 2.
+**Landed: the three naming sites moved, and the literal is gone.** This section
+used to read *"the literal 'the settled four' is written in three places and all
+three move together: `route-auth.test.js:33-36`, `router.js:75`, and the parent
+spec at §6.1 and §8.5 rule 2."* All three moved, each in the same commit as the
+route that forced it. `grep -rn "the settled four" apps docs` now returns **no
+source file, no test and no spec** — only the two plan documents that predate the
+move (`…plan1-foundation.md`, which wrote the literal, and
+`…plan2b-authentication.md`, which instructed its removal), and those are execution
+records rather than live claims.
+
+**Where the public set is pinned now:**
+
+| Site | What it says |
+| --- | --- |
+| `apps/core-api/test/route-auth.test.js` | *"rule 2: the public set is exactly the Plan 1 set"* — a `deepEqual` on **three** keys, with the growth path in the comment above it. |
+| `apps/core-api/http/router.js` | The `validateRouteTable` comment, recording that rule 2 is deliberately **not** a boot census — a census makes the service un-bootable at every intermediate commit — and that the teeth are in `route-auth.test.js`. |
+| Parent spec §6.1 and §8.5 rule 2 | Both now name three, both carry an explicit *Amended by Plan 2b* note saying the earlier text said "exactly four entries" and named `POST /api/terminal/pair`, which no plan has registered. |
+
+**Three, then eight, then nine — and never four.** Three today: `GET /health`,
+`GET /health/ready`, `POST /api/admin/auth/login`. **Eight** once Plan 2d lands the
+five it owes — `forgot-password`, `reset-password`, `verify-email`,
+`GET /admin/reset-password`, `GET /admin/verify-email` — which is the set enumerated
+above. **Nine** when the terminal plan registers `POST /api/terminal/pair`.
+
+Why the record matters more than the correction: "four" was never a stage the
+service passed through. It was a count taken by adding the *login* route and the
+*pairing* route to the two health entries at the same time, and the two arrived in
+different plans — pairing has still not arrived. A reader who finds "four"
+somewhere and repairs it by widening a literal to four would put a route in the
+public set that does not exist. Widen the literal **in the same commit as the
+route**, never ahead of it; the `deepEqual` is set equality, so an early widening
+is as red as a late one.
 
 ### 6.3 CSRF — §5.3 needs a genuine third clause
 
@@ -659,10 +688,34 @@ return rows for an account that never existed.
 
 ## 9. The lockstep change list
 
-Every literal below describes work that does not exist yet. They are frozen in
-tests and configuration **today**, and they must all move in the same commit as
-the code they describe. This section exists so the implementation plan can be
-written without re-deriving it.
+**Landed in part.** When this section was written, every literal below described
+work that did not exist. Two plans have executed against it since — **Plan 2a**
+took the migration and the invariant pins, **Plan 2b** took the authentication
+half — so the list is no longer one undifferentiated backlog, and reading it as
+one is how a later plan ends up scheduling work that shipped in June.
+
+What has **not** changed is the rule the section exists for: *a literal frozen in
+a test or in a configuration file moves in the same commit as the code it
+describes.* That still binds every row marked **OWED** below, and §9.3's traps
+still apply to them unaltered.
+
+The landed rows are kept rather than deleted, because what each one recorded is
+*which file goes red when the pair is split* — and that is the part not
+recoverable from a diff. §9.3's last bullet is why the record has to be a status
+rather than a deferral marker: a `match` on "this does not exist yet" goes green
+forever and green is the wrong colour for a claim nobody checks.
+
+**Read the Status column, not the Edits column.** The edit counts were estimates
+made before execution and two are known wrong: `migrate.test.js` was five and is
+six (`assert.equal(ledger.rowCount, 1)` is the sixth and is not an array literal,
+so a grep for the pinned filename finds five of six), and
+`schema-invariants.test.js` named three files when the invariant lists live in
+six — `infra/restore-drill.sh` hand-mirrors S1 in SQL, and with `0002` applied it
+would have raised on a **good** restore.
+
+The residual: everything still owed belongs to **Plan 2d** (credential recovery
+and the two landing pages), except §12's parent-spec rows, which §12 itemises
+separately.
 
 ### 9.1 Blockers
 
@@ -670,28 +723,30 @@ written without re-deriving it.
 | --- | --- |
 | B1 | The landing pages cannot be served under the shipped CSP. Resolved by §6.4. |
 | B2 | Both landing pages register through `route()` and so join the public set. `express.static` is unavailable: `source-structure.test.js` deep-equals the express-requiring file list to `["http/router.js"]`. |
-| B3 | Registering the login route trips `deploy-config.test.js:731-741`, whose failure message orders three further edits — and obeying it turns `:721` red, because the `PLAN 2` marker it matches exists only in the comment being deleted. |
+| B3 | **RESOLVED by Plan 2b, Task 12 (`cc4ec12`).** It said: registering the login route trips `deploy-config.test.js:731-741`, whose failure message orders three further edits — and obeying it turns `:721` red, because the `PLAN 2` marker it matches exists only in the comment being deleted. That is what happened, and the resolution was to stop treating it as an ordering problem: **the route, `deploy.yml` block 4 and the test moved in one commit**. Block 4 stopped being a config-file read and became a behavioural gate — it asserts `401` with `"code":"invalid_credentials"` from a login probe carrying `X-Forwarded-For: 203.0.113.99`, and that the audit row's `source_ip` is neither that address nor NULL. The `routesDir` loop that generated the three-edit cascade is **deleted**, verified by `grep -rn routesDir apps/core-api` returning only `route-auth.test.js`'s own module loader, so the trap cannot re-arm for the routes Plan 2d registers. |
 | B4 | `source-structure.test.js:40` deep-equals dependencies to `["express", "pg"]` and `:49` asserts `devDependencies === undefined`. `package-lock.json` must be regenerated in the same commit or `npm ci` fails in the image while local tests stay green. |
 | B5 | `route-auth.test.js:90-97` requires `sample` on every entry, including all ~25 previously specified routes. |
 
 ### 9.2 Files and edit counts
 
-| File | Edits | Principal change |
-| --- | --- | --- |
-| `test/route-auth.test.js` | 3 | public set 2 → 8; new origin-gating census |
-| `test/migrate.test.js` | 5 | the `["0001_init.sql"]` pins of §3.5 |
-| `test/schema-invariants.test.js` | 4 | three lists plus a new positive assertion |
-| `test/source-structure.test.js` | 3 | dependencies; the `nodemailer` rule; the `res.end` rule |
-| `test/deploy-config.test.js` | 6 | 404 → 401; `not_found` → `invalid_credentials`; delete the `routesDir` loop |
-| `test/nginx-config.test.js` | 5 | zone count; include count 4 → 6; the "two credential routes" title |
-| `test/operations-docs.test.js` | 4 | the `Plan 2` tripwires |
-| `test/config.test.js` | 2 | both frozen env fixtures |
-| `http/respond.js` | 5 | `sendHtml`; second header table; the Retry-After comment |
-| `http/router.js` | 4 | limiter roster check; audit membership check; three comments |
-| `.github/workflows/deploy.yml` | 9 | block 4; the real forged-XFF probe |
-| `infra/nginx/api.conf` | 3 | two exact-match locations; one zone |
-| `infra/README.md` | 6 | see the line-budget hazard below |
-| Parent spec | 14 | §6.1, §8.5 rule 2, §5.3, §5.7, §9.5, §9.12, §10, §11 |
+Every row checked against the working tree, not against the plan documents.
+
+| File | Edits | Principal change | Status |
+| --- | --- | --- | --- |
+| `test/route-auth.test.js` | 3 | public set 2 → 8; new origin-gating census | **PART 2b / PART OWED.** The public set moved 2 → **3** and the origin-gating census exists — a `deepEqual` on the five origin-gated keys, derived through `requiresOriginCheck` exactly as §6.3 specified rather than declared as a route option. 2d takes the public set 3 → 8 and widens the census by three. |
+| `test/migrate.test.js` | 5 | the `["0001_init.sql"]` pins of §3.5 | **LANDED, Plan 2a Task 2.** Every pin now reads `["0001_init.sql", "0002_identity.sql"]`. Six sites, not five, and executing it also exposed that both multi-row ledger queries had no `ORDER BY` while the new two-element `deepEqual` had just made row order load-bearing. |
+| `test/schema-invariants.test.js` | 4 | three lists plus a new positive assertion | **LANDED, Plan 2a Task 3.** `user_email_tokens` is in the table list, in the pre-tenant exemption list with its reason, and carries the positive assertion (`user_id` is `uuid NOT NULL`, `company_id` absent). The lists live in six files, not three — see the opening note. |
+| `test/source-structure.test.js` | 3 | dependencies; the `nodemailer` rule; the `res.end` rule | **PART / MOSTLY OWED.** The dependency literal did move, but for `@restaurant/epaper-hub-sdk` (§11.9) rather than for `nodemailer`, and it brought C16 with it. The `nodemailer` rule and the `res.end` rule are unwritten: the roster stops at **C16**. Both are 2d's, and both arrive with the code that makes them necessary — 2d's mailer and 2d's landing pages. |
+| `test/deploy-config.test.js` | 6 | 404 → 401; `not_found` → `invalid_credentials`; delete the `routesDir` loop | **LANDED, Plan 2b Task 12 (`cc4ec12`), plus Task 17 (`a1f6056`).** See B3 above. |
+| `test/nginx-config.test.js` | 5 | zone count; include count 4 → 6; the "two credential routes" title | **OWED, 2d.** Still three zones, `includeCount` still pinned at 4, title unchanged. Correctly untouched: 2b registered no browser-facing route that needs an nginx location, and moving the pin ahead of `api.conf` is the lockstep failure this section is about. |
+| `test/operations-docs.test.js` | 4 | the `Plan 2` tripwires | **LANDED, Plan 2b Task 17 (`a1f6056`).** Retired the way §9.3's last bullet demands — replaced with assertions on the claim that is now true (`audit_events`, `203.0.113.99`) rather than deleted. The two surviving `Plan 2` strings are `// WAS:` notes recording what each assertion replaced. |
+| `test/config.test.js` | 2 | both frozen env fixtures | **OWED, 2d.** No mail configuration and none of §7's three new limiter variables. Plan 2b added no configuration at all. |
+| `http/respond.js` | 5 | `sendHtml`; second header table; the Retry-After comment | **OWED, 2d.** Unchanged since Plan 1 (`a1b5748`): one frozen header table, no `sendHtml`. §6.4's hash-not-nonce reasoning is still unexecuted. |
+| `http/router.js` | 4 | limiter roster check; audit membership check; three comments | **LANDED, Plan 2b Tasks 1–3 and 12.** Both boot checks live in `validateRouteTable`, each reading the one place its list is written (`lib/rate-limit.js`'s `LIMITERS`, `lib/audit-vocabulary.js`'s `AUDIT_ACTIONS`). §7.1 and §11.6 record why neither could land earlier. |
+| `.github/workflows/deploy.yml` | 9 | block 4; the real forged-XFF probe | **LANDED, Plan 2b Task 12 (`cc4ec12`).** The probe asserts on the response and on the audit row it wrote, and runs **before** the `limit_req` burst — after it, nginx sheds the probe and every assertion is vacuous. |
+| `infra/nginx/api.conf` | 3 | two exact-match locations; one zone | **OWED, 2d.** Unchanged since `016b04a`. |
+| `infra/README.md` | 6 | see the line-budget hazard below | **PART 2b / PART OWED.** Plan 2b edited it three times (`fb1fc1c`, `7fbd771`, `a1f6056`) for the client-IP chain, the *Checked:* note and the retired markers. The landing-page and credential-zone documentation this row anticipates is 2d's, and the budget below is what it has to fit into. |
+| Parent spec | 14 | §6.1, §8.5 rule 2, §5.3, §5.7, §9.5, §9.12, §10, §11 | **PART 2b / PART OWED, itemised at §12.** Plan 2b Task 17 carried §5.7, §5.9, §6.1, §8.5 rule 2, §9.5, §9.12 and §10, plus two the table did not anticipate. §5.3, §11 and §7 remain. |
 
 ### 9.3 Traps that look like ordinary edits
 
@@ -707,8 +762,31 @@ written without re-deriving it.
   be mechanically enforced, the assertion goes **inside** the existing `test(…)`
   at `:684`, which leaves `registered === 16` at `:901` undisturbed.
 
-- **The client-IP section has one line of headroom.** `operations-docs.test.js:78-81`
-  caps `## The client-IP chain` at 40 lines and it is 39 today.
+- **The client-IP section is on a line budget, and the budget is what to check.**
+  `operations-docs.test.js` caps `## The client-IP chain` at **40 lines** and that
+  ceiling has not moved. What has moved is the occupancy: this section said "39
+  today, one line of headroom", and Plan 2b then rewrote the area twice — `fb1fc1c`
+  and `7fbd771` added the `TRUSTED_PROXY_HOPS` ↔ proxy-depth note, `a1f6056` retired
+  the `Plan 2` marker and the gate sentence with it. It now measures **37**, so
+  there are **three** lines spare.
+
+  Do not carry that 37 forward either; it is stale the next time anyone edits the
+  section. **Measure it, with the test's own slicer** — `sectionSlice` runs from the
+  heading to the next level-2 heading — terminating only on a newline followed by
+  two hashes and a space — so a hand count off a text editor disagrees with it at
+  the boundaries:
+
+  ```bash
+  node -e 'const r=require("fs").readFileSync("infra/README.md","utf8").replace(/\r\n/g,"\n");
+  const s=r.slice(r.indexOf("\n## The client-IP chain\n")+1);const n=s.indexOf("\n## ");
+  console.log((n===-1?s:s.slice(0,n)).split("\n").length)'
+  ```
+
+  The cap is not arbitrary and raising it is not the fix: the four silent breakers
+  are written out once, in the nginx area, and this section summarises and points at
+  them. The ceiling is the only mechanism that can ask "is this a second copy" —
+  a text assertion cannot. If 2d's material does not fit in three lines, it belongs
+  in the nginx area with a pointer from here.
 
 - **`operations-docs.test.js:226` is not a one-line tripwire.** `sectionSlice`
   terminates only on a newline followed by `##` and a space, and the next heading is `###`,

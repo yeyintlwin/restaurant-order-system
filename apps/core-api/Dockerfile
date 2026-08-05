@@ -18,9 +18,22 @@ WORKDIR /app
 # broken lockfile rather than a missing COPY.
 COPY packages/epaper-hub-sdk ./packages/epaper-hub-sdk
 
-# One COPY, deliberately: it carries scripts/ as well as the source, and
-# create-platform-admin.js (Plan 2), unlock-account.js and set-password.js all run
-# through `docker compose exec` against this image.
+# One COPY, deliberately: it carries scripts/ as well as the source, and the operator
+# levers run through `docker compose exec` against this image rather than off the host.
+#
+# create-platform-admin.js SHIPPED in Plan 2b and is in the image today -- it is the
+# first thing the runbook tells an operator to run inside the container, and it refuses
+# a pipe, so `exec` without -T is the only way to reach it.
+#
+# unlock-account.js and set-password.js are named here because they are Plan 2d's and
+# this COPY is what will carry them: nothing in this file changes when they land. Do not
+# read them as missing from the image -- they are not written yet, and identity-slice
+# §11.1 records what their absence costs an operator in the meantime.
+#
+# Attribution repaired 2026-08-05: this comment said "(Plan 2)" for all three, which
+# was written before Plan 2 was split into 2a/2b/2c/2d and left one shipped script and
+# two unwritten ones indistinguishable. deploy-config.test.js reads this COPY line and
+# carries the same three names with the same split, so the two stay in step.
 COPY apps/core-api ./apps/core-api
 
 # The SDK's OWN dependency tree, installed separately. `npm ci` in apps/core-api creates

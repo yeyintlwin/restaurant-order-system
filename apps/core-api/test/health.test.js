@@ -5,8 +5,24 @@ const { createApp } = require("../http/router");
 
 // Spec §8.1: the real Express app on app.listen(0) driven by global fetch — a departure from
 // server.inject() at apps/customer-order/server.js:350, whose fake res stores headers in a plain
-// object and so cannot represent two Set-Cookie values of the same name. Plan 2 extracts this
-// helper into testing/http.js when the explicit cookie jar arrives.
+// object and so cannot represent two Set-Cookie values of the same name.
+//
+// THE EXTRACTION THIS COMMENT USED TO PROMISE HAS NOT HAPPENED, and the trigger it named
+// has already fired. It said "Plan 2 extracts this helper into testing/http.js when the
+// explicit cookie jar arrives". The jar arrived in Plan 2b — auth-routes.test.js drives
+// __Host-core_session end to end and pipeline.test.js reads headers.getSetCookie() — and
+// the helper stayed where it was. testing/ still holds compose.js, database.js and
+// fixtures/ and nothing else.
+//
+// What changed is the count, which is the part that decides it: there are now FIVE copies
+// of this function, not the two the original comment assumed — auth-routes, health,
+// pipeline, router-registration and table-displays.
+//
+// Deliberately NOT extracted here. Five suites is five green files at the end of an
+// execution run, and no plan has scoped this refactor; doing it as a drive-by would put
+// the whole HTTP harness in a commit about something else. It belongs to whichever plan
+// next touches these harnesses — Phase 3 for table-displays, Plan 2c for the tenant
+// routes — and the sixth copy is the point at which writing it is cheaper than not.
 async function withServer(deps, run) {
   const app = createApp(deps);
   const server = app.listen(0, "127.0.0.1");
