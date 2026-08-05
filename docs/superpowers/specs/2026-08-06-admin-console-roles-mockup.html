@@ -176,8 +176,21 @@ tbody tr:hover{background:#fcfcfd}
 /* A shop left without a manager is a hole in the company, not a blank cell. */
 .state.none{color:#9c5c17;font-weight:550}
 
-/* The branches sit under their company all the time. Hiding them behind a click made the
-   one number the platform owner came to read into a thing to go and find. */
+/* One company's branches at a time. The row itself is the control, the triangle says
+   which one is open, and opening another closes this one so the table never grows into a
+   list of everything. */
+.disc{width:16px;height:16px;flex:none;padding:0;border:0;background:none;position:relative;
+      margin-left:-4px}
+.disc::before{content:"";position:absolute;left:4px;top:4px;
+  border-left:5px solid var(--muted);border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transform-origin:2px 4px;transition:transform .15s}
+.disc:hover::before{border-left-color:var(--ink)}
+@media (prefers-reduced-motion:reduce){ .disc::before{transition:none} }
+
+#co-rows tr:not(.sub){cursor:pointer}
+tr.open>td{background:var(--accent-soft)}
+tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
+
 tr.sub td{background:#fbfbfc;padding-top:8px;padding-bottom:8px;font-size:13px;color:var(--muted)}
 tr.sub .leaf{padding-left:43px}
 
@@ -961,8 +974,11 @@ function openCompany(btn){
 }
 
 document.getElementById("co-rows").addEventListener("click",e=>{
+  // Edit is a real action and wins over the row it sits in.
   const btn=e.target.closest("[data-company]");
-  if(btn) openCompany(btn);
+  if(btn){ openCompany(btn); return; }
+  const row=e.target.closest("tr");
+  if(row && !row.classList.contains("sub")) toggleBranches(row);
 });
 
 /* Shops and tables are the size of what is being hosted, not who is inside it, so the
@@ -980,30 +996,54 @@ function shopsOf(company){
     ]);
   return OTHER_SHOPS[company]||[];
 }
-function renderBranches(){
-  document.querySelectorAll("#co-rows tr.sub").forEach(tr=>tr.remove());
+// Every company row gets a triangle. Doing it here rather than in the markup means a
+// company added at runtime gets one too, from the same line of code.
+function addDiscs(){
   for(const btn of document.querySelectorAll("#co-rows [data-company]")){
-    const row=btn.closest("tr");
-    const list=shopsOf(btn.dataset.company);
-    if(!list.length){
-      const tr=document.createElement("tr");
-      tr.className="sub";
-      tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
-      row.after(tr);
-      continue;
-    }
-    let at=row;
-    for(const [shop,tables] of list){
-      const tr=document.createElement("tr");
-      tr.className="sub";
-      // The table count lands in the same column as the company's total, so the branch
-      // figures read as the parts that make up the sum.
-      tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
-                   '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
-      tr.querySelector(".leaf").textContent=shop;
-      tr.querySelector('[data-label="Tables"]').textContent=tables;
-      at.after(tr); at=tr;
-    }
+    const cell=btn.closest("tr").querySelector(".who");
+    if(cell.querySelector(".disc")) continue;
+    const d=document.createElement("button");
+    d.type="button"; d.className="disc";
+    d.setAttribute("aria-expanded","false");
+    d.setAttribute("aria-label","Show branches of "+btn.dataset.company);
+    cell.prepend(d);
+  }
+}
+
+function closeBranches(){
+  document.querySelectorAll("#co-rows tr.sub").forEach(tr=>tr.remove());
+  document.querySelectorAll("#co-rows tr.open").forEach(tr=>{
+    tr.classList.remove("open");
+    tr.querySelector(".disc").setAttribute("aria-expanded","false");
+  });
+}
+
+function toggleBranches(row){
+  const already=row.classList.contains("open");
+  closeBranches();                       // one at a time, so the table stays short
+  if(already) return;                    // clicking the open one closes it
+
+  row.classList.add("open");
+  row.querySelector(".disc").setAttribute("aria-expanded","true");
+  const list=shopsOf(row.querySelector("[data-company]").dataset.company);
+  if(!list.length){
+    const tr=document.createElement("tr");
+    tr.className="sub";
+    tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
+    row.after(tr);
+    return;
+  }
+  let at=row;
+  for(const [shop,tables] of list){
+    const tr=document.createElement("tr");
+    tr.className="sub";
+    // The table count lands in the same column as the company's total, so the branch
+    // figures read as the parts that make up the sum.
+    tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
+                 '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
+    tr.querySelector(".leaf").textContent=shop;
+    tr.querySelector('[data-label="Tables"]').textContent=tables;
+    at.after(tr); at=tr;
   }
 }
 document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
@@ -1086,6 +1126,7 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     const b=tr.querySelector("[data-status]");
     b.dataset.company=name; b.dataset.ceo=person; b.dataset.ceoEmail=email;
     document.getElementById("co-rows").appendChild(tr);
+    addDiscs();
     coDone.textContent=name+" is open with "+person+" as CEO. First password: "+coPw.value;
   }
   coDialog.close();
@@ -1379,7 +1420,9 @@ function refreshCompanyTotals(){
   const row=btn.closest("tr");
   row.querySelector('[data-label="Shops"]').textContent=rows.length;
   row.querySelector('[data-label="Tables"]').textContent=tables;
-  renderBranches();
+  // Whatever is open is now stale. Reopen the same row so the branches match the new sum.
+  if(row.classList.contains("open")){ closeBranches(); toggleBranches(row); }
+  else closeBranches();
 }
 
 function refreshShopGaps(){
@@ -1523,7 +1566,7 @@ asview.addEventListener("change",()=>setAs(asview.value));
 // Clicking inside the drawer normally closes it; this control is not navigation.
 asview.addEventListener("click",e=>e.stopPropagation());
 
-renderBranches();
+addDiscs();
 
 // Run the same code path the first time as every time. Without this the heading, the
 // button's label and — the part that actually broke — the button's data-opens are only

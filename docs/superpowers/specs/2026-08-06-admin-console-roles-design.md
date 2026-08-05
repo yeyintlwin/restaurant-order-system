@@ -230,12 +230,28 @@ sees, for every company:
 - how many shops it has, and **the name and table count of each one**
 - how many tables in total
 
-The branches sit under their company **all the time**. They were behind a click for one
-revision and it was wrong: it turned the number the platform owner came to read into a
-thing to go and find. A count that has to be opened is a count nobody checks.
+Clicking a company row opens its branches beneath it. **One at a time** — opening another
+closes the last, so the table never grows into a list of everything.
 
-Each branch shows its table figure in the same column as its company's total, so the parts
-read as the parts of the sum.
+Three attempts, and the first two both failed for the same reason: neither the affordance
+nor the state was visible.
+
+1. **Behind the shop count.** Only the digit was clickable, nothing said it could be, and
+   nothing said whether it was. A count you have to discover is a count nobody checks.
+2. **Always expanded.** Nine rows to read three companies, and with fifty companies it is
+   not a table any more.
+3. **A row that opens, and says so.** The whole row is the target. A triangle turns and
+   goes green, the open row is tinted, and only one is ever open.
+
+What was missing both times was not the amount of information. It was the two things a
+disclosure has to say: *this opens*, and *this one is open*.
+
+Each branch prints its table figure in the same column as its company's total, so the parts
+line up under the sum they add to. The Edit button keeps its own click — an action inside a
+row beats the row.
+
+When the numbers change underneath it, an open row reopens rather than closing, so the
+branches always match the sum next to them.
 
 This is what the platform is hosting and, eventually, what it would bill for. Nothing here
 names a manager or a member of staff, so §6 is untouched.
