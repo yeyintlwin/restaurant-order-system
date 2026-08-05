@@ -17,21 +17,35 @@ written to be read cold — you do not need the conversation that produced them.
   order warning: Task 18 and part of Task 19 must be done before Task 10.
   **Complete — 48 of 48.**
 - **Plan 5 — Deployment:** [docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md](docs/superpowers/plans/2026-07-30-core-api-phase1-plan5-deployment.md)
-  — 30 tasks. **This is the next thing to execute.** Start at Task 1.
+  — 30 tasks. **29 of 30.** Task 18 is what remains and it cannot be done from a
+  keyboard here: it uploads the nginx configs and both infra scripts to the box
+  and creates `config/` and `~/backups`. It is also what unblocks Task 15's manual
+  verification.
+- **Plan 2a — Credential primitives:** [docs/superpowers/plans/2026-08-04-core-api-phase1-plan2a-primitives.md](docs/superpowers/plans/2026-08-04-core-api-phase1-plan2a-primitives.md)
+  — **Complete, 11 of 11.** The `0002_identity` migration and the five pure `lib/`
+  modules, with no route registered so the migration reached production before
+  anything read it.
+- **Plan 2b — Authentication:** [docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md](docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md)
+  — **Complete, 17 of 17.** Sessions, the six identity routes, the §6.3.5 request
+  pipeline, the role gate, the bootstrap CLI, and the deploy's forged-XFF probe.
+  Read its execution log before starting anything nearby: it records two decisions
+  an executor is forbidden to re-make, and both bit late.
 
 **Where the work stopped is recorded in each plan's "Execution log" table, at the
-very top of the file.** Read it first; it says which task was last finished and
-which one is next. As of 2026-07-31 **Plan 1 is complete — 48 of 48 tasks.**
-`apps/core-api` boots, validates its configuration, migrates before it listens,
-serves `/health` and `/health/ready`, and carries the tenant choke point.
+very top of the file.** Read it first — and trust it over any prose summary,
+including this one. Plan 2b's banner was wrong twice about its own state.
 
-**Plan 5 runs before Plans 2–4, on purpose.** The service has two routes, and that
-is the point: every deployment defect it shakes out surfaces against `/health`
-rather than against login, tenant CRUD and terminal pairing. Its execution log is
-at 0 of 30 — nothing in it has been run yet. It has already been through the same
-adversarial review Plan 1 got; the ten must-fix defects that review found are
-fixed in the text, and listed under its execution log so you can see the shapes
-they took.
+`apps/core-api` boots, migrates before it listens, serves `/health` and
+`/health/ready`, carries the tenant choke point, and **a human can now sign in**:
+`scripts/create-platform-admin.js` creates the first administrator, `POST
+/api/admin/auth/login` returns a `__Host-core_session` cookie, and `me`, `logout`,
+`logout-all`, `password` and `scope` all work.
+
+**Plan 5 was written to run before Plans 2–4, on purpose** — every deployment
+defect it shakes out surfaces against `/health` rather than against login. In
+practice 2a and 2b landed first and Plan 5 stalled at its one on-box task, so that
+ordering held in spirit rather than in sequence: the deploy pipeline's own asserts
+were being changed by 2b while its manual step waited.
 
 Running its tests needs a local PostgreSQL and one variable:
 
@@ -44,10 +58,30 @@ export CORE_API_TEST_DATABASE_URL='postgres://core_api_owner:devpassword@127.0.0
 Without it the database suites **throw** rather than skip, by design. The single
 `CORE_API_SKIP_DB_TESTS=1` hatch turns them into *visible* TAP skips.
 
-**Plan 2 has not been written.** It covers the menu in the database plus admin
-CRUD; brainstorm and write it before touching code, the same way Plan 1 was
-produced. Phase 1's spec §10 lists what was deliberately deferred and to which
-phase.
+**Plan 2 was split into four, and two of them are done.** 2a and 2b are complete
+(above). What is left:
+
+- **Plan 2c — Tenant and platform CRUD.** Not written. `/api/platform/companies`
+  and `/api/platform/admins`, `/api/admin/users` and `/api/admin/shops`. It also
+  inherits three things Plan 2b deliberately left: the **second half of §6.3.5
+  step 10** (per-resource authorization — 2b landed only the static role gate),
+  the rank lattice and shop containment in `lib/authorization.js`, and — read this
+  before writing a line — **nothing in the service produces `409 scope_required`
+  yet**, which §6.3.3 promises for a tenant route reached by an unscoped platform
+  admin. 2c registers roughly twenty such routes. Slice spec §11.11 records it.
+- **Plan 2d — Credential recovery.** Not written. Forgot-password, reset-password,
+  email verification, the two server-rendered landing pages under `/admin`,
+  `nodemailer` and the `mail/` area, plus `scripts/sweep-expired.js`,
+  `set-password.js` and `unlock-account.js` — the last two are named as shipped
+  levers in five spec sections and do not exist.
+
+**The order is settled and it is not 2c next.** Slice spec §11.8: **2b → Phase 3 →
+2c → 2d**. Phase 3 moves table visits and e-paper orchestration into core-api,
+and it goes second because every plan landed before it is another plan built on a
+boundary violation that §11.7 already calls the wrong shape.
+
+Brainstorm and write 2c and 2d the same way 1, 2a and 2b were produced. Phase 1's
+spec §10 lists what was deliberately deferred and to which phase.
 
 Keep that log honest. At the end of a working session, append a row: the date,
 what you did, the last task actually finished, the commits, and the next task. A
