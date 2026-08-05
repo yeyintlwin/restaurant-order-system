@@ -1290,7 +1290,7 @@ git commit -m "test(core-api): join TRUSTED_PROXY_HOPS to the proxy depth nginx 
 - Create: `apps/core-api/http/cookies.js`
 - Create: `apps/core-api/test/cookies.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/cookies.test.js`:
 
@@ -1393,7 +1393,7 @@ test("readCookieValues does not match a name by prefix", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/cookies.test.js
@@ -1401,7 +1401,7 @@ node --test apps/core-api/test/cookies.test.js
 
 Expected: FAIL — `Cannot find module '../http/cookies'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/http/cookies.js`:
 
@@ -1499,7 +1499,7 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/cookies.test.js apps/core-api/test/source-structure.test.js
@@ -1507,7 +1507,7 @@ node --test apps/core-api/test/cookies.test.js apps/core-api/test/source-structu
 
 Expected: both pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/cookies.js apps/core-api/test/cookies.test.js
