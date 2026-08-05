@@ -1,0 +1,14 @@
+{
+  "name": "admin-management",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Restaurant management front end. Serves its own static files and proxies /api to core-api so the browser sees one origin -- which is what lets the __Host- session cookie work without CORS. Zero runtime dependencies.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

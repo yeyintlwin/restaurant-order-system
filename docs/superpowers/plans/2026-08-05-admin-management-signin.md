@@ -25,14 +25,14 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 0 of 9 tasks done. NOT STARTED.**
+**Status: 1 of 9 tasks done.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
 
 | Date | Session did | Tasks finished | Commits | Next |
 | --- | --- | --- | --- | --- |
-| | | **0/9** | | Task 1 |
+| 2026-08-05 | Task 1: manifest, stub `index.html`, static server. 4/4 pass. Found that `node --test <dir>` does not work in this checkout — see the note under Task 1 Step 4; use `npm --prefix apps/admin-management test`. | **1/9** | `feat(admin-management): serve public/, and resolve the path before trusting it` | Task 2 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -112,7 +112,7 @@ Tests mirror these under `apps/admin-management/test/`.
 - Create: `apps/admin-management/public/index.html`
 - Create: `apps/admin-management/test/server.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/admin-management/test/server.test.js`:
 
@@ -182,7 +182,7 @@ test("every response carries the security headers, including on the 404", async 
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/admin-management/test/server.test.js
@@ -190,7 +190,7 @@ node --test apps/admin-management/test/server.test.js
 
 Expected: FAIL — `Cannot find module '../server'`.
 
-- [ ] **Step 3: Write the manifest and the server**
+- [x] **Step 3: Write the manifest and the server**
 
 Create `apps/admin-management/package.json`:
 
@@ -351,7 +351,7 @@ if (require.main === module) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/admin-management/test/server.test.js
@@ -359,7 +359,18 @@ node --test apps/admin-management/test/server.test.js
 
 Expected: 4 tests, all pass.
 
-- [ ] **Step 5: Commit**
+> **The directory form of this command does not work in this checkout.** `node --test
+> apps/admin-management/` runs the *directory* as an entry point instead of searching
+> it, so `package.json`'s `main` executes `server.js`, `start()` throws for want of
+> `CORE_API_URL`, and the run reports one failed "test" with zero of the real four.
+> This is not new and not this app's doing: `node --test apps/customer-order/` fails
+> the same way, on its own `SHOP_ID` guard. Use the per-file form above, or
+> `npm --prefix apps/admin-management test`, which is the form the root `scripts.test`
+> already uses for every other app and which Task 5 adds for this one. **Task 4 Step 4
+> says `node --test apps/admin-management/` — use `npm --prefix apps/admin-management
+> test` there instead.**
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/package.json apps/admin-management/server.js \
