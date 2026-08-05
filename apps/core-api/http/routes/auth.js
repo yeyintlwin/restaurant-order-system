@@ -9,9 +9,9 @@
 
 const { route } = require("../router");
 const { readJsonBody } = require("../body");
-const { sendJson } = require("../respond");
+const { sendJson, sendError } = require("../respond");
 const { ApiError } = require("../../db/errors");
-const { verifyPassword } = require("../../lib/password");
+const { hashPassword, verifyPassword, PasswordPolicyError } = require("../../lib/password");
 const { mintToken, hashToken } = require("../../lib/tokens");
 const { buildSessionCookie, buildClearingCookie } = require("../cookies");
 
@@ -377,6 +377,172 @@ route(
     });
 
     sendJson(res, 200, { ok: true, revokedSessionCount }, { "Set-Cookie": buildClearingCookie() });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/auth/password
+// ---------------------------------------------------------------------------
+
+// Responds in place rather than throwing, for the same reason the pipeline does:
+// both branches may need to set a header, and ApiError cannot carry one.
+async function refuseCurrentPassword(req, res, deps, session) {
+  // The roster's only consume:"failure" limiter, so the pipeline skipped it -- a
+  // per-request decrement would lock a user out of their own password-change route
+  // for SUCCEEDING at it.
+  const verdict = deps.rateLimiter.consume(
+    "password-change-abuse",
+    session.userId,
+    deps.passwordAbuseThreshold
+  );
+
+  if (verdict.count < deps.passwordAbuseThreshold) {
+    // 403, not 401, and spec 6.3.7(a) is explicit about why: the session credential
+    // IS valid, and a client's global "401 -> drop the session and redirect" handler
+    // would otherwise let a stolen session grief the real user out of theirs.
+    sendError(res, { status: 403, code: "current_password_invalid" }, req.core.requestId);
+    return;
+  }
+
+  // Punish the credential ACTUALLY being abused. Writing users.locked_until instead
+  // -- the obvious move -- hands a stolen session a permanent denial of service
+  // against the legitimate owner's login, which is the whole of spec 5.8(a).
+  await deps.sessions.deleteSession(session.sessionId);
+  await deps.appendAuditEvent({
+    actorKind: "user",
+    actorUserId: session.userId,
+    companyId: session.companyId,
+    action: "user.password_change_abuse",
+    outcome: "failure",
+    targetKind: "user",
+    targetId: session.userId,
+    sourceIp: req.core.clientIp,
+    detail: { consecutiveFailures: verdict.count }
+  });
+
+  const headers = { "Set-Cookie": buildClearingCookie() };
+  // Retry-After IS sent here, unlike on login and pair. This bucket is keyed on a
+  // principal the caller has already authenticated as, so the header confirms
+  // nothing they did not already know -- which is the exact test spec 5.7 applies.
+  if (verdict.retryAfterSeconds !== null) headers["Retry-After"] = String(verdict.retryAfterSeconds);
+  sendError(res, { status: 429, code: "rate_limited" }, req.core.requestId, headers);
+}
+
+route(
+  "POST",
+  "/api/admin/auth/password",
+  {
+    auth: "user",
+    // Part 5 departure (d), and this is the route where it bites hardest: the
+    // bootstrap admin's FIRST action is usually to change the password the CLI set,
+    // and under a plain `anyUser` they would get 403 for it.
+    roles: ["platform", "anyUser"],
+    body: { currentPassword: "string", newPassword: "string" },
+    audit: "auth.password_changed",
+    // The second of exactly two exemptions (spec 8.5 rule 3). Without it, the only
+    // route that can clear must_change_password is gated on must_change_password.
+    exemptFromPasswordChange: true,
+    limit: { key: "user", name: "password-change-abuse" },
+    sample: {
+      body: { currentPassword: "not-a-real-password", newPassword: "not-a-real-password-either" }
+    }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const session = req.core.session;
+    const body = await readJsonBody(req);
+
+    const errors = [];
+    if (typeof body.currentPassword !== "string" || body.currentPassword === "") {
+      errors.push({ field: "currentPassword", code: "required" });
+    }
+    if (typeof body.newPassword !== "string" || body.newPassword === "") {
+      errors.push({ field: "newPassword", code: "required" });
+    }
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    // ONE slot for BOTH scrypt calls on this path -- the verify and the hash. Taking
+    // two would let a caller hold half the service's CPU budget with one request.
+    await deps.scryptSemaphore.acquire();
+    try {
+      const user = await deps.users.findById(session.userId);
+      // The resolver already proved the session live and the user active, so null
+      // here means the row went away mid-request. 401, never a 500.
+      if (user === null) throw new ApiError(401, "unauthenticated");
+
+      if (!(await verifyPassword(body.currentPassword, user.passwordHash))) {
+        await refuseCurrentPassword(req, res, deps, session);
+        return;
+      }
+      // CONSECUTIVE, not cumulative (spec 5.8(a)).
+      deps.rateLimiter.reset("password-change-abuse", session.userId);
+
+      let passwordHash;
+      try {
+        passwordHash = await hashPassword(body.newPassword);
+      } catch (error) {
+        // PasswordPolicyError carries `code` but deliberately NOT `status`: the same
+        // policy failure is a 400 on a create route and a 422 here, so the route
+        // decides. Anything else is a real fault and belongs in the 500 tail.
+        if (!(error instanceof PasswordPolicyError)) throw error;
+        throw new ApiError(422, "validation_failed", [{ field: "newPassword", code: error.code }]);
+      }
+
+      // WRITE, DELETE, CREATE -- in that order, and none of the three is
+      // interchangeable. writePasswordHash bumps sessions_valid_from, so a session
+      // minted before it would be invalidated by it; and the DELETE has to run before
+      // the mint or it takes out the session this response is about to hand back.
+      //
+      // writePasswordHash does NOT touch failed_login_count or locked_until, by
+      // construction -- see its own comment in repositories/auth/users.js.
+      await deps.users.writePasswordHash(session.userId, passwordHash, { mustChangePassword: false });
+      await deps.sessions.deleteAllSessionsForUser(session.userId);
+
+      const token = mintToken();
+      const fresh = await deps.sessions.createSession({
+        userId: session.userId,
+        tokenHash: hashToken(token),
+        idleSeconds: deps.sessionIdleSeconds,
+        absoluteSeconds: deps.sessionAbsoluteSeconds
+      });
+
+      // actingCompanyId is null because acting_company_id is a per-SESSION column and
+      // this is a new row. A platform admin who changes their password re-selects
+      // their company, which is the same thing that happens after any sign-in.
+      const scope = await deps.scopes.materialiseScope({
+        userId: session.userId,
+        sessionId: fresh.id,
+        role: session.role,
+        companyId: session.companyId,
+        actingCompanyId: null
+      });
+
+      await deps.appendAuditEvent({
+        actorKind: "user",
+        actorUserId: session.userId,
+        companyId: session.companyId,
+        action: "auth.password_changed",
+        outcome: "success",
+        targetKind: "user",
+        targetId: session.userId,
+        sourceIp: req.core.clientIp
+      });
+
+      sendJson(
+        res,
+        200,
+        meDocument({
+          // They just chose it themselves, so the gate is cleared -- and the document
+          // must say so or the client re-prompts forever.
+          user: { ...userFromSession(session), mustChangePassword: false },
+          scope,
+          session: fresh
+        }),
+        { "Set-Cookie": buildSessionCookie(token, deps.sessionIdleSeconds) }
+      );
+    } finally {
+      deps.scryptSemaphore.release();
+    }
   }
 );
 

@@ -464,3 +464,116 @@ test("no cookie is 401 and sets no clearing header; a bad cookie is 401 and does
     assert.match(stale.headers.get("set-cookie"), /Max-Age=0$/);
   });
 });
+
+function changePassword(base, body) {
+  return fetch(`${base}/api/admin/auth/password`, {
+    method: "POST",
+    headers: POST_HEADERS,
+    body: JSON.stringify(body)
+  });
+}
+
+test("a correct current password rewrites the hash, kills every session and mints one", async () => {
+  const { deps, calls } = signedIn();
+  const created = [];
+  deps.sessions = {
+    ...deps.sessions,
+    createSession: async (input) => {
+      created.push(input);
+      return {
+        id: "aaaaaaaa-0008-4000-8000-000000000002",
+        expiresAt: new Date("2026-08-05T09:00:00.000Z"),
+        absoluteExpiresAt: new Date("2026-08-12T00:00:00.000Z")
+      };
+    }
+  };
+
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("set-cookie"), /^__Host-core_session=[A-Za-z0-9_-]{22}; Path=\/; Secure/);
+    const body = await response.json();
+    assert.equal(body.user.mustChangePassword, false);
+    assert.equal(body.session.expiresAt, "2026-08-05T09:00:00.000Z");
+  });
+
+  // WRITE, THEN DELETE, THEN CREATE. writePasswordHash bumps sessions_valid_from, so
+  // creating before deleting would delete the session just minted, and creating
+  // before writing would mint one the bump then invalidates.
+  assert.deepEqual(calls, [
+    ["writePasswordHash", USER, { mustChangePassword: false }],
+    ["deleteAllSessionsForUser", USER]
+  ]);
+  assert.equal(created.length, 1);
+});
+
+test("a wrong current password is 403, and never touches the login credential", async () => {
+  // Spec 5.8(a)/6.3.7(a): writing users.locked_until here lets a STOLEN SESSION drive
+  // the legitimate owner's LOGIN lockout -- three 403s, then one request every
+  // fourteen minutes holds the fifteen-minute cap forever while the victim reads
+  // their own uniform 401 as a typo.
+  const { deps, calls } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: "not-the-password", newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "current_password_invalid");
+    assert.equal(response.headers.get("set-cookie"), null);
+  });
+  assert.deepEqual(calls, [], "a failed attempt wrote something");
+});
+
+test("the Nth consecutive failure destroys the presenting session, not the account", async () => {
+  const { deps, calls, audits } = signedIn();
+  deps.passwordAbuseThreshold = 3;
+
+  await withServer(deps, async (base) => {
+    for (let n = 0; n < 2; n += 1) {
+      const response = await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" });
+      assert.equal(response.status, 403, `attempt ${n + 1}`);
+    }
+    const breach = await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" });
+    assert.equal(breach.status, 429);
+    assert.equal((await breach.json()).error.code, "rate_limited");
+    assert.ok(Number(breach.headers.get("retry-after")) >= 1);
+    assert.match(breach.headers.get("set-cookie"), /Max-Age=0$/);
+  });
+
+  assert.deepEqual(calls, [["deleteSession", SESSION_ID]]);
+  const abuse = audits.find((event) => event.action === "user.password_change_abuse");
+  assert.equal(abuse.outcome, "failure");
+  assert.equal(abuse.detail.consecutiveFailures, 3);
+});
+
+test("a correct password resets the consecutive count", async () => {
+  // Spec 5.8(a): the ceiling counts CONSECUTIVE failures. Without the reset, a user
+  // who mistypes twice a month is eventually signed out for succeeding.
+  const { deps } = signedIn();
+  deps.passwordAbuseThreshold = 2;
+  deps.sessions = { ...deps.sessions, createSession: async () => ({ id: SESSION_ID, expiresAt: new Date(), absoluteExpiresAt: new Date() }) };
+
+  await withServer(deps, async (base) => {
+    assert.equal((await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" })).status, 403);
+    assert.equal((await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" })).status, 200);
+    assert.equal((await changePassword(base, { currentPassword: "wrong", newPassword: "a-brand-new-passphrase" })).status, 403);
+  });
+});
+
+test("a policy violation on the new password is 422 on that field", async () => {
+  const { deps } = signedIn();
+  await withServer(deps, async (base) => {
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "short" });
+    assert.equal(response.status, 422);
+    assert.deepEqual((await response.json()).error.errors, [{ field: "newPassword", code: "too_short" }]);
+  });
+});
+
+test("a user who must change their password can reach this route and only this route", async () => {
+  const { deps } = signedIn({ session: { mustChangePassword: true } });
+  deps.sessions = { ...deps.sessions, createSession: async () => ({ id: SESSION_ID, expiresAt: new Date(), absoluteExpiresAt: new Date() }) };
+  await withServer(deps, async (base) => {
+    // Spec 6.2: currentPassword is required in ALL cases, including the forced-change
+    // flow -- the server-minted initialPassword IS the current password.
+    const response = await changePassword(base, { currentPassword: PASSWORD, newPassword: "a-brand-new-passphrase" });
+    assert.equal(response.status, 200);
+  });
+});

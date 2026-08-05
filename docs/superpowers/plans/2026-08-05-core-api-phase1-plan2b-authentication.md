@@ -5444,7 +5444,7 @@ both `403 current_password_invalid` and `429 rate_limited (+Retry-After)`, and t
 429 is reachable exactly as the table above says: sign in again after the breach and
 try a sixth wrong current password inside the same hour.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `apps/core-api/test/auth-routes.test.js`:
 
@@ -5563,7 +5563,7 @@ test("a user who must change their password can reach this route and only this r
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js
@@ -5571,7 +5571,7 @@ node --test apps/core-api/test/auth-routes.test.js
 
 Expected: every new test 404s — the route is not registered.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `apps/core-api/http/routes/auth.js`, extend the requires:
 
@@ -5764,7 +5764,7 @@ Then widen the origin-gating census in `apps/core-api/test/route-auth.test.js` a
   ]));
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth.test.js \
@@ -5773,7 +5773,7 @@ node --test apps/core-api/test/auth-routes.test.js apps/core-api/test/route-auth
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/routes/auth.js apps/core-api/test/auth-routes.test.js \
