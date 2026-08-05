@@ -1550,7 +1550,7 @@ fixed, because fixing it means origin-gating a safe method and 415ing a GET.
 - Create: `apps/core-api/http/csrf.js`
 - Create: `apps/core-api/test/csrf.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/core-api/test/csrf.test.js`:
 
@@ -1663,7 +1663,7 @@ test("the header list is exactly the one http/body.js already enforces", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/core-api/test/csrf.test.js
@@ -1671,7 +1671,7 @@ node --test apps/core-api/test/csrf.test.js
 
 Expected: FAIL — `Cannot find module '../http/csrf'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `apps/core-api/http/csrf.js`:
 
@@ -1741,7 +1741,7 @@ function assertOriginAndContentType({ origin, contentType, apiPublicOrigin }) {
 module.exports = { ORIGIN_GATED_PUBLIC_KEYS, requiresOriginCheck, assertOriginAndContentType };
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/csrf.test.js apps/core-api/test/body.test.js apps/core-api/test/source-structure.test.js
@@ -1749,7 +1749,7 @@ node --test apps/core-api/test/csrf.test.js apps/core-api/test/body.test.js apps
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/core-api/http/csrf.js apps/core-api/test/csrf.test.js
