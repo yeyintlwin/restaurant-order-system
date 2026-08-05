@@ -236,19 +236,26 @@ Four ways this breaks with no error and no log line:
 3. **Adding a proxy in front (a CDN, a load balancer) without changing the
    number.** Every entry shifts one place to the left, the value read becomes
    attacker-controlled, and one attacker can lock out every account on the
-   platform through the login limiter. Nothing can check this from a file:
-   change `TRUSTED_PROXY_HOPS` in the same commit that adds the proxy, and
-   re-run the deploy's XFF probe.
+   platform through the login limiter. **This is the one breaker no file can
+   catch**, and the *Checked:* note below does not change that: a proxy in front
+   of Nginx lives outside this repository, so `infra/nginx/` is unchanged, the
+   derived depth is unchanged, and the assertion goes on passing. Change
+   `TRUSTED_PROXY_HOPS` in the same commit that adds the proxy, and re-run the
+   deploy's XFF probe — which reads an `audit_events` row back and is the only
+   check that sees the deployed behaviour rather than the files.
 4. **`proxy_set_header X-Forwarded-For $remote_addr`.** It produces the right
    answer today at `hops=1` and discards the chain, so the day breaker 3
    happens there is nothing left to count. *Checked:* the snippet test asserts
    this form does not appear.
 
-> **Checked:** `apps/core-api/test/nginx-config.test.js` derives the deployed proxy
-> depth from `core-api-proxy.conf` (one `$proxy_add_x_forwarded_for`, one
-> `proxy_pass`, no `real_ip_*`) and asserts it equals `docker-compose.yml`'s
-> `TRUSTED_PROXY_HOPS`. Adding a second proxy in front of nginx therefore fails CI
-> until the variable moves with it.
+> **Checked, and read what it does NOT cover:**
+> `apps/core-api/test/nginx-config.test.js` derives the deployed proxy depth from
+> `core-api-proxy.conf` (one `$proxy_add_x_forwarded_for`, one `proxy_pass`, no
+> `real_ip_*`) and asserts it equals `docker-compose.yml`'s `TRUSTED_PROXY_HOPS`.
+> It pins **the pair inside this repository**: two locally-correct files that are
+> wrong together. What it catches is raising the variable without a hop to justify
+> it — that fails CI immediately. What it cannot catch is breaker 3, because the
+> proxy added there is not in `infra/nginx/` and nothing in the tree moves.
 
 Code side: when `X-Forwarded-For` is absent, has fewer than
 `TRUSTED_PROXY_HOPS` entries, or the selected entry fails `net.isIP()`, core-api
