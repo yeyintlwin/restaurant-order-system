@@ -568,17 +568,28 @@ The §5.7 roster grows from seven rows to ten.
 | `reset-consume` | client IP | 1 min | `RESET_CONSUME_RATE_PER_MINUTE` (20) | **no** | `RESET_CONSUME_RATE_PER_MINUTE` |
 | `verify-request` | `users.id` | 10 min | `VERIFY_MINT_RATE_PER_10MIN` (5) | yes — authenticated, so no oracle | `VERIFY_MINT_RATE_PER_10MIN` |
 
-### 7.1 §5.7 makes a claim that is not true
+### 7.1 §5.7 made a claim that was not true. Plan 2b made it true
 
-The parent states that *"`route()` rejects at boot any route whose `limit` names a
-limiter absent from it."* It does not. `validateRouteTable` inspects only
-`options.limit.key` at `router.js:129-133`; there is no roster constant and no
-`limit.name` membership check anywhere in the service. `limit: { key: "ip", name:
-"forgot-global" }` registers today and the process listens fine.
+**Status: shipped in Plan 2b, Task 2.** Recorded rather than deleted, because *why* the
+check could not land earlier is the part worth keeping.
 
-This slice **authors that check**, because it is the first slice with limiters to
-check. It also authors §5.9's audit-vocabulary membership check, deferred by
-`router.js:78` with the same reasoning.
+The parent states that *"`route()` rejects at boot any route whose `limit` names a limiter
+absent from it."* When this slice was written it did not. `validateRouteTable` inspected
+only `options.limit.key` — rejecting a principal-keyed bucket on a public route, which it
+did correctly — and there was no roster constant and no `limit.name` membership check
+anywhere in the service. `limit: { key: "ip", name: "forgot-global" }` registered fine and
+the process listened.
+
+It could not have landed before 2b for the reason that makes the check worth having: there
+was nothing to check against. A roster is a closed set, and a closed set authored ahead of
+the routes that populate it either blocks the routes or is padded with names for routes
+that do not exist. 2b is the first slice with limiters, so it is the first slice that could
+author the roster and the check in one commit — the frozen `LIMITERS` constant in
+`lib/rate-limit.js`, read by `validateRouteTable` at boot, with
+*"validateRouteTable rejects a limit naming a limiter outside the 5.7 roster"* and
+*"…rejects a limit whose key disagrees with the roster"* in
+`apps/core-api/test/router-registration.test.js`. §5.9's audit-vocabulary membership check, deferred by
+the same reasoning at `router.js`, landed in Task 3 alongside it.
 
 The roster is also named in three places despite §5.7 claiming it is *"defined
 once here and nowhere else"* — §5.7, §6.3.5 and §11. All three move together.
@@ -744,11 +755,22 @@ Everything the parent §8 requires still applies. New obligations:
 created with a typo'd address can never verify, can never use forgot-password, and
 cannot be corrected through the API.
 
-The remedy is out-of-band and already exists: `scripts/set-password.js` over
-`docker compose exec`, which the parent spec calls *"honest for a platform with
-one operator."* Should this become a support burden, the smallest fix is a
-`scripts/set-user-email.js` CLI — operator-only, granting no role a new
-permission — rather than an HTTP route.
+**The remedy this section named does not exist.** It said *"out-of-band and already
+exists: `scripts/set-password.js` over `docker compose exec`"*, which the parent spec
+calls *"honest for a platform with one operator."* That was wrong when written and is
+still wrong: `apps/core-api/scripts/` holds `reset-database.js`, `setup-template-db.js`
+and, since Plan 2b, `create-platform-admin.js`. `set-password.js` and
+`unlock-account.js` are named as shipped levers in five sections of the parent spec and
+are built by no written plan. **They belong to Plan 2d**, which §11.8 gives the admin
+CRUD and credential recovery; `set-password.js` is the operator half of exactly that.
+
+Until 2d lands there is **no** remedy for a mistyped address, and an operator whose
+`create-platform-admin.js` run refuses with `already_bootstrapped` is told by that error
+to run a file that is not on the box. Said plainly here because a residual that
+describes a missing tool as present is the one kind of residual that gets closed on
+paper. Should the address problem itself become a support burden, the smallest fix is a
+`scripts/set-user-email.js` CLI — operator-only, granting no role a new permission —
+rather than an HTTP route.
 
 ### 11.2 Delivery is best-effort
 
@@ -773,7 +795,16 @@ carry a one-line note at each, and the limiter names (`password-reset` versus
 
 ---
 
-## 11.5 Carried into Plan 2b as a required item
+## 11.5 Carried into Plan 2b as a required item — LANDED
+
+**Status: shipped in Plan 2b, Task 4.** The assertion is
+*"TRUSTED_PROXY_HOPS equals the proxy depth infra/nginx actually deploys"* in
+`apps/core-api/test/nginx-config.test.js`, which reads the configured value out of
+`docker-compose.yml` and the deployed depth out of `infra/nginx/`, and fails naming both.
+The deploy's block 4 is the second half at runtime: it POSTs a login carrying
+`X-Forwarded-For: 203.0.113.99` and fails unless the `audit_events` row records the
+address nginx actually saw. The reasoning below is kept because it is the argument for
+why a build-time assertion was the only technique available.
 
 **`TRUSTED_PROXY_HOPS` must be asserted against the deployed proxy chain.**
 `lib/client-ip.js` counts from the right of `X-Forwarded-For` by that hop count.
@@ -793,12 +824,21 @@ pair. That assertion is a **required** item of Plan 2b's wiring, not a
 nice-to-have — everything else in `lib/` fails safe, and this one fails open and
 silently.
 
-## 11.6 Two boot checks Plan 2b must land, and one false claim to settle
+## 11.6 Two boot checks Plan 2b must land, and one false claim to settle — BOTH LANDED
 
-`route()` validates the audit action's **shape** (`noun.verb`) and nothing more.
-Two checks the design claims exist do not.
+**Status: shipped in Plan 2b, Tasks 2 and 3.** `validateRouteTable` now enforces both
+memberships at boot. The roster half is covered in §7.1 above; the vocabulary half is
+asserted by *"validateRouteTable rejects an audit action outside the 5.9 vocabulary"*,
+*"…still rejects a malformed audit action before checking membership"* (shape first, so
+the error names the real fault) and *"…accepts every action in the vocabulary"* in
+`apps/core-api/test/router-registration.test.js`. The section is kept, not deleted,
+because the reasoning about *why* both waited for 2b is the part that generalises — it is
+the same argument any later plan will need before authoring a closed set.
 
-**The audit vocabulary membership check is ready and was deliberately not landed
+`route()` validated the audit action's **shape** (`noun.verb`) and nothing more, and two
+checks the design claimed to have did not exist.
+
+**The audit vocabulary membership check was ready and was deliberately not landed
 here.** `lib/audit-vocabulary.js` exists, and wiring it into `validateRouteTable`
 is about six lines — I wrote it and reverted it. Without membership, a route may
 declare `user.frobnicated`, which passes the shape check, reaches `audit_events`
@@ -814,17 +854,23 @@ Landing the check now would either block the synthetic route tables in
 `shop.updated` and `terminal.paired`, all real §5.9 entries — or force twenty
 entries to be declared for routes that do not exist. **Complete the vocabulary
 alongside the routes that emit each action, then land the check.** The three
-synthetic actions already prove the mechanism works.
+synthetic actions already prove the mechanism works. That is what Task 3 did: the
+vocabulary grew to the nine actions 2b's routes and CLI actually emit — asserted by
+*"the nine actions Plan 2b's routes and CLI emit are declared"* in
+`apps/core-api/test/audit-vocabulary.test.js` — and the check landed in the same commit.
 
-**The limiter roster check does not exist at all, and §5.7 says it does.** That
+**The limiter roster check did not exist at all, and §5.7 said it did.** That
 section states *"`route()` rejects at boot any route whose `limit` names a
-limiter absent from it."* `validateRouteTable` inspects only `options.limit.key`
+limiter absent from it."* `validateRouteTable` inspected only `options.limit.key`
 (rejecting a principal-keyed bucket on a public route, which it does correctly).
-There is no roster constant anywhere and no `limit.name` check. Registering
-`limit: { key: "ip", name: "invented" }` today throws nothing and the process
-listens. Plan 2b must either make the claim true or delete it — and since 2b is
-the plan that introduces the first limited routes, making it true is the cheaper
-of the two.
+There was no roster constant anywhere and no `limit.name` check. Registering
+`limit: { key: "ip", name: "invented" }` threw nothing and the process
+listened. Plan 2b had to either make the claim true or delete it — and since 2b is
+the plan that introduces the first limited routes, making it true was the cheaper
+of the two. Task 2 made it true; §7.1 records the constant and the tests, and the
+check has a second half nobody had asked for: a route may not declare a
+`limit.key` that disagrees with the roster's own key for that limiter, because a
+name-only check would let a route silently re-key a shared bucket.
 
 ## 11.8 Settled: Phase 3 moves ahead of 2c and 2d
 
@@ -1040,7 +1086,107 @@ of the message and retries on it. The accepted residual: an SDK *input* rejectio
 whose QR cannot fit the panel — also presents as a retryable 503. It cannot arise from the
 one caller, whose URLs are a fixed `{orderBaseUrl}/t/{22 chars}`.
 
+## 11.10 Landed: Plan 2b, the authentication pipeline and the first account
+
+**Status: shipped.** `docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md`,
+seventeen tasks. The core-api suite went from 392 tests to 525.
+
+What exists now that did not:
+
+- **The §6.3.5 pipeline**, in `http/router.js`, with the role gate at step 7.5 reading
+  `lib/authorization.js`. `http/authenticate.js` orchestrates and issues no SQL of its own.
+- **Six routes**: `POST /api/admin/auth/login`, `GET .../me`, `POST .../logout`,
+  `POST .../logout-all`, `POST .../password`, and `POST /api/admin/scope` (company
+  selection, `["platform", "companyAdmin"]` — the narrowest static declaration §5.4's
+  four aliases can express for "platform_admin, scoped or unscoped"; the handler closes
+  the rest). Login materialises scope through
+  `repositories/auth/scope-materialize.js`; the session cookie and its CSRF partner come
+  from the two pure primitives `http/cookies.js` and `http/csrf.js`.
+- **The two boot checks §11.6 says are missing** — the limiter roster and the audit
+  vocabulary membership check — both in `validateRouteTable`, both refusing at boot.
+- **The `TRUSTED_PROXY_HOPS` cross-file assertion** of §11.5, plus the deploy's block 4,
+  which is now a behavioural gate rather than a config-file read.
+- **`scripts/create-platform-admin.js`**, the first account, prompted for on a TTY with
+  echo off and refused on a pipe, guarded by an advisory lock and a monotonic audit row.
+
+Two things it deliberately did **not** do, and both are Plan 2c's:
+
+1. **`lib/authorization.js` holds the alias half only.** No rank lattice, no shop
+   containment, no self-modification rules. It answers "does this scope's role satisfy one
+   of the route's declared aliases" and nothing else.
+2. **Step 10's per-resource half does not exist.** The static route-roles check runs at
+   step 7.5; deciding whether *this* caller may touch *that* row waits for the routes that
+   have rows. §11.11 records the gap that follows from it.
+
+## 11.11 Settled while executing Plan 2b: two aliases on four routes, and the 409 nobody owns
+
+**Status: the first is shipped; the second is OPEN and belongs to Plan 2c.** Both were
+settled by reading the parent spec against itself rather than by choosing, and neither
+belongs in a plan about to be marked done — §11.5–§11.9 are this slice's amendment
+mechanism precisely because a decision recorded in a finished plan is a decision nobody
+reads again.
+
+### The four identity routes declare two aliases, not one
+
+`GET /api/admin/auth/me`, `POST /api/admin/auth/logout`, `POST /api/admin/auth/logout-all`
+and `PUT /api/admin/auth/password` register `roles: ["platform", "anyUser"]`.
+
+State the failure, not the change. Parent §5.4's alias table gives `anyUser` the four
+*scoped* roles and deliberately excludes an **unscoped** `platform_admin`; §6.2 gives these
+four rows `anyUser` alone. Login always materialises `actingCompanyId: null` for a platform
+admin, and a platform admin is the only account this plan can create — so under plain
+`anyUser` the bootstrap administrator cannot read its own identity, cannot sign out, and
+cannot change the password `scripts/create-platform-admin.js` has just set. No test would
+have caught it: every signed-in fixture in `auth-routes.test.js` is a `company_admin`.
+
+So §5.4 and §6.2 disagree, and Plan 2b is the first plan to execute the disagreement. It is
+settled **in §6.2's direction, for these four rows only**, and the parent is amended at
+**§6.2, not at §5.4** — §5.4's exclusion is correct everywhere else. Two repairs were
+rejected, and the reasons are the whole decision:
+
+- **Widening `anyUser` inside `permits()`.** One line, and it admits an unscoped platform
+  admin to *every* route declared `anyUser` — the roughly twenty tenant routes Plan 2c
+  registers. A caller with no company selected would reach all of them.
+- **A fifth alias.** `ROLE_ALIASES` is frozen at four and asserted twice; adding an entry
+  to the role vocabulary to avoid writing a second element in one array is the larger
+  change wearing the smaller one's clothes.
+
+Declaring both is safe **only because these four routes bind no company**: each reads or
+writes the caller's own row and issues no tenant-scoped query.
+
+### Nothing in Plan 2b produces `409 scope_required`, and that is Plan 2c's first problem
+
+Parent §6.3.3 promises **409 `scope_required`** when a tenant route is reached by an
+unscoped platform admin. **Plan 2b builds no producer for it.** It registers no tenant
+route, so the code has no home in the pipeline, no test asserts it, and nothing goes red
+for its absence. §6.3.5's step-10 note — Plan 2b's departure (c) — defers the *per-resource*
+half of authorization to Plan 2c without noticing that the **scope-state** half has no
+owner at all.
+
+Plan 2c registers roughly twenty tenant routes at `anyUser` and every one of them needs it.
+The cheap wrong repair available at that moment is to let the unscoped admin through
+because the alias above already admits them; that turns a platform administrator who has
+selected no company into a caller with access to all of them, which is the hole this
+section exists to refuse.
+
+Where it should live: **beside the role gate at step 7.5**, reading `scope.kind` against
+whether the route binds a company, and answering `409` with code `scope_required` rather
+than 403. `POST /api/admin/scope` (Task 15) is the caller's way out of that state and
+already ships, so the 409 has somewhere to point.
+
+**Do not build it here.** Plan 2b has no route that could exercise it, and a producer with
+no consumer is untested code in the credential path. What 2b leaves behind instead is a
+closed door with a test on it: `"a tenant route alias still refuses an unscoped platform
+admin"` in `apps/core-api/test/auth-routes.test.js` asserts
+`permits(unscoped, ["anyUser"]) === false`, so Plan 2c inherits a known refusal to convert
+into a 409 rather than an accident to discover.
+
 ## 12. Amendments required to the parent spec
+
+**Plan 2b (Task 17) carried out the rows for §5.7, §5.9, §6.1, §8.5 rule 2, §9.5, §9.12
+and §10**, plus two the table did not anticipate: §6.2's four identity rows (see §11.11)
+and the §6.3.5 step-10 split. The remaining rows belong to the plans that ship the
+routes they describe.
 
 | Section | Amendment |
 | --- | --- |

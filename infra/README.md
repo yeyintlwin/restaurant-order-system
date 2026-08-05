@@ -343,7 +343,7 @@ snapshots**, understanding that a snapshot is crash-consistent, not logical. The
 initialised with `--data-checksums`, which is what makes a corrupt restored page loud instead of
 silent.
 
-`AUDIT_RETENTION_DAYS` configures nothing until `scripts/sweep-expired.js` ships in **Plan 2**;
+`AUDIT_RETENTION_DAYS` configures nothing until `scripts/sweep-expired.js` ships in **Plan 2d**;
 `audit_events` grows without trimming until then, and the deploy installs only the backup
 crontab line.
 
@@ -448,9 +448,20 @@ docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U co
 Then run Scenario A from step 4.
 
 If there is **no dump at all** — a genuinely new deployment — the database is empty and the first
-platform administrator is created with `apps/core-api/scripts/create-platform-admin.js`. **That
-script ships in Plan 2.** Until it does, a fresh instance has no way to create the first user,
-which is one more reason the pre-deploy artifact matters.
+platform administrator is created with `apps/core-api/scripts/create-platform-admin.js`:
+
+```sh
+cd ~/restaurant-order-system
+CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
+  node apps/core-api/scripts/create-platform-admin.js you@example.com
+```
+
+`docker compose exec`, **never `exec -T`**: the script reads the password from stdin with echo
+disabled and refuses to run when `process.stdin.isTTY` is false, so a password can never reach
+shell history. There is no `--force`, and a second run exits non-zero even if the first admin row
+was deleted, because the guard reads the monotonic audit trail rather than current state — so this
+is not a way to recover a lost password on an instance that was already bootstrapped, which is one
+more reason the pre-deploy artifact matters.
 
 ### Rotating database passwords
 
@@ -520,14 +531,12 @@ silently** above. Not repeated here: this would be the copy that goes stale.
 **What the pipeline actually proves today.** The deploy and
 `apps/core-api/test/nginx-config.test.js` assert those directives at the **config
 layer** — `sudo nginx -T` over the loaded configuration, the include count, and the ban
-on a bare `proxy_pass`. That checks the files, not the behaviour. The behavioural probe
-of spec §9.5 step 4 — POST a login carrying `X-Forwarded-For: 203.0.113.99`, then read
-the `audit_events` row back by `detail->>'email'` — needs a row written by
-`POST /api/admin/auth/login`, and neither that route nor any writer for that table
-exists yet. It is the first thing **Plan 2** adds to the deploy heredoc. **Until it
-lands, nothing in the pipeline proves the derived address is unforgeable.** What ships
-today is a routing probe that proves core-api answered, plus a read of
-`TRUSTED_PROXY_HOPS` out of the running process.
+on a bare `proxy_pass`. That checks the files, not the behaviour. Block 4 of the deploy
+checks the behaviour: it POSTs a login carrying `X-Forwarded-For: 203.0.113.99`, expects
+`401`, then reads the `audit_events` row back by `detail->>'email'` and **fails the
+deploy** unless `source_ip` is the address nginx actually saw. A forged header is
+asserted not honoured on the deployed chain, which is the one thing no file in this
+repository can prove about itself.
 
 `core-db` publishes **no** host port — Docker's published ports install DNAT rules that
 **bypass ufw**, so `5432:5432` would put the database on the internet. Reasoning under
@@ -588,14 +597,16 @@ not negotiable.
    container.
 6. Push, and watch the health gate. On failure, `docker compose logs core-api`: the
    migration runner prints the file, both digests and its verdict.
-7. Bootstrap the first platform administrator — **Plan 2**.
-   `apps/core-api/scripts/create-platform-admin.js` needs the `users` table,
-   `lib/password.js` and the audit writer, none of which exist yet. Until then core-api
-   serves `/health` and `/health/ready` and nothing else, so there is no login to verify.
-   The runbook entry is already in `apps/core-api/README.md`.
+7. Bootstrap the first platform administrator. From `~/restaurant-order-system`:
+   `CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api node apps/core-api/scripts/create-platform-admin.js you@example.com`
+   — `docker compose exec`, **never `exec -T`**: the script prompts for the password
+   with echo off and refuses a non-TTY stdin, so it cannot reach shell history. It runs
+   once per instance; the full runbook entry is in `apps/core-api/README.md`. Until this
+   step, core-api serves `/health` and `/health/ready` and there is no login to verify.
 8. Record the live client-IP topology in **The client-IP chain** above. The behavioural
-   forged-XFF probe needs the login route and an audit writer, so it arrives with Plan 2;
-   today the check is at the config layer (`sudo nginx -T`).
+   forged-XFF probe is block 4 of the deploy and it is a gate: POST a login with
+   `X-Forwarded-For: 203.0.113.99`, read the `audit_events` row back, fail on a match.
+   The config-layer check (`sudo nginx -T`) still runs alongside it.
 9. Run `~/restaurant-order-system/config/restore-drill.sh` against the first dump you
    have. On the very first deploy there is none — the pre-deploy dump is gated on the
    `core-db` volume, which did not exist yet — so the first dump appears either at
@@ -617,7 +628,7 @@ to over-state, so they are stated once, here, correctly.
 
 | Claim | What is actually true today |
 | --- | --- |
-| The deploy proves `X-Forwarded-For` is unforgeable | It does not. It asserts the four **directives** with `sudo nginx -T`, which is a check on the config file. The behavioural probe — POST a login with `X-Forwarded-For: 203.0.113.99` and read the `audit_events` row back — needs the login route and the audit writer, and arrives with **Plan 2**. |
+| The deploy proves `X-Forwarded-For` is unforgeable | It does, in two layers, and this row says how. `sudo nginx -T` asserts the four **directives** at the config file layer. Then block 4 POSTs a login carrying `X-Forwarded-For: 203.0.113.99`, requires a `401` whose body carries `invalid_credentials` (so the row was written by core-api and not by nginx), and selects the `audit_events` row back by `detail->>'email'`: the deploy fails if `source_ip` is the forged address, and fails again if it is null. |
 | A missing nightly backup turns the deploy red | Only once `~/backups/CRON_INSTALLED_AT` is itself more than 48 hours old. That marker is written once, when the deploy first installs the crontab. Before then the gate is deliberately quiet, because the nightly has legitimately had no chance to run. From then on, a missing **or** stale `LAST_OK` fails the deploy — including the case where the nightly has never once succeeded. |
 | The deploy wipes `~/restaurant-order-system` | It deletes everything directly inside it **except** `docker-compose.yml` and `config/`. That is why `config/backup-core-db.sh` and `config/restore-drill.sh` survive, and why the Nginx files go via `/tmp`. |
 

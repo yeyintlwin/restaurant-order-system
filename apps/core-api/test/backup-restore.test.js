@@ -417,8 +417,15 @@ test("the runbook covers a fresh instance and the password-rotation ordering", (
   // Scenario B: the dump carries grants referencing core_api_app but not the role itself.
   assert.match(doc, /CREATE ROLE core_api_app LOGIN NOINHERIT PASSWORD/);
   assert.match(doc, /role core_api_app does not exist/);
-  // create-platform-admin.js is Plan 2 and the runbook must not pretend otherwise.
-  assert.match(doc, /create-platform-admin\.js[\s\S]{0,200}Plan 2/);
+  // WAS: assert.match(doc, /create-platform-admin\.js[\s\S]{0,200}Plan 2/) — the runbook
+  // was required to say the script did not exist yet. It does, and this is the paragraph
+  // an operator reads on the one deploy where there is no dump to restore, so it must
+  // carry the command rather than a forward reference. The bound is MEASURED against
+  // Scenario B as written -- 116 characters from the sentence to the fenced command --
+  // and not inherited: too wide and this passes off the cutover invocation further down
+  // the file, leaving this paragraph free to rot. 200 is that distance plus one edit.
+  assert.match(doc, /create-platform-admin\.js[\s\S]{0,200}docker compose exec/);
+  assert.doesNotMatch(doc, /script ships in Plan 2/);
 
   // POSTGRES_PASSWORD is read by initdb ONLY, so editing it changes nothing on an existing
   // cluster. ALTER ROLE first, env file second. Spec 12's last checklist line greps for it.

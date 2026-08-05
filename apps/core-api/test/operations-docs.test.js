@@ -55,14 +55,16 @@ test("the client-IP section names the four silent breakers and the probe's real 
   assert.match(chain, /core-api-proxy\.conf/);
   assert.match(chain, /\$remote_addr/);
 
-  // Present tense only. The pipeline checks the four DIRECTIVES at the config
-  // layer; the behavioural forged-XFF probe of spec 9.5 step 4 selects an
-  // audit_events row written by POST /api/admin/auth/login, and neither the route
-  // nor the writer exists before Plan 2. The `Plan 2` match is what keeps this
-  // sentence from going stale once Plan 2 ships it.
+  // The config layer still ships and is still asserted: `sudo nginx -T` over the
+  // loaded configuration is what proves the four directives.
   assert.match(chain, /sudo nginx -T/);
-  assert.match(chain, /Plan 2/);
-  assert.doesNotMatch(chain, /runs a forged-XFF probe as a gate/);
+
+  // WAS: assert.match(chain, /Plan 2/) plus a doesNotMatch on the gate sentence.
+  // The behavioural probe now exists, so the assertion is on the claim itself: the
+  // runbook must describe a gate that reads an audit_events row back, because that
+  // is what deploy.yml block 4 does.
+  assert.match(chain, /audit_events/);
+  assert.match(chain, /203\.0\.113\.99/);
 
   // THE DETAIL LIVES IN EXACTLY ONE PLACE. The nginx area already wrote
   // "### TRUSTED_PROXY_HOPS=1, and the four ways it breaks silently" with all four
@@ -261,21 +263,26 @@ test("infra/README.md carries the cutover order, certbot before the first push",
   // live inside the image; the deploy scp's it into config/, which the find spares.
   assert.match(cutover, /~\/restaurant-order-system\/config\/restore-drill\.sh/);
 
-  // create-platform-admin.js needs the users table, lib/password.js and the audit
-  // writer. None exist yet, so the bootstrap step must say which plan brings them
-  // rather than sending an operator to a script that is not there.
-  assert.match(cutover, /Plan 2/);
+  // WAS: assert.match(cutover, /Plan 2/) on the bootstrap step.
+  // The script exists; the checklist must name the path an operator can actually run.
+  assert.match(cutover, /scripts\/create-platform-admin\.js/);
+  assert.match(cutover, /docker compose exec/);
+  // ...and must NOT tell them to use -T, which the script refuses by design.
+  assert.doesNotMatch(cutover, /docker compose exec -T[^\n]*create-platform-admin/);
 });
 
 test("no section of infra/README.md over-states what the pipeline proves", () => {
   const readme = readText(repoRoot, "infra", "README.md");
   const reconciliation = sectionSlice(readme, "## Cutover checklist");
 
-  // 1. The XFF check. Config layer today; the behavioural probe is Plan 2. Spec 9.12
-  //    words it as "the deploy runs a forged-XFF probe as a gate", which is true of
-  //    the finished phase and false of this one, so it is the phrase most likely to
-  //    be copied in.
-  assert.doesNotMatch(readme, /runs a forged-XFF probe as a gate/);
+  // 1. The XFF check. WAS a document-wide ban on "runs a forged-XFF probe as a gate",
+  //    because that sentence was false while the pipeline only read the config layer.
+  //    Block 4 of deploy.yml now POSTs a login carrying the forged header and reads the
+  //    audit_events row back, so the banned sentence is TRUE and a ban on a true
+  //    sentence is a tripwire pointing backwards. The ban is gone; the reconciliation
+  //    row is not, and it must say HOW the gate proves it rather than that it does.
+  assert.match(reconciliation, /203\.0\.113\.99/);
+  assert.match(reconciliation, /audit_events/);
 
   // 2. The backup-health gate. It is gated on the BOOTSTRAP MARKER, not on LAST_OK's
   //    existence -- gating on `[ -f LAST_OK ]` would make a nightly that has never

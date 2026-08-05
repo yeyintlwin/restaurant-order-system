@@ -151,7 +151,9 @@ failure behind a timeout.
 
 ## Bootstrapping the first platform administrator
 
-*Ships in a later plan of this phase; recorded here so the runbook is in one place.*
+Run once per instance, on the box, after the first deploy is green. This is the step
+that turns a deployed service into a usable one: until it runs there is no account, and
+core-api logs a warning at boot saying so rather than refusing to listen.
 
 ```sh
 cd ~/restaurant-order-system

@@ -68,7 +68,8 @@ references (§5.1, §6.3.5, §8.5) point at the **parent**,
 
 ## Execution log
 
-**Status: 6 of 17 tasks done. Next is Task 7.**
+**Status: 17 of 17 tasks done. This plan is COMPLETE. Next is Phase 3 (slice §11.8
+reorders 2b → Phase 3 → 2c → 2d).**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -77,6 +78,8 @@ steps are ticked and its commit exists.
 | --- | --- | --- | --- | --- |
 | 2026-08-05 | Adversarial review of the whole plan before executing any of it: 57 findings, 27 surviving a three-lens refutation. Two were decisions an executor is forbidden to make. **(a)** Task 15's role gate 403s the only account this plan creates — `anyUser` admits a *scoped* platform admin and login always materialises `actingCompanyId: null`, so the bootstrap administrator could not read `me`, sign out, or change the password the CLI had just set. No test could see it: `signedIn()` resolves a `company_admin`. Settled as `["platform", "anyUser"]` on the four identity routes; both rejected repairs recorded with reasons. **(b)** The bootstrap CLI had no monotonic guard, though §12's acceptance checkbox demands one and §714/§855 make it the justification for the only peer-creating route in the system. Task 7 grew `bootstrapPlatformAdmin`: advisory lock, `audit_events` guard, audit row written *inside* the transaction. | **0/17** | `3c63fc8`, `60ec079` | Task 1 |
 | 2026-08-05 | Tasks 1–6. The limiter roster, both boot checks §5.7 and §5.9 claimed but did not have, the `TRUSTED_PROXY_HOPS` ↔ proxy-depth assertion, and the two pure HTTP primitives. Three findings the review had missed came out of *executing* rather than reading: the identity-slice spec holds two now-false statements carrying no deferral keyword, so Task 17's greps walk past them (named explicitly now); `infra/README.md` gained a *Checked:* note that was backwards about what the new assertion covers (corrected — a proxy in front of nginx is outside the repository and no file check can see it); and "Why 2b adds no config" was short by three variables. **392 → 434 tests, 0 failures.** | **6/17** | `456d3a3`, `24cd69e`, `bf2021c`, `fb1fc1c`, `f2853ec`, `4098e3c`, `7fbd771` | Task 7 |
+
+| 2026-08-05 | Tasks 7–16, then Task 17. Sessions, scope materialisation, the cookie/CSRF primitives, the 6.3.5 pipeline, all six routes, the role gate, and the bootstrap CLI; the deploy tripwire moved from "expect 404" to "expect 401 and assert the forged X-Forwarded-For is not honoured". **Task 17 retired the deferral markers the other sixteen made false** — three in `operations-docs.test.js`, one each in `deploy-config.test.js` and `backup-restore.test.js`, six sites across the two READMEs, and eight sections of the parent spec plus five of the slice. Two of those retargets had to land BEFORE the documentation edit or the red would have been blamed on the wrong commit. The walker floor was measured (35, read back off a deliberate break) and mutation-tested at 36 rather than estimated, and ten sentinels were added — one per file a rule would otherwise stop checking silently. Two new slice sections: §11.10 records what 2b shipped, §11.11 records the two-alias fix on the four identity routes and the gap that matters more — **nothing in Plan 2b produces `409 scope_required`**, which §6.3.3 promises for a tenant route reached by an unscoped platform admin, and Plan 2c registers ~20 of them. **14 / 33 / 69 / 531, 0 failures, 1 skip.** | **17/17** | `18ae37e`, `79a9fe7`, `d074666`, `747c4c1`, `aeae6a0`, `52fd37e`, `cc4ec12`, `5e4b715`, `82f2f11`, `6ca5514`, `2997c4f`, (this commit) | Phase 3 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 392**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -6416,8 +6419,9 @@ the enforcement; the documentation is not.
 the echo-off prompt. The readline recipe for echo-off overrides `_writeToOutput`, an
 underscore-prefixed Node internal, and this service does not put a credential path on
 a private API. `process.stdin.setRawMode()` is the public one and is what the script
-uses; `node:readline` is not required at all. The Tech Stack line is corrected in
-Task 17.
+uses; `node:readline` is not required at all. The Tech Stack line was corrected in
+Task 16's own commit, in the line itself plus the note under it — so this paragraph
+records a departure that no longer exists in the document it departs from.
 
 - [x] **Step 1: Write the failing tests**
 
@@ -6896,7 +6900,7 @@ documents wrong to make one message accurate. The bookkeeping is the fix: they b
 hits `already_bootstrapped` is told to run a file that is not there — which is why Step 4
 corrects slice §11.1 rather than leaving "already exists" standing.
 
-- [ ] **Step 1: Retarget the documentation tripwires**
+- [x] **Step 1: Retarget the documentation tripwires**
 
 In `apps/core-api/test/operations-docs.test.js`, three assertions currently pin
 deferrals. Find them with `grep -n "Plan 2\|forged-XFF" apps/core-api/test/operations-docs.test.js`.
@@ -6984,7 +6988,7 @@ and count the gap yourself:
 grep -n "create-platform-admin.js" infra/README.md
 ```
 
-- [ ] **Step 2: Update `infra/README.md` and `apps/core-api/README.md`**
+- [x] **Step 2: Update `infra/README.md` and `apps/core-api/README.md`**
 
 Every site the greps found. The four that carry real operator consequences:
 
@@ -7017,7 +7021,7 @@ twice inside `scripts/create-platform-admin.js`, in the header comment and in `u
 and no assertion reaches those. Task 16 writes both with both variables; if this step
 rewords the invocation, reword all four copies together.
 
-- [ ] **Step 3: Raise the walker floor, with one sentinel per load-bearing new file**
+- [x] **Step 3: Raise the walker floor, with one sentinel per load-bearing new file**
 
 In `apps/core-api/test/source-structure.test.js`. The floor is `>=`, so nothing has
 gone red while ten files landed — and a walker that silently stopped descending would
@@ -7060,7 +7064,7 @@ descend into `scripts/` — report that as a finding rather than dropping the se
 It would mean C7, C8 and C9 have never seen a script, and the one this plan just added
 handles a plaintext password.
 
-- [ ] **Step 4: Amend both specs**
+- [x] **Step 4: Amend both specs**
 
 `docs/superpowers/specs/2026-07-29-core-api-phase1-design.md` (the parent):
 
@@ -7116,7 +7120,7 @@ prevents. It carries two things:
    route that could exercise it, and a producer with no consumer is untested code in the
    credential path.
 
-- [ ] **Step 5: Run everything, then close the plan**
+- [x] **Step 5: Run everything, then close the plan**
 
 ```bash
 npm test
@@ -7126,7 +7130,7 @@ Expected: green across all four suites, with the counts recorded in the executio
 row. Then append that row: the date, what the session did, the last task finished, the
 commits, and the next plan.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add infra/README.md apps/core-api/README.md \

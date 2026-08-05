@@ -177,10 +177,13 @@ test("the walker scanned every source file, with POSIX separators", () => {
   // lib/{tokens,password,semaphore,client-ip,audit-vocabulary}.js and
   // repositories/auth/audit.js, and http/body.js is the twenty-third. The
   // e-paper boundary adds epaper/hub-client.js and
-  // http/routes/table-displays.js. Raise this floor in each later plan as
-  // repositories/ and http/routes/ fill in.
+  // http/routes/table-displays.js. Plan 2b adds ten and the walker reports
+  // thirty-five. MEASURED, not estimated: the floor was set to an absurd number,
+  // the reported count read back, and then mutation-tested at N + 1 to confirm it
+  // can go red. Raise this floor in each later plan as repositories/ and
+  // http/routes/ fill in.
   assert.ok(
-    SOURCE_FILES.length >= 25,
+    SOURCE_FILES.length >= 35,
     `scanned only ${SOURCE_FILES.length} files: ${SOURCE_FILES.join(", ")}`
   );
 
@@ -200,7 +203,20 @@ test("the walker scanned every source file, with POSIX separators", () => {
     // ["epaper/hub-client.js"]. A walker that stopped descending into epaper/
     // would compare [] to [] -- and C16 would report the boundary intact at the
     // exact moment the file defining it had gone missing.
-    "epaper/hub-client.js"
+    "epaper/hub-client.js",
+    // Plan 2b. One per file that a rule would silently stop checking if the walker
+    // lost it: C9 and C14 scan lib/, C2 and C4 scan repositories/auth/, and the two
+    // http/ files below are the entire credential path.
+    "lib/rate-limit.js",
+    "lib/authorization.js",
+    "http/cookies.js",
+    "http/csrf.js",
+    "http/authenticate.js",
+    "http/routes/auth.js",
+    "repositories/auth/users.js",
+    "repositories/auth/sessions.js",
+    "repositories/auth/scope-materialize.js",
+    "scripts/create-platform-admin.js"
   ]) {
     assert.ok(SOURCE_FILES.includes(sentinel), `sentinel ${sentinel} was not scanned`);
   }

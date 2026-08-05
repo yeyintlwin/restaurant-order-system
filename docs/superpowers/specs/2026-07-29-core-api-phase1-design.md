@@ -585,6 +585,15 @@ the key declared here. The table itself lives in `apps/core-api/lib/rate-limit.j
 as `LIMITERS`; this section and that constant are the same list, and it is read by
 the boot check and by the request pipeline so the two cannot drift.
 
+*Amended by Plan 2b (Task 2).* This paragraph described a check that did not exist
+until then; `validateRouteTable` now performs it, and three tests in
+`apps/core-api/test/router-registration.test.js` hold it — an unknown `limit.name`
+is fatal, a `limit.key` disagreeing with the roster is fatal, and every name in the
+roster is accepted (without that third one, a check that rejected everything would
+pass the first two and make the roster unusable). Identity-slice §7.1 records why it
+could not land in Plan 2a: a closed set authored ahead of the routes that populate it
+either blocks those routes or is padded with names for routes that do not exist.
+
 | Limiter | Bucket key | Window | Ceiling | `Retry-After`? | Config |
 | --- | --- | --- | --- | --- | --- |
 | `login-global` | client IP (credential-independent) | 1 min | `LOGIN_RATE_PER_MINUTE` (30) | **no** — would confirm the bucket | `LOGIN_RATE_PER_MINUTE` |
@@ -684,6 +693,18 @@ tried, or why it failed, would reconstruct in the audit trail exactly the
 distinction §5.5 step 3 works to deny the client. `system` is the actor for the
 CLI scripts and for the expiry sweep.
 
+*Amended by Plan 2b (Task 3).* The membership check this section relies on is no
+longer a test-only rule: `validateRouteTable` refuses at boot any route whose
+declared `audit` action is outside `apps/core-api/lib/audit-vocabulary.js`, with the
+**shape** check running first so a malformed action reports its real fault rather
+than "not in the vocabulary". Held by three tests in
+`apps/core-api/test/router-registration.test.js`, and by *"the nine actions Plan 2b's
+routes and CLI emit are declared"* in `apps/core-api/test/audit-vocabulary.test.js`.
+The vocabulary is still partial by design — each plan declares the actions its own
+routes emit, so the check and the routes land together; identity-slice §11.6 records
+why landing it in Plan 2a would have forced twenty entries for routes that did not
+exist.
+
 ## 6. HTTP surface
 
 ### 6.1 Route registration
@@ -693,9 +714,17 @@ is registered as `route(method, path, { auth: 'user' | 'terminal' | 'public', �
 and `route()` throws at registration time if `auth` is absent or not one of the
 three. There is no default anywhere.
 
-The public set in Phase 1 is exactly four entries: `GET /health`,
-`GET /health/ready`, `POST /api/admin/auth/login`, `POST /api/terminal/pair`. A
-test asserts set *equality*, so adding a fifth fails and so does removing one.
+The public set is asserted as set *equality*, so adding an entry fails and so does
+removing one — and the literal moves with the routes rather than being fixed for the
+phase. *Amended by Plan 2b (Task 14);* the earlier text said "exactly four entries"
+and named `POST /api/terminal/pair`, which no plan has yet registered.
+
+**Three after Plan 2b:** `GET /health`, `GET /health/ready`,
+`POST /api/admin/auth/login`. It grows to **eight** when Plan 2d adds
+`forgot-password`, `reset-password`, `verify-email`, `GET /admin/reset-password` and
+`GET /admin/verify-email` — identity-slice §6.2 settles that enumeration — and to
+**nine** when the terminal plan adds `POST /api/terminal/pair`. Widen the literal in
+the same commit as the route; that is the whole point of an equality assertion.
 
 ### 6.2 Route table
 
@@ -704,10 +733,10 @@ test asserts set *equality*, so adding a fifth fails and so does removing one.
 | `GET` | `/health` | public | — | Liveness. Touches no database, so a DB blip cannot mark the container unhealthy mid-incident. This is what the Docker healthcheck calls. |
 | `GET` | `/health/ready` | public | — | Readiness: SELECT 1 with a 2s statement_timeout plus schema_migrations vs on-disk file list. This is what the deploy gate calls. |
 | `POST` | `/api/admin/auth/login` | public | — | Exchange email+password for a __Host-core_session cookie. Fixed wall-clock budget, byte-identical failure for every cause. |
-| `POST` | `/api/admin/auth/logout` | user | anyUser (exempt from the must_change_password gate) | Delete the presenting session row. |
-| `POST` | `/api/admin/auth/logout-all` | user | anyUser | DELETE every session for this user. The only in-band lever against a stolen session in Phase 1. |
-| `GET` | `/api/admin/auth/me` | user | anyUser | Re-read identity and materialised scope. Deliberately NOT exempt from the must_change_password gate — the 403 is self-describing and login already returned mustChangePassword. |
-| `POST` | `/api/admin/auth/password` | user | anyUser (exempt from the must_change_password gate) | Change own password. Requires currentPassword in all cases including the forced-change flow; writes the hash, bumps sessions_valid_from, deletes every session, mints a fresh one. |
+| `POST` | `/api/admin/auth/logout` | user | `platform` + `anyUser` (exempt from the must_change_password gate) | Delete the presenting session row. |
+| `POST` | `/api/admin/auth/logout-all` | user | `platform` + `anyUser` | DELETE every session for this user. The only in-band lever against a stolen session in Phase 1. |
+| `GET` | `/api/admin/auth/me` | user | `platform` + `anyUser` | Re-read identity and materialised scope. Deliberately NOT exempt from the must_change_password gate — the 403 is self-describing and login already returned mustChangePassword. |
+| `POST` | `/api/admin/auth/password` | user | `platform` + `anyUser` (exempt from the must_change_password gate) | Change own password. Requires currentPassword in all cases including the forced-change flow; writes the hash, bumps sessions_valid_from, deletes every session, mints a fresh one. |
 | `POST` | `/api/admin/scope` | user | role === 'platform_admin' (scoped or unscoped) | Select or clear the company a platform admin acts inside; writes user_sessions.acting_company_id and an audit row. Body is `{"companyId": "&lt;uuid&gt;" or null}` — the key is required and explicitly nullable; null clears the selection, and a missing key is 422 validation_failed [field: companyId, code: required]. Audit action is scope.selected for a uuid, scope.cleared for null. |
 | `GET` | `/api/platform/companies` | user | platform | List every company on the platform. `?status=` `active` / `suspended` / `all` (default all), ?limit, ?cursor. |
 | `POST` | `/api/platform/companies` | user | platform | Create a tenant. Its first company_admin is then created by selecting scope and using the ordinary user route — rank 3 > rank 2 permits it, so no special route exists. |
@@ -741,6 +770,18 @@ test asserts set *equality*, so adding a fifth fails and so does removing one.
 | `POST` | `/api/terminal/pair` | public | — | Redeem a pairing code once for a 90-day bearer token. No Origin and no Content-Type requirement; safety comes from strict channel binding instead. Single-use guard is the transaction's first statement. |
 | `POST` | `/api/terminal/token/rotate` | terminal | — | Always mints a successor and shortens the presenting token to LEAST(expires_at, now()+10 minutes). It NEVER refuses on supersession grounds — superseded_at was cut from the schema, so that rule can only be approximated by the shortened expiry, which bricks the exact device the overlap exists to save. |
 | `GET` | `/api/terminal/me` | terminal | — | Who am I, for the device shell. Deliberately omits timeZone and businessDayRolloverHour — nothing in Phase 1 reads them; they arrive with the Phase-3 code that computes a business date. |
+
+*Amended by Plan 2b (Task 15): the four `/api/admin/auth/` identity rows above read
+`anyUser` and now read `platform` + `anyUser`.* §5.4's alias table excludes an
+**unscoped** `platform_admin` from `anyUser`, and login always materialises
+`actingCompanyId: null` for a platform admin — so under `anyUser` alone the only
+account `scripts/create-platform-admin.js` can create is 403'd out of reading its own
+identity, signing out, and changing the password the CLI just set. §5.4 and §6.2
+disagreed; it is settled **in §6.2's direction, for these four rows only**, by
+declaring both aliases on routes that bind no company, and **not** by widening
+`anyUser` inside `permits()` — which would admit an unscoped platform admin to the
+roughly twenty tenant routes registered at `anyUser`. Identity-slice §11.11 carries
+the full reasoning and the rejected repairs.
 
 Success and error responses per route:
 
@@ -858,6 +899,15 @@ peer."** It is justified because `scripts/create-platform-admin.js` is
 monotonic, so a platform with one admin would otherwise have no second recovery
 path. The `platform_admin` role remains immutable through the API.
 
+*Confirmed by Plan 2b (Tasks 7 and 16), not amended.* The premise is real:
+`bootstrapPlatformAdmin` takes `pg_advisory_xact_lock` and refuses when a
+`platform.admin_created` row already exists, in one transaction, and the CLI does
+nothing else. So the exception above stands as written and Plan 2c inherits it. This
+is worth a line because an earlier draft of Plan 2b shipped a `created === null`
+guard instead — current-state rather than monotonic — which would have made the CLI
+runnable again after deleting the admin row and quietly removed the only stated
+justification for the one peer-creating route in the system.
+
 **`GET /health` touches no database**, so a database blip cannot mark the
 container unhealthy mid-incident; it is what the Docker healthcheck calls.
 `GET /health/ready` runs `SELECT 1` with a 2-second statement timeout and
@@ -971,6 +1021,16 @@ Field codes inside `errors[]`: `required`, `type`, `too_short`, `too_long`, `pat
 14. session sliding renewal (at most once/60s) — ONLY here
 15. response
 ```
+
+*Amended by Plan 2b: step 10 is two halves and they land in different plans.* The
+**static route-roles** half is shipped and runs at **step 7.5**, reading
+`lib/authorization.js` — declared aliases against the caller's materialised scope,
+403 on refusal. The **per-resource** half (each path resource resolved in path order
+via `tenantQuery` → 404) waits for the routes that have path resources, which is Plan
+2c. Plan 2b registers none, so there is nothing for it to resolve. A gap follows from
+that split and is recorded in identity-slice §11.11 rather than here: §6.3.3's **409
+`scope_required`** has no producer anywhere in the service, and Plan 2c's roughly
+twenty tenant routes at `anyUser` are its first consumers.
 
 **Steps 9 and 10 must precede step 11.** If body validation ran first, `POST /api/admin/shops/<another tenant's shop>/tables` with a bad `label` returns 422 while the same request with a good `label` returns 404 — the attacker controls the body, so the validator becomes a free existence oracle for every shop id on the platform. The 404 is produced by the *absence of a row from a scoped query* (`tenantQuery` binds `company_id = $1` and, when `shopScoped`, `shop_id = ANY($2)` itself), so "exists but not yours" and "does not exist" are literally the same zero-row result at the driver level and cannot regress by someone forgetting a comparison.
 
@@ -1124,10 +1184,11 @@ apps/core-api/
                                 satisfy Mode 6 (must throw on a platform scope) and Mode 2 (company_id must equal A)
 
   scripts/
-    create-platform-admin.js    CLI bootstrap: stdin echo-off, refuses without a TTY, advisory lock, monotonic audit guard
-    unlock-account.js           clears locked_until / failed_login_count, writes an audit row
-    set-password.js             operator password reset; bumps sessions_valid_from
-    sweep-expired.js            deletes expired sessions and UNCONSUMED dead codes (consumed_at IS NULL AND
+    create-platform-admin.js    SHIPPED, Plan 2b. CLI bootstrap: stdin echo-off, refuses without a TTY,
+                                advisory lock, monotonic audit guard
+    unlock-account.js           PLAN 2d. clears locked_until / failed_login_count, writes an audit row
+    set-password.js             PLAN 2d. operator password reset; bumps sessions_valid_from
+    sweep-expired.js            PLAN 2d. deletes expired sessions and UNCONSUMED dead codes (consumed_at IS NULL AND
                                 (expires_at < now() OR revoked_at IS NOT NULL)); a CONSUMED code is retained for the
                                 life of the token that references it — terminal_tokens.pairing_code_id is ON DELETE
                                 RESTRICT, so deleting it would raise 23503; trims audit_events beyond AUDIT_RETENTION_DAYS
@@ -1282,7 +1343,7 @@ Pure `fs` + regex, no parser, no dependency — the shape `apps/epaper-hub/test/
 `http/router.js` exports `listRoutes()`. `route()` **throws at registration time** if `options.auth` is absent or not one of the three. There is no default anywhere — that is what "deny by default and declared" means mechanically.
 
 1. Every entry's `auth` is one of `user|terminal|public`.
-2. `new Set(publicEntries)` **deep-equals** `{"GET /health","GET /health/ready","POST /api/admin/auth/login","POST /api/terminal/pair"}`. Equality, not containment: adding a fifth fails, and so does removing one.
+2. `new Set(publicEntries)` **deep-equals** the public set of §6.1 as it stands in the current plan — `{"GET /health","GET /health/ready","POST /api/admin/auth/login"}` after Plan 2b, eight after Plan 2d, nine once the terminal plan registers `POST /api/terminal/pair`. Equality, not containment: adding an entry fails, and so does removing one, and the literal is widened in the same commit as the route. *Amended by Plan 2b (Task 14): this rule previously named a fixed four including `POST /api/terminal/pair`, which no plan has yet registered.*
 3. The must-change-password exempt set deep-equals `{"POST /api/admin/auth/password","POST /api/admin/auth/logout"}`.
 4. No duplicate `${method} ${path}`; every `:param` has a `params` entry; every non-GET declares `body` (possibly `null`) and `audit`; every GET collection declares `query`. **Every declared `audit` value is a member of the §5.9 table**, and every route declaring a `limit` names a limiter present in the §5.7 table.
 5. Every `auth:'terminal'` path starts `/api/terminal/`; every `auth:'user'` route declares a non-empty `roles` drawn from the four aliases enumerated in §5.4.
@@ -1509,7 +1570,7 @@ CMD ["node", "apps/core-api/server.js"]
 Built from the repo root: `docker build -f apps/core-api/Dockerfile -t core-api:$SHA .` — same base image, same `--prefix … --workspaces=false` idiom, same `ENV`/`EXPOSE`/array-`CMD` as `apps/customer-order/Dockerfile`.
 
 - **DEPARTURE: `npm ci` rather than `install`.** customer-order uses `install` (`Dockerfile:8-9`) despite having a lockfile; core-api is the first app with a real dependency tree, so `ci` failing loudly on a stale lockfile is the behaviour you want. If `ci` misbehaves under `--prefix` on the first build, fall back to `install --omit=dev --workspaces=false` and note it.
-- `scripts/` in the image is **required** — `create-platform-admin.js`, `unlock-account.js` and `set-password.js` run via `docker compose exec`.
+- `scripts/` in the image is **required** — `create-platform-admin.js` (shipped in Plan 2b), `unlock-account.js` and `set-password.js` (both Plan 2d) run via `docker compose exec`.
 - **`.dockerignore` needs `apps/*/.env` added.** The root file excludes only top-level `.env`, so a developer's `apps/core-api/.env` — now containing `DATABASE_URL` — would be baked into the production image. `.gitignore:2` already uses exactly this pattern. This is a latent bug in the customer-order build that Phase 1 makes dangerous.
 - **New runtime dependency: `pg`**, in a repo where `apps/customer-order/package.json` declares only a `file:` link. Hand-rolling the wire protocol is not YAGNI. It pulls ~10 small transitive packages; `pg-native` must not be installed (needs libpq + a C toolchain, instant failure on the Windows dev machine).
 
@@ -1670,15 +1731,27 @@ curl -fsS -m 5 --resolve api.yeyintlwin.com:443:127.0.0.1 https://api.yeyintlwin
 # it never reaches core-api, no audit row is written, and the SELECT reads a row left
 # by the burst (source_ip 127.0.0.1) -- which is neither 203.0.113.99 nor null, so both
 # assertions pass vacuously whatever TRUSTED_PROXY_HOPS is set to.
-curl -fsS -o /dev/null -m 5 --resolve api.yeyintlwin.com:443:127.0.0.1 \
+# CORRECTED BY PLAN 2b (Task 12) -- this appendix was wrong twice and the shipped
+# heredoc is the authority. It read `curl -fsS ... || true`, which deploy-config.test.js
+# bans: -f makes curl exit non-zero on the 401 this probe EXPECTS, and `|| true` then
+# swallows a probe that never reached core-api at all. Capture the status instead and
+# assert it. The psql quoting was '"'"'-style; the shipped form escapes inside a
+# double-quoted sh -c, and </dev/null is on both `docker compose exec` calls so neither
+# eats the heredoc.
+probe_status=$(curl -s -o /tmp/xff-probe.body -w '%{http_code}' -m 5 \
+  --resolve api.yeyintlwin.com:443:127.0.0.1 \
   -X POST https://api.yeyintlwin.com/api/admin/auth/login \
   -H 'Origin: https://api.yeyintlwin.com' -H 'Content-Type: application/json' \
   -H 'X-Forwarded-For: 203.0.113.99' \
-  --data-binary '{"email":"xff-probe@invalid.test","password":"x"}' || true
+  --data-binary '{"email":"xff-probe@invalid.test","password":"x"}' </dev/null)
+test "$probe_status" = "401" || { echo "login probe: expected 401 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
+grep -q '"code":"invalid_credentials"' /tmp/xff-probe.body || { echo 'login probe: that 401 did not come from core-api'; cat /tmp/xff-probe.body; exit 1; }
+rm -f /tmp/xff-probe.body
+# Read TRUSTED_PROXY_HOPS out of the RUNNING PROCESS, not the project files.
+hops=$(docker compose exec -T core-api sh -c 'tr "\0" "\n" < /proc/1/environ' </dev/null | sed -n 's/^TRUSTED_PROXY_HOPS=//p' | tr -d '\r')
+test "$hops" = "1" || { echo "core-api PID 1 has TRUSTED_PROXY_HOPS='$hops', expected 1"; exit 1; }
 # Select THIS probe's row by its address, not "the most recent row".
-probe=$(docker compose exec -T core-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -tAq -U core_api_owner -d core \
-  -c "SELECT coalesce(host(source_ip), '"'"'null'"'"') FROM audit_events \
-      WHERE detail->>'"'"'email'"'"' = '"'"'xff-probe@invalid.test'"'"' ORDER BY id DESC LIMIT 1"')
+probe=$(docker compose exec -T core-db sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -tAq -U core_api_owner -d core -c \"SELECT coalesce(host(source_ip), 'null') FROM audit_events WHERE detail->>'email' = 'xff-probe@invalid.test' ORDER BY id DESC LIMIT 1\"" </dev/null)
 test -n "$probe"                || { echo 'XFF probe wrote no audit row - it never reached core-api'; exit 1; }
 test "$probe" != "203.0.113.99" || { echo 'FORGEABLE X-Forwarded-For: TRUSTED_PROXY_HOPS is wrong'; exit 1; }
 test "$probe" != "null"         || { echo 'client IP derivation collapsed; check TRUSTED_PROXY_HOPS'; exit 1; }
@@ -1900,11 +1973,18 @@ Loaded by a copy of `loadDotEnv()` from `apps/customer-order/server.js:28-35` �
 
 ```sh
 cd ~/restaurant-order-system
-CORE_ENV_FILE=../core-api.env docker compose exec core-api \
+CORE_ENV_FILE=../core-api.env EPAPER_ENV_FILE=../restaurant-order-system.env docker compose exec core-api \
   node apps/core-api/scripts/create-platform-admin.js you@example.com
 ```
 
-`docker compose exec`, **never `exec -T`** — the script reads the password from stdin with echo disabled and must **refuse and exit non-zero when `process.stdin.isTTY` is false**, otherwise `echo 'pw' | docker compose exec -T …` works and the password lands in shell history, which is exactly what "never from argv" exists to prevent. The path inside the container is `apps/core-api/scripts/…` because `WORKDIR /app` and the Dockerfile copies into `./apps/core-api`. The script connects with **`DATABASE_URL` (`core_api_app`)**, not the owner: it performs pure DML and `pg_advisory_xact_lock` is available to any role, so the superuser credential stays unused. The container must be running — which is exactly why an empty `platform_admin` set logs a warning and does **not** refuse to listen; that is the one deliberate exception to the repo's refuse-to-start convention, forced by the mechanism. Zero rows inserted exits non-zero. There is no `--force`. Neighbouring levers in the same runbook section: `unlock-account.js`, `set-password.js`.
+*Corrected by Plan 2b:* this recipe carried `CORE_ENV_FILE` alone. Compose validates
+**every** service's `env_file` on every subcommand, so the one-variable form dies at
+project load complaining about the *other* file — on a fresh instance, in the runbook
+whose whole purpose is that there is nothing else to fall back on.
+
+`docker compose exec`, **never `exec -T`** — the script reads the password from stdin with echo disabled and must **refuse and exit non-zero when `process.stdin.isTTY` is false**, otherwise `echo 'pw' | docker compose exec -T …` works and the password lands in shell history, which is exactly what "never from argv" exists to prevent. The path inside the container is `apps/core-api/scripts/…` because `WORKDIR /app` and the Dockerfile copies into `./apps/core-api`. The script connects with **`DATABASE_URL` (`core_api_app`)**, not the owner: it performs pure DML and `pg_advisory_xact_lock` is available to any role, so the superuser credential stays unused. The container must be running — which is exactly why an empty `platform_admin` set logs a warning and does **not** refuse to listen; that is the one deliberate exception to the repo's refuse-to-start convention, forced by the mechanism. Zero rows inserted exits non-zero. There is no `--force`. Neighbouring levers in the same runbook section: `unlock-account.js`, `set-password.js` — **neither exists**; both belong to **Plan 2d**, and identity-slice §11.1 records what that costs an operator today.
+
+*Confirmed by Plan 2b (Tasks 7 and 16).* Every mechanism this section describes is implemented, so the next reader does not re-litigate it. `bootstrapPlatformAdmin` in `apps/core-api/repositories/auth/users.js` takes `pg_advisory_xact_lock`, refuses when a `platform.admin_created` audit row already exists, and writes its own audit row **inside** the same transaction — held by *"the bootstrap is MONOTONIC: the guard is an audit row, not the current state"* and *"a repeated address inside the same bootstrap is email_taken, not already_bootstrapped"* in `apps/core-api/test/auth-users.test.js`. The CLI half is held by four tests in `apps/core-api/test/scripts.test.js`, including *"the bootstrap CLI refuses a piped password and exits non-zero"* and *"…has no force flag and never reads a password from argv"*. The empty-`platform_admin` warning is in `server.js`, after `waitForDb` and before `createApp`: it warns and continues to listen, and a failure to count is caught and logged rather than rethrown.
 
 ### 9.11 Cutover order
 
@@ -2008,7 +2088,7 @@ drifting into two different defaults for the same knob.
 
 **`LOGIN_RATE_PER_MINUTE`** — *compose default (30)*
 
-- Purpose: The credential-independent global login bucket, sized to real staff volume, shedding with 429 BEFORE any scrypt work is queued — the control that stops one laptop on a phone tether holding the 2-slot scrypt semaphore permanently full.
+- Purpose: The credential-independent global login bucket, sized to real staff volume, shedding with 429 BEFORE any scrypt work is queued. *Amended by Plan 2b:* it is **one of two** controls on semaphore occupancy, not "the" control — `login-global` sheds in process and nginx's `core_login` zone sheds at the edge, and neither substitutes for the other, since nginx cannot see `users.id` and the process cannot see a request nginx already dropped. Identity-slice §7.3 names the four that will bound occupancy once Plan 2d adds a second unauthenticated scrypt path.
 - Validation: Integer > 0.
 
 **`LOGIN_TIME_BUDGET_MS`** — *compose default (400)*
@@ -2082,7 +2162,7 @@ Each entry carries the phase it belongs to. Three are cut permanently.
 - terminal_pairing_codes.attempt_count -- cut permanently, not deferred. A wrong guess matches no row, so it can never be incremented by an attacker; it caps only resubmission of a code the submitter already holds.
 - users.session_epoch and terminals.token_epoch -- cut permanently. Epochs earn their keep only when a credential caches authorization state. Here role, company and shopIds are re-read on every request, so the only remaining need is credential change, covered by the single users.sessions_valid_from column.
 - users.password_expires_at and a single-use invite-token table -- Phase 2, with the staff-management screens. Phase 1 creates users through the API with must_change_password enforced in the resolver; a dormant-invite expiry matters when there are invites to be dormant.
-- Password reset / forgot-password -- Phase 2. Phase 1 recovery is scripts/unlock-account.js and scripts/set-password.js over docker compose exec, which is honest for a platform with one operator.
+- Password reset / forgot-password -- Phase 2; identity-slice §1 brings the self-service half forward into Plan 2d. Phase 1 recovery is scripts/unlock-account.js and scripts/set-password.js over docker compose exec, which is honest for a platform with one operator. *Amended by Plan 2b:* neither script exists yet — both are **Plan 2d**, and until 2d lands there is no recovery lever at all beyond POST /api/platform/admins from a second admin session. Identity-slice §11.1 states the consequence for a mistyped address.
 - user_sessions.user_agent -- cut permanently. Personal data with no named requirement in Phases 2-8; last_seen_ip is retained because it is the only leak signal available.
 - The migration runner's '-- migrate: no-transaction' escape hatch for CREATE INDEX CONCURRENTLY -- the phase that first needs a concurrent index build. SET LOCAL is silently ignored outside a transaction block, so the hatch would strip lock_timeout from exactly the migrations that run long and take heavy locks. Phase 1's largest table holds a few dozen rows; no index build can block anything.
 - Pairing confirmation handshake (device shows a 4-digit number the issuer must confirm) -- Phase 2, with the admin UI that could display it. consumed_at is already recorded, so the issuer-visible 'paired at 19:04' view is available the moment there is a screen to show it on.
@@ -2161,14 +2241,15 @@ Each item is verifiable by running a command.
 - [ ] git check-attr text eol -- apps/core-api/migrations/0001_init.sql  →  'text: set' and 'eol: lf';  grep -q 'apps/\*/\.env' .dockerignore  →  exit 0
 - [ ] ls apps/core-api/test | grep -v '\.test\.js$'  →  no output (helpers live in testing/, the template builder in scripts/)
 - [ ] docker compose exec core-api node apps/core-api/scripts/create-platform-admin.js first@example.test exits 0 and prints 'created'; a second run with a different address exits NON-ZERO; DELETE the platform_admin row and re-run — still non-zero (the audit_events guard is monotonic, not current-state)
-- [ ] echo 'pw' | docker compose exec -T core-api node apps/core-api/scripts/create-platform-admin.js x@example.test exits NON-ZERO with a 'requires a TTY' message (no password may reach shell history)
+- [ ] echo 'pw' | docker compose exec -T core-api node apps/core-api/scripts/create-platform-admin.js x@example.test exits NON-ZERO refusing to read a password from a pipe and telling the operator to use an interactive terminal (no password may reach shell history). *Amended by Plan 2b: this line quoted a 'requires a TTY' message; the shipped wording is different and the message is pinned by `scripts.test.js`, so the checkbox moved rather than the message.*
+- [ ] *Both boxes above are MANUAL, on the box. The mechanisms behind them are implemented and covered in-suite as of Plan 2b — see §9.10's confirmation note for the six tests — so a failure here is a deployment fact, not an unwritten feature.*
 - [ ] On the box: `curl -fsS -m 5 --resolve api.yeyintlwin.com:443:127.0.0.1 https://api.yeyintlwin.com/health` returns 200, and 20 rapid POSTs to /api/admin/auth/login through that same --resolve chain produce at least one 429 — proving nginx limit_req is live in production, not merely present in a file
 - [ ] On the box, BEFORE any limit_req burst from the same address: a login POST for `xff-probe@invalid.test` carrying `X-Forwarded-For: 203.0.113.99` produces an audit_events row selected by `detail->>'email'` (never "the most recent row") whose source_ip is NEITHER 203.0.113.99 (forgeable) NOR NULL (derivation collapsed to the shared bucket) — and the row must exist at all, since a shed request writes nothing and would otherwise pass vacuously
 - [ ] On the box: `sudo nginx -T | grep -c 'set_real_ip_from\|real_ip_header'` → 0, and count(proxy_pass) equals count(include .*core-api-proxy.conf) in api.yeyintlwin.com.conf
 - [ ] Kill the deploy mid-migration (docker kill core-api while it holds the advisory lock), then re-run the deploy: it succeeds within the 60 s bounded retry with no manual pg_terminate_backend — proving tcp_keepalives_idle=20 reaps the orphaned backend
 - [ ] scripts/restore-drill.sh run once by hand against the first pre-deploy dump: it restores, asserts schema_migrations matches the image, passes the schema-invariants assertions, prints row counts and drops the scratch database
 - [ ] Scenario A of the §9.8 runbook rehearsed once against a THROWAWAY database name (substitute `core_scenario_a` for `core` in steps 3–5) before the first production deploy, with a dated receipt at `~/backups/SCENARIO_A_REHEARSED`. **Never rehearse Scenario A verbatim on the box — step 3 drops the production database.**
-- [ ] `scripts/unlock-account.js` against a fixture user whose locked_until is in the future clears locked_until and failed_login_count and writes an audit row; `scripts/set-password.js` writes a valid PHC hash, bumps sessions_valid_from, and a session minted before the change returns 401 afterwards
+- [ ] **PLAN 2d.** `scripts/unlock-account.js` against a fixture user whose locked_until is in the future clears locked_until and failed_login_count and writes an audit row; `scripts/set-password.js` writes a valid PHC hash, bumps sessions_valid_from, and a session minted before the change returns 401 afterwards. *Neither script exists; this box cannot be ticked before Plan 2d and is marked so it is not read as a regression.*
 - [ ] On a box with NO existing user crontab, `crontab -l | grep -q sweep-expired.js` exits 0 after a full deploy, and running the sweep by hand deletes an expired session while leaving a CONSUMED pairing code in place
 - [ ] On a box with NO existing user crontab, a full deploy succeeds end to end and `crontab -l | grep -q backup-core-db.sh` exits 0
 - [ ] grep -q TRUSTED_PROXY_HOPS infra/README.md && grep -q 'ALTER ROLE' infra/README.md && grep -q business_date infra/README.md && grep -q 'outside service hours' infra/README.md && grep -q create-platform-admin apps/core-api/README.md && grep -q CORE_API_TEST_DATABASE_URL apps/core-api/README.md

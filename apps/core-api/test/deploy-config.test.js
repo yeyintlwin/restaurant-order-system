@@ -59,8 +59,9 @@ test("the core-api image installs from its own lockfile and ships its scripts", 
   assert.match(dockerfile, /^WORKDIR \/app$/m);
 
   // Built from the REPOSITORY ROOT with an explicit -f, exactly like customer-order.
-  // This single COPY also carries scripts/, which create-platform-admin.js (Plan 2),
-  // unlock-account.js and set-password.js need at `docker compose exec` time.
+  // This single COPY also carries scripts/, which create-platform-admin.js (shipped in
+  // Plan 2b), unlock-account.js and set-password.js (both Plan 2d) need at
+  // `docker compose exec` time.
   assert.match(dockerfile, /^COPY apps\/core-api \.\/apps\/core-api$/m);
   assert.doesNotMatch(dockerfile, /^COPY apps\/core-api\/server\.js/m);
 
@@ -373,8 +374,9 @@ test("the operator docs name the second secrets file and why core-db publishes n
   assert.match(rootReadme, /~\/core-api\.env/);
   assert.match(hubReadme, /^CORE_ENV_FILE=\/path\/to\/core-api\.env \\$/m);
 
-  // Plan 2 owns the script itself; the runbook line must at least be RUNNABLE when it
-  // arrives. Compose validates EVERY service's env_file on EVERY subcommand, so a
+  // The script shipped in Plan 2b, so the runbook line is one an operator runs today
+  // rather than one that must be RUNNABLE when it arrives. Compose validates EVERY
+  // service's env_file on EVERY subcommand, so a
   // one-variable `docker compose exec` dies at project load complaining about the
   // OTHER file. This is a per-line rule, so it cannot pass by matching a fixture.
   for (const [label, document] of [
@@ -390,8 +392,14 @@ test("the operator docs name the second secrets file and why core-db publishes n
     }
   }
 
-  // Plan 2, said plainly, so nobody goes looking for the script in this plan.
-  assert.match(coreReadme, /Ships in a later plan of this phase/);
+  // WAS: assert.match(coreReadme, /Ships in a later plan of this phase/) — the marker
+  // that told a reader not to look for the script. The script exists, so the assertion
+  // moves onto what the Bootstrapping section must now carry: the in-container path,
+  // and the `exec -T` ban the script enforces by refusing a non-TTY stdin. The
+  // two-variable rule above already covers this section's compose line.
+  assert.match(coreReadme, /node apps\/core-api\/scripts\/create-platform-admin\.js/);
+  assert.match(coreReadme, /never `exec -T`/);
+  assert.doesNotMatch(coreReadme, /Ships in a later plan of this phase/);
 });
 
 test("deploy workflow serialises production deploys with a concurrency group", () => {
