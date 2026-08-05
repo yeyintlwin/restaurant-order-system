@@ -88,6 +88,23 @@ Baseline at the head of this plan, measured: **14 / 33 / 69 / 392**, 0 failures,
 **The checkboxes are the state.** Tick them as you go and commit the plan file
 with the code. There is no other progress tracker.
 
+**Tick them with exact-string edits, NEVER with `sed -i`.** This file has CRLF line
+endings — `.gitattributes` sets them — so `sed -i` rewrites every line ending in the
+file and produces a diff of *seven thousand* insertions and seven thousand deletions
+in place of your five characters. The Task 7 executor did exactly this, caught it in
+`git diff --stat` before staging, and reverted. Check your own diff before you stage:
+
+```bash
+git diff --stat -- docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md
+git diff -U0 -- docs/superpowers/plans/2026-08-05-core-api-phase1-plan2b-authentication.md | grep '^[+-]- \['
+```
+
+The first should report single-digit line counts and the second should print only
+`- [ ]` → `- [x]` pairs. While you are there: **line numbers from a file-reading tool
+and from `grep -n` disagree on this file**, which is the other half of how that sed
+went wrong. Address edits by quoted text, never by line number — which is what the
+standing rule below already says about every other list in this repository.
+
 **Every command below runs from the repository root**, not from `apps/core-api`.
 
 **Database-backed tests need a live Postgres and are a HARD FAILURE without one** —
@@ -1934,19 +1951,25 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   // premise had quietly been removed.
   const hash = await hashPassword("bootstrap-password-1");
 
-  // ONLY the rows this test creates, and NEVER
-  // `DELETE FROM users WHERE role = 'platform_admin'`. The two-tenant fixture's
-  // platform admin is the created_by_user_id of six users, three companies, five
-  // shops, five shop_tables, four user_shops and every terminal, and 0001_init.sql
-  // makes every one of those references ON DELETE RESTRICT -- so that statement
-  // raises 23503 on users_created_by_user_id_fkey before the function under test is
-  // ever called. An earlier draft of this test did exactly that and could not run.
-  const MINE = "('boot@example.test', 'second@example.test', 'third@example.test')";
-  const reset = async () => {
-    await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
-    await db.unscoped(`DELETE FROM users WHERE email IN ${MINE}`);
-  };
-  await reset();
+  // TRUNCATE FIRST, and it is not tidiness. seedTwoTenant makes IDS.userPlatformAdmin
+  // the created_by_user_id of every company, user, shop, shop_table, user_shop,
+  // terminal and pairing code it writes, and 0001_init.sql makes every attribution FK
+  // ON DELETE RESTRICT -- two of them (terminals, terminal_pairing_codes) NOT NULL as
+  // well, so the reference cannot even be nulled. The DELETE below therefore raises
+  // 23503 users_created_by_user_id_fkey against the seeded fixture.
+  //
+  // Excluding the fixture admin instead -- `AND id <> IDS.userPlatformAdmin`, or
+  // deleting only the three addresses this test creates -- would run green and WEAKEN
+  // the test: with a platform_admin row still standing, a current-state guard ("does a
+  // platform_admin exist") also answers already_bootstrapped for `third`, so the one
+  // assertion this test exists to make would pass against the very implementation it
+  // is meant to reject. Clearing the fixture is what leaves genuinely ZERO platform
+  // admins at the DELETE below, which is the only state in which "still
+  // already_bootstrapped" distinguishes the audit-row guard from a current-state one.
+  await db.resetFixtures();
+
+  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
 
   const first = await users.bootstrapPlatformAdmin({
     email: "boot@example.test",
@@ -1976,11 +1999,11 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   assert.equal(second.created, null);
   assert.equal(second.reason, "already_bootstrapped");
 
-  // THE MONOTONIC HALF, and spec 12's checkbox names this exact sequence: deleting
-  // the administrator does not re-open the door, because the guard is the audit row
-  // and nothing deleted that. This row is safe to delete precisely because the
-  // bootstrap inserts it with created_by_user_id NULL -- nothing references it.
-  await db.unscoped("DELETE FROM users WHERE email = 'boot@example.test'");
+  // THE MONOTONIC HALF, and spec 12's checkbox names this exact sequence. It is safe
+  // to delete here and it was not at the top of the test: the only platform admin
+  // standing now is the one this test made, and the bootstrap inserts it with
+  // created_by_user_id NULL, so nothing references it.
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
   const third = await users.bootstrapPlatformAdmin({
     email: "third@example.test",
     displayName: "Third",
@@ -1989,9 +2012,10 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   assert.equal(third.created, null);
   assert.equal(third.reason, "already_bootstrapped");
 
-  // Leave the fixture as seedTwoTenant left it. The seeded platform admin was never
-  // touched, so this only has to remove what this test added.
-  await reset();
+  // Restore the fixture for the tests below, which expect one active platform admin.
+  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+  await users.bootstrapPlatformAdmin({ email: "boot@example.test", displayName: "Boot", passwordHash: hash });
 });
 
 test("a repeated address inside the same bootstrap is email_taken, not already_bootstrapped", { skip }, async () => {
@@ -1999,27 +2023,17 @@ test("a repeated address inside the same bootstrap is email_taken, not already_b
   // "the platform is already bootstrapped, use set-password.js", the other says "that
   // address is taken". Collapsing them into one null was the earlier draft's mistake.
   //
-  // SELF-CONTAINED. It sets up and tears down its own rows rather than relying on
-  // what the test above left behind -- node --test runs tests within a file serially,
-  // but a test that depends on a sibling's leftovers fails mysteriously the day
-  // somebody adds a third test between them.
+  // It leans on the test above having restored boot@example.test, and clears ONLY the
+  // guard -- so this attempt gets past the guard, reaches the INSERT, and is stopped
+  // by users_email_key. That is the branch this test exists to tell apart from the
+  // one above.
+  //
+  // ACCEPTED RESIDUAL: node --test runs tests within a file serially, so the
+  // dependency holds today. It would break the day somebody inserts a third test
+  // between these two, and the failure would read as a bug in bootstrapPlatformAdmin
+  // rather than as a fixture problem. Left as it is because making it self-contained
+  // means a second full bootstrap per run for a coupling this comment now names.
   const hash = await hashPassword("bootstrap-password-2");
-  const reset = async () => {
-    await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
-    await db.unscoped("DELETE FROM users WHERE email = 'boot@example.test'");
-  };
-  await reset();
-
-  const seeded = await users.bootstrapPlatformAdmin({
-    email: "boot@example.test",
-    displayName: "Boot",
-    passwordHash: hash
-  });
-  assert.equal(seeded.reason, null);
-
-  // Clear ONLY the guard and leave the user row standing. Now the second attempt gets
-  // past the guard and reaches the INSERT, where users_email_key stops it -- which is
-  // the branch this test exists to tell apart from the one above.
   await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
 
   const again = await users.bootstrapPlatformAdmin({

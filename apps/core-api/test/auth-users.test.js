@@ -136,14 +136,14 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   // well, so the reference cannot even be nulled. The DELETE below therefore raises
   // 23503 users_created_by_user_id_fkey against the seeded fixture.
   //
-  // Excluding the fixture admin instead -- `AND id <> IDS.userPlatformAdmin` -- would
-  // run green and WEAKEN the test to nothing: with a platform_admin row still standing,
-  // a current-state guard ("does a platform_admin exist") also answers
-  // already_bootstrapped for `third`, so the one assertion this test exists to make
-  // would pass against the very implementation it is meant to reject. Clearing the
-  // fixture is what leaves genuinely ZERO platform admins at the DELETE below, which is
-  // the only state in which "still already_bootstrapped" distinguishes the audit-row
-  // guard from a current-state one.
+  // Excluding the fixture admin instead -- `AND id <> IDS.userPlatformAdmin`, or
+  // deleting only the three addresses this test creates -- would run green and WEAKEN
+  // the test: with a platform_admin row still standing, a current-state guard ("does a
+  // platform_admin exist") also answers already_bootstrapped for `third`, so the one
+  // assertion this test exists to make would pass against the very implementation it
+  // is meant to reject. Clearing the fixture is what leaves genuinely ZERO platform
+  // admins at the DELETE below, which is the only state in which "still
+  // already_bootstrapped" distinguishes the audit-row guard from a current-state one.
   await db.resetFixtures();
 
   await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
@@ -177,7 +177,10 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   assert.equal(second.created, null);
   assert.equal(second.reason, "already_bootstrapped");
 
-  // And the monotonic half: deleting the row does not re-open the door.
+  // THE MONOTONIC HALF, and spec 12's checkbox names this exact sequence. It is safe
+  // to delete here and it was not at the top of the test: the only platform admin
+  // standing now is the one this test made, and the bootstrap inserts it with
+  // created_by_user_id NULL, so nothing references it.
   await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
   const third = await users.bootstrapPlatformAdmin({
     email: "third@example.test",
@@ -197,6 +200,17 @@ test("a repeated address inside the same bootstrap is email_taken, not already_b
   // Two distinguishable refusals, because the operator's next move differs: one says
   // "the platform is already bootstrapped, use set-password.js", the other says "that
   // address is taken". Collapsing them into one null was the earlier draft's mistake.
+  //
+  // It leans on the test above having restored boot@example.test, and clears ONLY the
+  // guard -- so this attempt gets past the guard, reaches the INSERT, and is stopped
+  // by users_email_key. That is the branch this test exists to tell apart from the
+  // one above.
+  //
+  // ACCEPTED RESIDUAL: node --test runs tests within a file serially, so the
+  // dependency holds today. It would break the day somebody inserts a third test
+  // between these two, and the failure would read as a bug in bootstrapPlatformAdmin
+  // rather than as a fixture problem. Left as it is because making it self-contained
+  // means a second full bootstrap per run for a coupling this comment now names.
   const hash = await hashPassword("bootstrap-password-2");
   await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
 
