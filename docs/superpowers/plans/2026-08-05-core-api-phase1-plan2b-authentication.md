@@ -1,16 +1,21 @@
 # Core API Phase 1 — Plan 2b: Authentication, Sessions and the Request Pipeline
 
-> ## ⚠️ WRITTEN IN FULL, NOT YET REVIEWED, NOT YET EXECUTED
+> ## ⚠️ REVIEWED, AND EXECUTION IS UNDER WAY — READ THE EXECUTION LOG
 >
-> All 17 tasks are written. **Nothing here has been implemented and nothing has been
-> through the adversarial review Plans 1 and 2a got**, which is the one thing that
-> has caught a real defect in every plan this project has produced so far.
+> All 17 tasks are written and the plan has been through an adversarial review: 57
+> findings, 27 of which survived three independent attempts to refute each one. Two
+> were decisions rather than defects and are settled in Part 5 departure (d) and in
+> Task 7's `bootstrapPlatformAdmin`.
 >
-> An earlier banner on this file said Part 4 was empty and the plan stopped at Task
-> 9. That was stale by two commits — Tasks 10 and 11 were already written under it.
-> The lesson is the plan's own standing rule turned on itself: **a status line is a
-> mirror like any other, and this one had drifted.** Trust the checkboxes and the
-> execution log below, never a prose summary.
+> **Tasks 1–6 are implemented and committed.** The execution log below is the state;
+> this paragraph is not.
+>
+> This banner has now been wrong twice. It first said Part 4 was empty and the plan
+> stopped at Task 9, while Tasks 10 and 11 were already written under it. It then
+> said NOT YET EXECUTED while six tasks were committed. Both times the plan's own
+> standing rule was the thing that caught it: **a status line is a mirror like any
+> other, and this one drifts faster than any of them.** Trust the checkboxes and the
+> execution log, never a prose summary — including this one.
 >
 > **The single most dangerous task is Task 12**, and it is dangerous in a specific,
 > bounded way rather than a vague one. Registering `POST /api/admin/auth/login`
@@ -63,15 +68,15 @@ references (§5.1, §6.3.5, §8.5) point at the **parent**,
 
 ## Execution log
 
-**Status: 0 of 17 tasks done. NOT STARTED.** The plan text is complete; the code is
-not written.
+**Status: 6 of 17 tasks done. Next is Task 7.**
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
 
 | Date | Session did | Tasks finished | Commits | Next |
 | --- | --- | --- | --- | --- |
-| | | **0/17** | | Task 1 |
+| 2026-08-05 | Adversarial review of the whole plan before executing any of it: 57 findings, 27 surviving a three-lens refutation. Two were decisions an executor is forbidden to make. **(a)** Task 15's role gate 403s the only account this plan creates — `anyUser` admits a *scoped* platform admin and login always materialises `actingCompanyId: null`, so the bootstrap administrator could not read `me`, sign out, or change the password the CLI had just set. No test could see it: `signedIn()` resolves a `company_admin`. Settled as `["platform", "anyUser"]` on the four identity routes; both rejected repairs recorded with reasons. **(b)** The bootstrap CLI had no monotonic guard, though §12's acceptance checkbox demands one and §714/§855 make it the justification for the only peer-creating route in the system. Task 7 grew `bootstrapPlatformAdmin`: advisory lock, `audit_events` guard, audit row written *inside* the transaction. | **0/17** | `3c63fc8`, `60ec079` | Task 1 |
+| 2026-08-05 | Tasks 1–6. The limiter roster, both boot checks §5.7 and §5.9 claimed but did not have, the `TRUSTED_PROXY_HOPS` ↔ proxy-depth assertion, and the two pure HTTP primitives. Three findings the review had missed came out of *executing* rather than reading: the identity-slice spec holds two now-false statements carrying no deferral keyword, so Task 17's greps walk past them (named explicitly now); `infra/README.md` gained a *Checked:* note that was backwards about what the new assertion covers (corrected — a proxy in front of nginx is outside the repository and no file check can see it); and "Why 2b adds no config" was short by three variables. **392 → 434 tests, 0 failures.** | **6/17** | `456d3a3`, `24cd69e`, `bf2021c`, `fb1fc1c`, `f2853ec`, `4098e3c`, `7fbd771` | Task 7 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 392**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -1929,8 +1934,19 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   // premise had quietly been removed.
   const hash = await hashPassword("bootstrap-password-1");
 
-  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
-  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+  // ONLY the rows this test creates, and NEVER
+  // `DELETE FROM users WHERE role = 'platform_admin'`. The two-tenant fixture's
+  // platform admin is the created_by_user_id of six users, three companies, five
+  // shops, five shop_tables, four user_shops and every terminal, and 0001_init.sql
+  // makes every one of those references ON DELETE RESTRICT -- so that statement
+  // raises 23503 on users_created_by_user_id_fkey before the function under test is
+  // ever called. An earlier draft of this test did exactly that and could not run.
+  const MINE = "('boot@example.test', 'second@example.test', 'third@example.test')";
+  const reset = async () => {
+    await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+    await db.unscoped(`DELETE FROM users WHERE email IN ${MINE}`);
+  };
+  await reset();
 
   const first = await users.bootstrapPlatformAdmin({
     email: "boot@example.test",
@@ -1960,8 +1976,11 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   assert.equal(second.created, null);
   assert.equal(second.reason, "already_bootstrapped");
 
-  // And the monotonic half: deleting the row does not re-open the door.
-  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
+  // THE MONOTONIC HALF, and spec 12's checkbox names this exact sequence: deleting
+  // the administrator does not re-open the door, because the guard is the audit row
+  // and nothing deleted that. This row is safe to delete precisely because the
+  // bootstrap inserts it with created_by_user_id NULL -- nothing references it.
+  await db.unscoped("DELETE FROM users WHERE email = 'boot@example.test'");
   const third = await users.bootstrapPlatformAdmin({
     email: "third@example.test",
     displayName: "Third",
@@ -1970,17 +1989,37 @@ test("the bootstrap is MONOTONIC: the guard is an audit row, not the current sta
   assert.equal(third.created, null);
   assert.equal(third.reason, "already_bootstrapped");
 
-  // Restore the fixture for the tests below, which expect one active platform admin.
-  await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
-  await db.unscoped("DELETE FROM users WHERE role = 'platform_admin'");
-  await users.bootstrapPlatformAdmin({ email: "boot@example.test", displayName: "Boot", passwordHash: hash });
+  // Leave the fixture as seedTwoTenant left it. The seeded platform admin was never
+  // touched, so this only has to remove what this test added.
+  await reset();
 });
 
 test("a repeated address inside the same bootstrap is email_taken, not already_bootstrapped", { skip }, async () => {
   // Two distinguishable refusals, because the operator's next move differs: one says
   // "the platform is already bootstrapped, use set-password.js", the other says "that
   // address is taken". Collapsing them into one null was the earlier draft's mistake.
+  //
+  // SELF-CONTAINED. It sets up and tears down its own rows rather than relying on
+  // what the test above left behind -- node --test runs tests within a file serially,
+  // but a test that depends on a sibling's leftovers fails mysteriously the day
+  // somebody adds a third test between them.
   const hash = await hashPassword("bootstrap-password-2");
+  const reset = async () => {
+    await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
+    await db.unscoped("DELETE FROM users WHERE email = 'boot@example.test'");
+  };
+  await reset();
+
+  const seeded = await users.bootstrapPlatformAdmin({
+    email: "boot@example.test",
+    displayName: "Boot",
+    passwordHash: hash
+  });
+  assert.equal(seeded.reason, null);
+
+  // Clear ONLY the guard and leave the user row standing. Now the second attempt gets
+  // past the guard and reaches the INSERT, where users_email_key stops it -- which is
+  // the branch this test exists to tell apart from the one above.
   await db.unscoped("DELETE FROM audit_events WHERE action = 'platform.admin_created'");
 
   const again = await users.bootstrapPlatformAdmin({
