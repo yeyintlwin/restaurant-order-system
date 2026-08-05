@@ -209,6 +209,27 @@ services:
         condition: service_healthy
     oom_score_adj: 500
 
+  admin-management:
+    image: ${ADMIN_MANAGEMENT_IMAGE:-admin-management}
+    container_name: admin-management
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3400:3400"
+    # Deliberately NO env-file key and no credential of any kind. This app serves
+    # files and forwards requests; everything that needs a secret is behind it.
+    # Hyphenated on purpose: public-ui.test.js greps this block for the underscored
+    # key and cannot tell a declaration from a mention of one in prose.
+    environment:
+      PORT: 3400
+      # By service name over the `default` bridge. It does NOT go out through nginx
+      # and back in: that would put a second TLS handshake and a second proxy hop on
+      # every API call, and the hop would change what core-api counts.
+      CORE_API_URL: http://core-api:3200
+    depends_on:
+      core-api:
+        condition: service_healthy
+    oom_score_adj: 500
+
 volumes:
   epaper-data:
   core-db-data:

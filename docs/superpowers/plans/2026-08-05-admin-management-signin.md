@@ -1594,7 +1594,7 @@ git commit -m "feat(admin-management): a README that describes the app, and a su
 - Create: `apps/admin-management/Dockerfile`
 - Modify: `docker-compose.yml`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `apps/admin-management/test/public-ui.test.js`:
 
@@ -1610,14 +1610,20 @@ test("the compose service names this app and points it at core-api", () => {
 test("the image carries no secret and publishes only to loopback", () => {
   const compose = fs.readFileSync(path.join(__dirname, "..", "..", "..", "docker-compose.yml"), "utf8");
   const block = compose.slice(compose.indexOf("\n  admin-management:"));
-  const service = block.slice(0, block.indexOf("\n  ", 3) === -1 ? block.length : block.indexOf("\n  ", 3));
+  // Bound at the next line indented ZERO or exactly two spaces -- the next top-level
+  // key or the next service. `indexOf("\n  ", 3)` stops at the first NESTED key
+  // instead: "\n    image:" is a newline followed by two spaces too. That left a
+  // "service block" of nothing but the header line, which no assertion below could
+  // ever match and which made the `doesNotMatch` pass without reading anything.
+  const next = block.slice(3).search(/\n(?: {2})?\S/);
+  const service = next === -1 ? block : block.slice(0, next + 3);
   // This app holds no credential at all -- that is the point of it being a proxy.
   assert.doesNotMatch(service, /env_file|PASSWORD|TOKEN|SECRET|API_KEY/);
   assert.match(service, /127\.0\.0\.1:3400:3400/);
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --test apps/admin-management/test/public-ui.test.js
@@ -1625,7 +1631,7 @@ node --test apps/admin-management/test/public-ui.test.js
 
 Expected: both fail — there is no `admin-management` service.
 
-- [ ] **Step 3: Write them**
+- [x] **Step 3: Write them**
 
 Create `apps/admin-management/Dockerfile`:
 
@@ -1653,8 +1659,10 @@ In `docker-compose.yml`, add the service after `customer-order`:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3400:3400"
-    # NO env_file. This app holds no credential -- it serves files and forwards
-    # requests. Everything that needs a secret is behind it.
+    # Deliberately NO env-file key and no credential of any kind. This app serves
+    # files and forwards requests; everything that needs a secret is behind it.
+    # Hyphenated on purpose: public-ui.test.js greps this block for the underscored
+    # key and cannot tell a declaration from a mention of one in prose.
     environment:
       PORT: 3400
       # By service name over the `default` bridge. It does NOT go out through nginx
@@ -1667,7 +1675,7 @@ In `docker-compose.yml`, add the service after `customer-order`:
     oom_score_adj: 500
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/admin-management/test/public-ui.test.js
@@ -1676,7 +1684,17 @@ docker compose config --quiet && echo "compose file parses"
 
 Expected: tests pass and compose validates.
 
-- [ ] **Step 5: Commit**
+**Task 6 left `apps/core-api/test/deploy-config.test.js:249` RED, and Task 9 as
+written does not repair it.** That test pins the service list with a `deepEqual`,
+requires an interpolated `env_file` from *every* service, and requires the deploy to
+export every interpolated image variable. This task's service breaks all three: it is
+a fifth service, it deliberately has no env-file, and nothing sets
+`ADMIN_MANAGEMENT_IMAGE` until Task 9(d). Task 9 must therefore ALSO edit that test —
+add `admin-management` to the expected list and make the env-file requirement skip the
+one service that is documented as holding no credential — not merely append its own new
+test. Until then `npm test` is 530/531 with one failure.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/admin-management/Dockerfile docker-compose.yml \

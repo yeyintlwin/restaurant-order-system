@@ -73,3 +73,26 @@ test("this app's README describes what it is, not what it was going to be", () =
   // that does not exist.
   assert.doesNotMatch(readme, /daily sales report/i);
 });
+
+test("the compose service names this app and points it at core-api", () => {
+  const compose = fs.readFileSync(path.join(__dirname, "..", "..", "..", "docker-compose.yml"), "utf8");
+  assert.match(compose, /^ {2}admin-management:/m);
+  assert.match(compose, /ADMIN_MANAGEMENT_IMAGE/);
+  // It reaches core-api by service name over the default bridge, not through nginx.
+  assert.match(compose, /CORE_API_URL: http:\/\/core-api:3200/);
+});
+
+test("the image carries no secret and publishes only to loopback", () => {
+  const compose = fs.readFileSync(path.join(__dirname, "..", "..", "..", "docker-compose.yml"), "utf8");
+  const block = compose.slice(compose.indexOf("\n  admin-management:"));
+  // Bound at the next line indented ZERO or exactly two spaces -- the next top-level
+  // key or the next service. `indexOf("\n  ", 3)` stops at the first NESTED key
+  // instead: "\n    image:" is a newline followed by two spaces too. That left a
+  // "service block" of nothing but the header line, which no assertion below could
+  // ever match and which made the `doesNotMatch` pass without reading anything.
+  const next = block.slice(3).search(/\n(?: {2})?\S/);
+  const service = next === -1 ? block : block.slice(0, next + 3);
+  // This app holds no credential at all -- that is the point of it being a proxy.
+  assert.doesNotMatch(service, /env_file|PASSWORD|TOKEN|SECRET|API_KEY/);
+  assert.match(service, /127\.0\.0\.1:3400:3400/);
+});
