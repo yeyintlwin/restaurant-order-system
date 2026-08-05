@@ -19,7 +19,7 @@ const PRODUCTION_SECRET = "0123456789abcdef0123456789"; // 26 characters
 
 const PRODUCTION_ENV = Object.freeze({
   NODE_ENV: "production",
-  API_PUBLIC_ORIGIN: "https://api.yeyintlwin.com",
+  API_PUBLIC_ORIGIN: "https://admin.yeyintlwin.com",
   TRUSTED_PROXY_HOPS: "1",
   POSTGRES_PASSWORD: PRODUCTION_SECRET,
   DATABASE_MIGRATION_URL: `postgres://core_api_owner:${PRODUCTION_SECRET}@core-db:5432/core`,
@@ -208,7 +208,7 @@ test("API_PUBLIC_ORIGIN is an origin, and plaintext is a development-only relaxa
     startupConfiguration(withEnv(DEV_ENV, { API_PUBLIC_ORIGIN: "http://127.0.0.1:3200" })).apiPublicOrigin,
     "http://127.0.0.1:3200"
   );
-  assert.equal(startupConfiguration(PRODUCTION_ENV).apiPublicOrigin, "https://api.yeyintlwin.com");
+  assert.equal(startupConfiguration(PRODUCTION_ENV).apiPublicOrigin, "https://admin.yeyintlwin.com");
 
   for (const bad of [
     "api.yeyintlwin.com",
@@ -504,7 +504,7 @@ test("the compose reader reads the real file and cannot pass by returning nothin
   assert.ok(Object.hasOwn(COMPOSE_CORE_API, "TERMINAL_ALLOWED_ORIGINS"));
   assert.equal(COMPOSE_CORE_API.TERMINAL_ALLOWED_ORIGINS, "");
   assert.equal(COMPOSE_CORE_API.TZ, "UTC");
-  assert.equal(COMPOSE_CORE_API.API_PUBLIC_ORIGIN, "https://api.yeyintlwin.com");
+  assert.equal(COMPOSE_CORE_API.API_PUBLIC_ORIGIN, "https://admin.yeyintlwin.com");
   assert.equal(COMPOSE_CORE_API.TRUSTED_PROXY_HOPS, "1");
 
   assert.throws(() => composeEnvironment("core-apiii"), /declares no service "core-apiii"/);

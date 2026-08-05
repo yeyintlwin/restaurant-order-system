@@ -87,7 +87,12 @@ services:
       PORT: 3200
       HOST: 0.0.0.0
       TZ: UTC
-      API_PUBLIC_ORIGIN: https://api.yeyintlwin.com
+      # The origin BROWSERS use for cookie-authenticated requests, which is the admin
+      # app -- it serves the UI and proxies /api, so core-api only ever sees requests
+      # whose Origin is this. api.yeyintlwin.com keeps answering for terminal and
+      # service callers, which authenticate by bearer and are exempt from the Origin
+      # check entirely (spec 5.3).
+      API_PUBLIC_ORIGIN: https://admin.yeyintlwin.com
       # Empty means no CORS headers are emitted at all -- the Phase-1 default; the
       # OPTIONS responder ships inert.
       TERMINAL_ALLOWED_ORIGINS: ""

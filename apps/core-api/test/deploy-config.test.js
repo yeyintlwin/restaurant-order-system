@@ -195,7 +195,7 @@ test("core-api joins both networks, publishes only on loopback, and health-check
   assert.match(text, /^      HOST: 0\.0\.0\.0$/m);
 
   assert.match(text, /^      PORT: 3200$/m);
-  assert.match(text, /^      API_PUBLIC_ORIGIN: https:\/\/api\.yeyintlwin\.com$/m);
+  assert.match(text, /^      API_PUBLIC_ORIGIN: https:\/\/admin\.yeyintlwin\.com$/m);
   assert.match(text, /^      TERMINAL_ALLOWED_ORIGINS: ""$/m);   // Phase 1: no CORS headers at all
   assert.match(text, /^      TRUSTED_PROXY_HOPS: 1$/m);
 

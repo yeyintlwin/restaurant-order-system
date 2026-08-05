@@ -25,7 +25,11 @@ Bare section references (§5.3, §6.2, §9.5) point at
 
 ## Execution log
 
-**Status: 5 of 9 tasks done.**
+**Status: 7 of 9 tasks done.** Task 8 is deliberately out of order and NOT done — the
+`admin.yeyintlwin.com` certificate does not exist yet, and `ssl_certificate` is read at
+parse time, so shipping its server block early makes `nginx -t` fail and the deploy roll
+back. Task 9 is next; Task 8 goes in once the DNS record has propagated and certbot has
+run.
 
 Append one row per working session. A task counts as finished only when all of its
 steps are ticked and its commit exists.
@@ -37,6 +41,8 @@ steps are ticked and its commit exists.
 | 2026-08-05 | Task 3: `public/api.js`, `fetch` injected. 9/9 pass, 19/19 for the app. **The dual-export footer was KEPT as written** — `require()` did not throw, so the fallback was not taken; see the note under Step 4 for why, and for the Node floor it costs. | **3/9** | `feat(admin-management): the API client, with fetch injected so 401 is testable` | Task 4 |
 | 2026-08-05 | Task 4: the page, the stylesheet, `app.js` and the CSP. 6/6 new, **25/25 for the app** — `server.test.js` stayed green with the fifth header. Step 2's red measured exactly as predicted (0/6, three assertion failures and three `ENOENT`). Step 4's directory-form command still fails the way Task 1 documented; used `npm --prefix apps/admin-management test`. | **4/9** | `feat(admin-management): one page, three states, and the server's own error text` | Task 5 |
 | 2026-08-05 | Task 5: the README, the root `scripts.test` entry, the root README line. 2/2 new, 27/27 for the app. **Full suite green, five suites: 14 + 33 + 69 + 531 + 27.** core-api unchanged at 531 (530 pass, 1 pre-existing `# SKIP` — C6, platform repositories do not exist yet). The root README already listed `apps/admin-management`, so Step 3's "add it" was a rewrite of a stale line, not an insertion — see the note under Step 3. | **5/9** | `feat(admin-management): a README that describes the app, and a suite the root script runs` | Task 6 |
+| 2026-08-05 | Task 6: the Dockerfile and the compose service. 2/2 new, 29/29 for the app. **This session appended no row of its own; the row is reconstructed here from commit `bcf8d8e`.** It left `deploy-config.test.js:249` red on purpose — the fifth service is not in the deploy's expected list until Task 9. | **6/9** | `feat(admin-management): an image with no secret and a loopback-only port` | Task 7 |
+| 2026-08-05 | Task 7: `API_PUBLIC_ORIGIN` → `admin.yeyintlwin.com`. **"Six sites" measured as five in this commit, not three** — `config.test.js` holds three of them and `deploy-config.test.js:198` a fourth that the task's own `grep` cannot find, because the literal is backslash-escaped inside a regex. See the notes under Steps 2 and 3. Step 2's red landed on the compose-reader assertion, not on the frozen `PRODUCTION_ENV` fixture, which no compose edit can reach. Task 8 SKIPPED deliberately — no certificate yet. | **7/9** | `feat: API_PUBLIC_ORIGIN is the admin app, and the deploy probes say so too` | Task 9 |
 
 Baseline at the head of this plan, measured: **14 / 33 / 69 / 531**, 0 failures,
 1 skip (C6, guarded on `repositories/platform/`, which arms in Plan 2c).
@@ -1720,6 +1726,8 @@ failure shape §9.5 exists to design away.
 - Modify: `docker-compose.yml`
 - Modify: `.github/workflows/deploy.yml`
 - Modify: `apps/core-api/test/config.test.js`
+- Modify: `apps/core-api/test/deploy-config.test.js` — **added during execution.** It pins
+  the compose line a second time, in escaped-regex form; see the note under Step 3.
 
 **Nothing under `apps/core-api/` *source* changes.** The variable's value moves; no
 check, route or header is touched.
@@ -1730,7 +1738,7 @@ check, route or header is touched.
 grep -rn "api.yeyintlwin.com" docker-compose.yml .github/workflows/deploy.yml apps/core-api/test/config.test.js
 ```
 
-- [ ] **Step 1: Run the suite first, so you know what green looked like**
+- [x] **Step 1: Run the suite first, so you know what green looked like**
 
 ```bash
 export CORE_API_TEST_DATABASE_URL='postgres://core_api_owner:devpassword@127.0.0.1:5433/postgres'
@@ -1739,7 +1747,12 @@ node --test apps/core-api/test/config.test.js apps/core-api/test/deploy-config.t
 
 Expected: green. Record the counts; you are about to break and restore them.
 
-- [ ] **Step 2: Change the variable alone, and watch it go red**
+> **Measured: 45 tests, 44 pass, 1 fail — and the fail is NOT green.** `config.test.js`
+> is 29/29. `deploy-config.test.js` is 15/16, still carrying the failure Task 6 left at
+> `deploy-config.test.js:249` and Task 9 repairs (see the note under Task 6 Step 4).
+> That is the number to restore, not zero.
+
+- [x] **Step 2: Change the variable alone, and watch it go red**
 
 In `docker-compose.yml`:
 
@@ -1760,7 +1773,16 @@ Expected: **FAIL** on the frozen `PRODUCTION_ENV` fixture. That failure is the
 mechanism working — it is the only automated thing standing between this edit and a
 broken deploy.
 
-- [ ] **Step 3: Move the other two sites in the same commit**
+> **The mechanism fired, but NOT where this step says.** Measured 28/29, one failure:
+> `"the compose reader reads the real file and cannot pass by returning nothing"` at
+> `config.test.js:507`, which asserts `COMPOSE_CORE_API.API_PUBLIC_ORIGIN` against the
+> real file. `PRODUCTION_ENV` is a hand-written frozen literal — no edit to
+> `docker-compose.yml` can move it, so it cannot be the guard. **The guard is the
+> compose reader.** Worth knowing, because the reader is what a future edit must not
+> be allowed to delete: `PRODUCTION_ENV` would keep passing over a compose file that
+> says anything at all.
+
+- [x] **Step 3: Move the other two sites in the same commit**
 
 In `apps/core-api/test/config.test.js`, the `PRODUCTION_ENV` fixture:
 
@@ -1787,7 +1809,28 @@ called:
           # would be a 403 and the probe would prove nothing about login.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+> **"The other two sites" is FIVE, and this step's own `grep` cannot find two of them.**
+> Measured, all moved in this commit:
+>
+> 1. `config.test.js:22` — the `PRODUCTION_ENV` fixture, the one this step names.
+> 2. `config.test.js:211` — `assert.equal(startupConfiguration(PRODUCTION_ENV).apiPublicOrigin, ...)`.
+>    Moving the fixture without this one just relocates the red.
+> 3. `config.test.js:507` — the compose-reader assertion, which is what Step 2 actually broke.
+> 4. `deploy-config.test.js:198` — `assert.match(text, /^      API_PUBLIC_ORIGIN: https:\/\/api\.yeyintlwin\.com$/m)`,
+>    a **sixth pin on the compose line**, in a file this task does not list under **Files**.
+>    It survived the mirrors `grep` because the literal is written with backslash-escaped
+>    dots: `grep "api.yeyintlwin.com"` matches `.` as any character, but nothing in it
+>    matches a backslash. **Any future grep for a mirror of a hostname must also try the
+>    escaped form** — `grep -rn 'api\\\.yeyintlwin\\\.com'`.
+> 5. `deploy.yml` — both `Origin:` headers, exactly two as stated.
+>
+> The three `api.yeyintlwin.com` literals left in `config.test.js:204-218` are correct as
+> they stand: they are `DEV_ENV` overrides exercising trailing-slash normalisation and the
+> six rejection shapes, and any hostname serves. The `api.yeyintlwin.com` in
+> `deploy-config.test.js:358/647/653/712` and all of `nginx-config.test.js` are the HOST,
+> which is not moving — only the browser Origin moved.
+
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 node --test apps/core-api/test/config.test.js apps/core-api/test/deploy-config.test.js
@@ -1796,10 +1839,18 @@ npm test
 
 Expected: back to green, with the counts from Step 1.
 
-- [ ] **Step 5: Commit**
+> **Measured: back to Step 1 exactly — 45 tests, 44 pass, 1 fail, and the one fail is
+> Task 6's `deploy-config.test.js:249`, unchanged.** `docker compose config --quiet`
+> still parses. Full suite: 14 / 33 / 69 / 531 (529 pass, 1 fail, 1 skip) and
+> admin-management 29/29 run separately — the root `npm test` chain stops at the red
+> core-api suite and never reaches the fifth, which is the gating behaviour Task 5's
+> note predicted.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker-compose.yml .github/workflows/deploy.yml apps/core-api/test/config.test.js \
+        apps/core-api/test/deploy-config.test.js \
         docs/superpowers/plans/2026-08-05-admin-management-signin.md
 git commit -m "feat: API_PUBLIC_ORIGIN is the admin app, and the deploy probes say so too"
 ```

@@ -288,10 +288,15 @@ jobs:
           # BLOCK NOW FAILS WHEN THE HOP COUNT PRODUCES THE WRONG ADDRESS -- that is what
           # the three tests after the psql are for, and the earlier `hops` check stays
           # only because it names the variable's actual value in its message.
+          #
+          # The Origin is the ADMIN app, not this host. core-api compares Origin to
+          # API_PUBLIC_ORIGIN, and that is admin.yeyintlwin.com since the admin UI
+          # became the only cookie-authenticated caller. Sending this host's name here
+          # would be a 403 and the probe would prove nothing about login.
           probe_status=$(curl -s -o /tmp/xff-probe.body -w '%{http_code}' -m 5 \
             --resolve api.yeyintlwin.com:443:127.0.0.1 \
             -X POST https://api.yeyintlwin.com/api/admin/auth/login \
-            -H 'Origin: https://api.yeyintlwin.com' -H 'Content-Type: application/json' \
+            -H 'Origin: https://admin.yeyintlwin.com' -H 'Content-Type: application/json' \
             -H 'X-Forwarded-For: 203.0.113.99' \
             --data-binary '{"email":"xff-probe@invalid.test","password":"x"}' </dev/null)
           test "$probe_status" = "401" || { echo "login probe: expected 401 from core-api, got $probe_status"; cat /tmp/xff-probe.body; exit 1; }
@@ -321,7 +326,7 @@ jobs:
           # nothing that depends on reaching core-api from this address may run after it.
           codes=$(for n in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code} ' -m 3 \
             --resolve api.yeyintlwin.com:443:127.0.0.1 -X POST https://api.yeyintlwin.com/api/admin/auth/login \
-            -H 'Origin: https://api.yeyintlwin.com' -H 'Content-Type: application/json' \
+            -H 'Origin: https://admin.yeyintlwin.com' -H 'Content-Type: application/json' \
             --data-binary '{"email":"deploy-probe@invalid.test","password":"x"}' </dev/null; done)
           echo "$codes" | grep -q 429 || { echo 'nginx limit_req is not firing on the login route'; exit 1; }
 
