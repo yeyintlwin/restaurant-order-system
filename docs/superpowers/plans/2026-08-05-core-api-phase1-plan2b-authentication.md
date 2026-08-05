@@ -188,8 +188,19 @@ Everything it needs is already in `config.js` `DEFAULTS` and already in
 `docker-compose.yml`'s `core-api` block: `SESSION_IDLE_SECONDS`,
 `SESSION_ABSOLUTE_SECONDS`, `LOGIN_RATE_PER_MINUTE`, `LOGIN_TIME_BUDGET_MS`,
 `SCRYPT_SLOTS`, `PASSWORD_ABUSE_THRESHOLD`, `ADMIN_MINT_RATE_PER_10MIN`,
+`PAIR_RATE_PER_MINUTE`, `PAIRING_MINT_RATE_PER_10MIN`, `ROTATE_RATE_PER_HOUR`,
 `TRUSTED_PROXY_HOPS`, `API_PUBLIC_ORIGIN`. Plan 1 defaulted them for exactly this
 plan.
+
+**The last three are in that list on purpose, even though no route in Plan 2b reads
+them.** Task 1's roster declares all seven §5.7 limiters, and every one names the
+config field that sizes it — `pair-global`, `pairing-code-mint` and `token-rotate`
+included, because the roster is written once and the routes that consume those three
+arrive with the terminal plan. An earlier draft of this paragraph named only the
+rate knobs 2b's own routes use, which reads as though the other three do not exist;
+they do (`config.js` `DEFAULTS`, and the matching camelCase readers below it), and a
+later task that "fixes" a `ceilingKey` it believes is undefined would be breaking a
+correct roster.
 
 The consequence worth stating: **`config.js` `DEFAULTS`, `docker-compose.yml` and
 `.env.example` do not move in this plan.** `config.test.js`'s `deepEqual(DEFAULTS,
@@ -6783,6 +6794,28 @@ grep -rn "runs a forged-XFF probe as a gate" .
 grep -rn "the settled four\|exactly four entries" apps docs
 grep -rn "SOURCE_FILES.length >=" apps/core-api/test/source-structure.test.js
 ```
+
+**Two passages no grep above will find, reported by the Task 2 executor.** Landing
+the limiter-roster boot check made both of these FALSE, and neither carries a
+deferral keyword — they are flat assertions about what the code does, so a
+marker-hunting sweep walks straight past them:
+
+| Site | What it now claims falsely |
+| --- | --- |
+| slice spec `§7.1` | *"It does not. `validateRouteTable` inspects only `options.limit.key` … there is no roster constant and no `limit.name` membership check anywhere in the service."* |
+| slice spec `§11.6` | *"The limiter roster check does not exist at all, and §5.7 says it does … Registering `limit: { key: "ip", name: "invented" }` today throws nothing and the process listens."* |
+
+Both were **true when written** and are the reason Tasks 1 and 2 exist. Rewrite each
+as a record of what was wrong and what fixed it — the slice spec's own §11.9 is the
+model for that shape — rather than deleting them, because the reasoning about *why*
+the check waited until 2b is worth keeping. Find them with:
+
+```bash
+grep -n "limit.name\|roster constant" docs/superpowers/specs/2026-08-04-core-api-identity-slice-design.md
+```
+
+The same treatment is owed to §11.6's audit-vocabulary paragraph, which says the
+membership check "is ready and was deliberately not landed here" — Task 3 landed it.
 
 **Not every `Plan 2` is this plan.** `infra/README.md`'s `AUDIT_RETENTION_DAYS`
 sentence points at `scripts/sweep-expired.js`, which is **Plan 2d** and is not built
