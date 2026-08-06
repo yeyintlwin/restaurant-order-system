@@ -240,10 +240,14 @@ tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
 tr.sub td{padding:0;border-bottom:0}
 .twig{display:flex;align-items:center;gap:14px;position:relative;
       margin-left:34px;padding:3px 18px 3px 30px;font-size:13px}
-/* The tree only exists in the table layout, which is desktop only, so the 44px finger
-   target is not what is being served here — a branch that is half again as tall as it
-   needs to be is. */
-.twig .edit{min-height:34px}
+.twig{cursor:pointer}
+.twig:hover{background:#f6f7f8}
+/* The mark, not a word. A row that opens says so the way every other openable row here
+   does, and the button is real so the keyboard can reach it. */
+.twig-go{flex:none;width:26px;height:26px;padding:0;border:0;background:none;position:relative}
+.twig-go::before{content:"";position:absolute;left:10px;top:9px;
+  border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.twig:hover .twig-go::before,.twig-go:focus-visible::before{border-left-color:var(--accent)}
 /* the trunk, running down through the group */
 .twig::before{content:"";position:absolute;left:0;top:0;bottom:0;border-left:1px solid #d3d8dc}
 /* and the elbow into this branch */
@@ -1213,16 +1217,20 @@ function openInfo(row){
     // is the only place they exist — and a bare "Shops 3" above a list nobody noticed was
     // worse than useless, so the count is stated once, at the end, as the sum of what is
     // actually listed.
-    const branches=shopsOf(name);
-    rows.push(["##","Shops"]);
-    if(!branches.length) rows.push(["","No shops yet."]);
-    // Each branch is a line you can open, not a line with everything crammed into it. The
-    // manager, the phone and the address live on the branch's own sheet, which is also how
-    // a phone reaches them now that the expanded rows are not there.
-    branches.forEach((b,i)=>rows.push([b.shop, b.tables+" tables", false, null,
-      ()=>openBranch(name,i)]));
-    if(branches.length) rows.push(["Total",
-      branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
+    /* Only where the tree is not. On a wide screen the row behind this dialog already
+       lists every branch, with its manager and its own Details — printing them again here
+       is the same list twice, three inches apart. In card layout there is no tree, so this
+       is the only way through and it stays. */
+    if(cards.matches){
+      const branches=shopsOf(name);
+      rows.push(["##","Shops"]);
+      if(!branches.length) rows.push(["","No shops yet."]);
+      // Each branch is a line you can open, not a line with everything crammed into it.
+      branches.forEach((b,i)=>rows.push([b.shop, b.tables+" tables", false, null,
+        ()=>openBranch(name,i)]));
+      if(branches.length) rows.push(["Total",
+        branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
+    }
   }else if(kind==="shop"){
     const mgr=btn.dataset.manager;
     sub="Shop of Sakura Kitchen";
@@ -1274,10 +1282,6 @@ function openBranch(company,i){
   if(!infoDialog.open) infoDialog.showModal();
 }
 
-document.getElementById("co-rows").addEventListener("click",e=>{
-  const go=e.target.closest(".branch");
-  if(go) openBranch(go.dataset.company, Number(go.dataset.branch));
-},true);
 
 document.getElementById("info-close").addEventListener("click",()=>infoDialog.close());
 // Looking often ends in changing. The way through is one button, not a second hunt.
@@ -1418,6 +1422,10 @@ function openCompany(btn){
 }
 
 document.getElementById("co-rows").addEventListener("click",e=>{
+  // A branch row opens the branch. It is checked first because it sits inside a row that
+  // would otherwise be read as the company's.
+  const twig=e.target.closest(".twig");
+  if(twig){ openBranch(twig.dataset.company, Number(twig.dataset.branch)); return; }
   if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
   if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   // Edit is a real action and wins over the row it sits in.
@@ -1493,9 +1501,11 @@ function toggleBranches(row){
     if(i===list.length-1) tr.classList.add("twig-last");
     // One cell across the row. Nothing lines up under the parent's columns, so nothing
     // claims to be the same kind of thing as the parent's values.
+    // The row IS the way in, so it carries a mark rather than a button spelling out what
+    // pressing it does — the same bargain the cards make on a phone.
     tr.innerHTML='<td colspan="6"><div class="twig">'+
                  '<span class="twig-name"></span><span class="twig-meta"></span>'+
-                 '<button type="button" class="edit branch">Details</button></div></td>';
+                 '<button type="button" class="twig-go"></button></div></td>';
     tr.querySelector(".twig-name").textContent=b.shop;
     const meta=tr.querySelector(".twig-meta");
     if(b.manager) meta.textContent=b.manager+" · "+b.tables+" tables";
@@ -1504,8 +1514,9 @@ function toggleBranches(row){
       none.className="none"; none.textContent="No manager";
       meta.append(none," · "+b.tables+" tables");
     }
-    const go=tr.querySelector(".branch");
-    go.dataset.company=company; go.dataset.branch=String(i);
+    const twig=tr.querySelector(".twig");
+    twig.dataset.company=company; twig.dataset.branch=String(i);
+    tr.querySelector(".twig-go").setAttribute("aria-label","Details for "+b.shop);
     at.after(tr); at=tr;
   });
 }

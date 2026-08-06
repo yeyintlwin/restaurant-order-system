@@ -346,14 +346,20 @@ ends — no tint, no band, no extra rules.
 The last branch is **marked in code**, not selected with `:last-of-type`, which on a `tr`
 means "the last row in the table" and would have quietly matched nothing.
 
-**Every branch has a Details button**, and a sheet behind it: address, manager, manager's
-phone, tables. There is no Edit on that sheet — a shop belongs to its CEO, and the platform
+**A branch row opens its own sheet** — address, manager, manager's phone, tables. The row
+itself is the control and carries a `›`, not a button spelling out what pressing it does;
+that is the same bargain the cards make on a phone. The `›` is a real button so the keyboard
+can reach it. There is no Edit on that sheet — a shop belongs to its CEO, and the platform
 owner reading one does not make it theirs.
 
-That sheet is also why the company's own Shops list stopped carrying everything. It used to
-print manager, tables, phone and address into two crammed lines per branch; it now prints
-the branch and its table count, and the line **opens** — so a phone, where the expanded rows
-do not exist at all, still has a way through to the same sheet.
+**The company's own sheet lists branches only where the tree does not.** On a wide screen
+the row behind the dialog already shows every branch with its manager, so printing them
+again in the dialog is the same list twice, three inches apart. In card layout there is no
+tree, so there the Shops section stays and each line opens the same branch sheet.
+
+That sheet is also why the list stopped carrying everything. It used to print manager,
+tables, phone and address into two crammed lines per branch; it now prints the branch and
+its table count, and the line opens.
 
 Considered and rejected: labelling each cell inline (*"Manager · Thura Zaw"*), which repeats
 the word down the list; and dropping the columns entirely for one sentence per branch, which
