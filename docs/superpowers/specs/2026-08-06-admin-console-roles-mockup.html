@@ -43,9 +43,11 @@ body[data-as="staff"]    [data-for]:not([data-for~="staff"]){display:none}
       padding:18px 12px;padding-left:calc(12px + env(safe-area-inset-left));
       overflow-y:auto;overscroll-behavior:contain}
 
-.scope{padding:0 8px 22px}
+.scope{display:flex;align-items:center;gap:10px;padding:0 8px 22px}
 .scope .co{font-size:14px;font-weight:600;letter-spacing:-.01em}
 .scope .sh{font-size:12px;color:var(--rail-dim);margin-top:1px}
+/* Where the CEO actually sees their own brand. Nothing sits here until they set one. */
+.brand{flex:none;width:26px;height:26px;border-radius:6px;background:#fff center/cover no-repeat}
 
 .nav{flex:1}
 .nav a{display:block;padding:8px 10px;border-radius:8px;color:var(--rail-ink);text-decoration:none;font-size:13.5px}
@@ -116,6 +118,12 @@ tbody tr:hover{background:#fcfcfd}
 .who{display:flex;align-items:center;gap:11px;min-width:0}
 .who .av{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
          display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
+/* A real logo replaces the initials rather than sitting behind them. */
+.av.has-logo{background-color:#fff;background-size:cover;background-position:center;
+             color:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.av.lg{width:44px;height:44px;font-size:14px}
+.logo-set{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.logo-set .warn{flex-basis:100%;margin:2px 0 0}
 /* A long address wraps instead of pushing the row wider than the screen. `break-word` and
    not `anywhere`: `anywhere` also drives the column's own minimum width down to one
    character, and a table short of room then squeezes the name into a vertical stack of
@@ -184,6 +192,7 @@ th.acth{text-align:right}
 .facts>div{display:grid;grid-template-columns:112px 1fr;gap:14px;padding:11px 0;font-size:13.5px}
 .facts>div+div{border-top:1px solid var(--line)}
 .facts .k{color:var(--muted);font-size:13px}
+.facts .sub2{display:block;margin-top:1px;font-size:12.5px;color:var(--muted)}
 .facts .head{margin-top:8px;padding:14px 0 4px;border-top:1px solid var(--line);
              font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
              color:var(--muted)}
@@ -218,6 +227,7 @@ tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
 
 tr.sub td{background:#fbfbfc;padding-top:8px;padding-bottom:8px;font-size:13px;color:var(--muted)}
 tr.sub .leaf{padding-left:43px}
+tr.sub .leaf-mgr.none{color:#9c5c17;font-weight:550}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
@@ -362,8 +372,11 @@ tr.sub .leaf{padding-left:43px}
 
   <aside class="rail" id="rail">
     <div class="scope">
-      <div class="co" id="scope-co">Restaurant OS</div>
-      <div class="sh" id="scope-sh">Platform</div>
+      <span class="brand" id="scope-logo" hidden></span>
+      <div>
+        <div class="co" id="scope-co">Restaurant OS</div>
+        <div class="sh" id="scope-sh">Platform</div>
+      </div>
     </div>
 
     <nav class="nav">
@@ -618,6 +631,18 @@ tr.sub .leaf{padding-left:43px}
         </div>
 
         <div class="panel" data-for="company">
+          <!-- The brand comes before the settings, because it is the one thing on this
+               screen that other people see. Initials until there is something better. -->
+          <div class="row">
+            <div><label for="logo-btn">Logo</label><p>Shown wherever the company appears. A square image works best.</p></div>
+            <div class="logo-set">
+              <span class="av lg" id="logo-preview">SK</span>
+              <button type="button" class="ghost" id="logo-btn">Upload</button>
+              <button type="button" class="ghost" id="logo-clear" hidden>Remove</button>
+              <input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden />
+              <p class="warn" id="logo-warn" role="alert" hidden></p>
+            </div>
+          </div>
           <div class="row">
             <div><label for="s1">Company name</label><p>Shown on receipts and printed orders.</p></div>
             <input id="s1" value="Sakura Kitchen" />
@@ -1002,6 +1027,54 @@ document.querySelectorAll("[data-go]").forEach(a=>a.addEventListener("click",e=>
   if(!wide.matches) drawer(false);
 }));
 
+/* ── the company's own mark ───────────────────────────────────────────────── */
+/* The CEO sets it; it then stands in for the initials everywhere the company is drawn —
+   the platform owner's list included, since it is the same company either way. */
+const LOGO_LIMIT=2*1024*1024;
+let companyLogo="";
+
+function paintLogo(){
+  const preview=document.getElementById("logo-preview");
+  const rowAv=(document.querySelector('[data-company="Sakura Kitchen"]')||{closest:()=>null})
+    .closest?.("tr")?.querySelector(".av");
+  for(const el of [preview,rowAv]){
+    if(!el) continue;
+    el.classList.toggle("has-logo",!!companyLogo);
+    el.style.backgroundImage=companyLogo?"url("+companyLogo+")":"";
+  }
+  document.getElementById("logo-clear").hidden=!companyLogo;
+  document.getElementById("logo-btn").textContent=companyLogo?"Replace":"Upload";
+  // The rail carries it only for the people who belong to that company.
+  const mark=document.getElementById("scope-logo");
+  const mine=document.body.dataset.as!=="platform";
+  mark.hidden=!(companyLogo&&mine);
+  mark.style.backgroundImage=companyLogo?"url("+companyLogo+")":"";
+}
+
+document.getElementById("logo-btn").addEventListener("click",()=>
+  document.getElementById("logo-file").click());
+
+document.getElementById("logo-file").addEventListener("change",e=>{
+  const file=e.target.files&&e.target.files[0];
+  const warn=document.getElementById("logo-warn");
+  warn.hidden=true;
+  if(!file) return;
+  if(!file.type.startsWith("image/")){ warn.textContent="That is not an image."; warn.hidden=false; return; }
+  if(file.size>LOGO_LIMIT){
+    warn.textContent="That file is "+Math.round(file.size/1024/1024*10)/10+"MB. Keep it under 2MB.";
+    warn.hidden=false; return;
+  }
+  const reader=new FileReader();
+  reader.onload=()=>{ companyLogo=reader.result; paintLogo(); };
+  reader.readAsDataURL(file);
+  e.target.value="";                        // so the same file can be picked again
+});
+
+document.getElementById("logo-clear").addEventListener("click",()=>{
+  companyLogo=""; paintLogo();
+  document.getElementById("logo-warn").hidden=true;
+});
+
 /* ── looking something up ─────────────────────────────────────────────────── */
 /* A row can only carry a few columns. Everything else about a record lives at the top of
    the record's own dialog, above the form, as facts rather than fields. A phone number
@@ -1116,7 +1189,10 @@ function openInfo(row){
     const branches=shopsOf(name);
     rows.push(["##","Shops"]);
     if(!branches.length) rows.push(["","No shops yet."]);
-    for(const [shop,tables] of branches) rows.push([shop, tables+" tables"]);
+    // Who runs each branch and how big it is. Knowing a manager's name is not managing
+    // them — every control over that person is still the CEO's (section 6.2).
+    for(const b of branches)
+      rows.push([b.shop, (b.manager||"No manager")+" · "+b.tables+" tables", false, b.address]);
     if(branches.length) rows.push(["Total",
       branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
   }else if(kind==="shop"){
@@ -1165,7 +1241,7 @@ function facts(el,rows){
   el.textContent="";
   const shown=rows.filter(r=>r[1]);
   el.hidden=!shown.length;
-  for(const [key,value,tel] of shown){
+  for(const [key,value,tel,sub] of shown){
     // A run of lines that means something on its own gets a heading, or it reads as more
     // of the list above it. The branches were doing exactly that at the bottom of the
     // company sheet: present, and invisible.
@@ -1184,6 +1260,13 @@ function facts(el,rows){
       a.textContent=value;
       v.append(a);
     }else v.textContent=value;
+    // A quieter second line for the thing the value alone leaves out — a branch's address
+    // under its manager and table count.
+    if(sub){
+      const s2=document.createElement("span");
+      s2.className="sub2"; s2.textContent=sub;
+      v.append(s2);
+    }
     line.append(k,v);
     el.append(line);
   }
@@ -1274,15 +1357,18 @@ document.getElementById("co-rows").addEventListener("click",e=>{
    platform owner may see them down to the branch. Sakura Kitchen's breakdown is read off
    the CEO's own Shops table rather than kept as a second copy. */
 const OTHER_SHOPS={
-  "Mandalay Grill":[["Mandalay Central",10]],
-  "Shwe Café":[["Shwe Gone Daing",8],["Kamayut",6]],
+  "Mandalay Grill":[{shop:"Mandalay Central",manager:"Thiri Aung",address:"78th St, corner of 32nd",tables:10}],
+  "Shwe Café":[{shop:"Shwe Gone Daing",manager:"Moe Thu",address:"Shwe Gone Daing Rd",tables:8},
+               {shop:"Kamayut",manager:"",address:"Pyay Rd, Kamayut",tables:6}],
 };
 function shopsOf(company){
   if(company==="Sakura Kitchen")
-    return [...document.querySelectorAll("#shops-rows tr")].map(r=>[
-      r.querySelector(".who .nm").textContent,
-      Number(r.querySelector('[data-label="Tables"]').textContent||0),
-    ]);
+    return [...document.querySelectorAll("#shops-rows tr")].map(r=>({
+      shop:    r.querySelector(".who .nm").textContent,
+      address: r.querySelector(".who .em").textContent,
+      manager: r.querySelector("[data-shop]").dataset.manager||"",
+      tables:  Number(r.querySelector('[data-label="Tables"]').textContent||0),
+    }));
   return OTHER_SHOPS[company]||[];
 }
 // Every company row gets a triangle. Doing it here rather than in the markup means a
@@ -1323,15 +1409,18 @@ function toggleBranches(row){
     return;
   }
   let at=row;
-  for(const [shop,tables] of list){
+  for(const b of list){
     const tr=document.createElement("tr");
     tr.className="sub";
-    // The table count lands in the same column as the company's total, so the branch
-    // figures read as the parts that make up the sum.
-    tr.innerHTML='<td class="leaf"></td><td></td><td></td>'+
+    // Manager under the CEO column, tables under the company's total: each branch figure
+    // sits beneath the thing it is part of.
+    tr.innerHTML='<td class="leaf"></td><td class="leaf-mgr"></td><td></td>'+
                  '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
-    tr.querySelector(".leaf").textContent=shop;
-    tr.querySelector('[data-label="Tables"]').textContent=tables;
+    tr.querySelector(".leaf").textContent=b.shop;
+    const mgr=tr.querySelector(".leaf-mgr");
+    mgr.textContent=b.manager||"No manager";
+    if(!b.manager) mgr.classList.add("none");
+    tr.querySelector('[data-label="Tables"]').textContent=b.tables;
     at.after(tr); at=tr;
   }
 }
@@ -1861,6 +1950,8 @@ function setAs(as){
   /* Naming someone is the job of the person who has to answer for them. Everyone here has
      someone above them except the platform owner, who has nobody to ask — the same gap
      that leaves them with no way to reset their own password. */
+  paintLogo();                              // the rail's mark belongs to the company, not the platform
+
   const above={platform:"", company:"the platform owner", manager:"your CEO", staff:"your manager"}[as];
   const name=document.getElementById("a1");
   name.readOnly=!!above;

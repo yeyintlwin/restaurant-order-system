@@ -142,7 +142,19 @@ typed, and on an existing shop it says what the change will do instead:
 The second line matters. A printed QR code on a physical table stops working when the
 record behind it goes, and nobody should discover that from a customer.
 
-### 4A.3 Every user has a phone number
+### 4A.3 The company's own mark
+
+A CEO can set a **logo** for their company, at the top of their Settings — above the name,
+because it is the one thing on that screen other people see. It replaces the initials
+wherever the company is drawn: the CEO's own sidebar, and the platform owner's Companies
+list, since it is the same company either way.
+
+Initials remain the fallback, so nothing is ever blank. Uploads are capped at 2MB and
+rejected with a reason rather than silently.
+
+Shops do not get their own logo. A branch is part of a brand, not a brand.
+
+### 4A.4 Every user has a phone number
 
 Required on every person: staff, manager, CEO. In a restaurant the phone is how you
 actually reach someone; the email address is only how the system recognises them.
@@ -272,8 +284,17 @@ to see every look.
 The boundary is about **who is inside a company**, not how large it is. The platform owner
 sees, for every company:
 
-- how many shops it has, and **the name and table count of each one**
+- how many shops it has, and for each one its **name, address, manager and table count**
 - how many tables in total
+
+**Revised.** This section first said the platform owner saw only shop names and counts.
+Managers were added deliberately: hosting a company means knowing who runs each branch, and
+a name is not a control. Everything that acts on that person — their access, their password,
+their shop, whether they are a manager at all — is still the CEO's alone, and there is still
+no screen in the platform console that lists a person.
+
+Their phone number is **not** shown. Knowing who runs a branch is not the same as being able
+to ring past the CEO, and nobody has asked for that.
 
 Clicking a company row opens its branches beneath it. **One at a time** — opening another
 closes the last, so the table never grows into a list of everything.
