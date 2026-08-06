@@ -346,25 +346,28 @@ ends — no tint, no band, no extra rules.
 The last branch is **marked in code**, not selected with `:last-of-type`, which on a `tr`
 means "the last row in the table" and would have quietly matched nothing.
 
-### 6.2 The CEO's shops open the same way, one rung deeper
-
-The same tree, two levels, because the CEO's world has two below it:
+### 6.2 The CEO's shops open the same way
 
 ```text
-▾ BG  Bogyoke        Thura Zaw     12   2   Active   Details  Edit
-      └─ Thura Zaw       Manager                              ›
-         ├─ Aye Aye Mon  Staff                                ›
-         └─ Min Min      Staff · Suspended                     ›
-   HL  Hledan        Ko Ko Naing    8   1   Active   Details  Edit
+Shop            Manager        Tables  Staff  Status   Actions
+▾ BG  Bogyoke   Thura Zaw        12      2    Active   Details Edit
+                  ├─ Aye Aye Mon   Staff                       ›
+                  └─ Min Min       Staff · Suspended           ›
+   HL  Hledan   Ko Ko Naing        8      1    Active   Details Edit
 ```
 
-**Staff hang off the manager, not off the shop.** That is the org chart, and it is what the
-second level is for. A shop has exactly one manager, so the first level has exactly one node
-and closes its trunk immediately; the staff trunk then runs from the manager's own name.
+**Staff descend from the Manager column**, not from the shop's name. The first attempt put
+the manager in as a node of its own with the staff beneath — a proper two-level tree, and
+it printed the manager twice: once in the row's Manager column and again three pixels
+below.
 
-A shop with no manager puts its staff at the first level instead — the shops table already
-says *No manager* in its own column, and §3.2 says who is covering. An empty shop says
-*Nobody here yet.*
+The fix is positional. A staff row leaves the first cell empty and starts its cell at the
+Manager column, so the trunk lands directly under the name already printed there. The
+hierarchy is stated by where the line falls rather than by repeating the person it belongs
+to.
+
+A shop with no manager keeps the same geometry — the staff descend from the words *No
+manager*, which is exactly right. An empty shop says *Nobody here yet.*
 
 The tree is read off the CEO's own Users table rather than kept as a second copy, so it can
 never disagree with the list it came from. Each person opens their own sheet, the same one

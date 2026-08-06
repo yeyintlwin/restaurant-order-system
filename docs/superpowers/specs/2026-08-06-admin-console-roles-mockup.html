@@ -254,11 +254,12 @@ tr.sub td{padding:0;border-bottom:0}
 .twig::after{content:"";position:absolute;left:0;top:50%;width:19px;border-top:1px solid #d3d8dc}
 /* the last one closes the trunk instead of running past it */
 tr.twig-last .twig::before{bottom:50%}
-/* One rung deeper. The trunk of a level-2 group sits exactly where its parent's name
-   starts, so the staff read as hanging off the manager rather than off the shop. */
-.twig.d2{margin-left:64px}
+/* Staff descend from the MANAGER column, not from the shop's name. Their row leaves the
+   first column empty and starts its cell at the manager, so the trunk lands under the name
+   already printed there — the hierarchy without a second copy of the manager. */
+.twig.under{margin-left:18px}
 .twig-name{font-weight:550;color:var(--ink);min-width:130px}
-.twig.d2 .twig-name{font-weight:400}
+.twig.under .twig-name{font-weight:400}
 .twig-meta{flex:1;color:var(--muted)}
 .twig-meta .none{color:#9c5c17;font-weight:550}
 tr.twig-last td{border-bottom:1px solid var(--line)}
@@ -1647,40 +1648,36 @@ function toggleShopPeople(row){
   row.querySelector(".disc")?.setAttribute("aria-expanded","true");
 
   const shop=row.querySelector("[data-shop]").dataset.shop;
-  const {manager,staff}=peopleOf(shop);
+  const {staff}=peopleOf(shop);
   let at=row;
 
-  const leaf=(btn,role,depth,last)=>{
+  /* The first cell is left empty so the second starts at the Manager column. The manager
+     is NOT repeated as a node: their name is already printed in the row above, and the
+     trunk descending from underneath it says these people are theirs. */
+  const leaf=(btn,last)=>{
     const tr=document.createElement("tr");
     tr.className="sub"+(last?" twig-last":"");
-    tr.innerHTML='<td colspan="6"><div class="twig'+(depth===2?" d2":"")+'">'+
-                 '<span class="twig-name"></span><span class="twig-meta"></span>'+
+    tr.innerHTML='<td></td><td colspan="5"><div class="twig under">'+
+                 '<span class="twig-name"></span><span class="twig-meta">Staff</span>'+
                  '<button type="button" class="twig-go"></button></div></td>';
     const name=btn.dataset.person;
     tr.querySelector(".twig-name").textContent=name;
-    const meta=tr.querySelector(".twig-meta");
-    meta.textContent=role;
     if(btn.dataset.access==="suspended"){
       const s=document.createElement("span");
       s.className="none"; s.textContent="Suspended";
-      meta.append(" · ",s);
+      tr.querySelector(".twig-meta").append(" · ",s);
     }
     tr.querySelector(".twig").dataset.person=name;
     tr.querySelector(".twig-go").setAttribute("aria-label","Details for "+name);
     at.after(tr); at=tr;
   };
 
-  if(manager){
-    // Exactly one manager, so it is the only node at this depth — and its trunk closes
-    // straight away, leaving the staff to hang off the manager instead of the shop.
-    leaf(manager,"Manager",1,true);
-    staff.forEach((b,i)=>leaf(b,"Staff",2,i===staff.length-1));
-  }else if(staff.length){
-    staff.forEach((b,i)=>leaf(b,"Staff",1,i===staff.length-1));
-  }else{
+  if(staff.length) staff.forEach((b,i)=>leaf(b,i===staff.length-1));
+  else{
     const tr=document.createElement("tr");
     tr.className="sub twig-last";
-    tr.innerHTML='<td colspan="6"><div class="twig"><span class="twig-meta">Nobody here yet.</span></div></td>';
+    tr.innerHTML='<td></td><td colspan="5"><div class="twig under">'+
+                 '<span class="twig-meta">Nobody here yet.</span></div></td>';
     at.after(tr);
   }
 }
