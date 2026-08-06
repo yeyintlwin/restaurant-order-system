@@ -319,9 +319,23 @@ line up under the sum they add to.
 
 **The group carries its own header.** Two of the columns change meaning inside it — Company
 becomes Shop, CEO becomes Manager — and without saying so a manager's name reads as another
-CEO sitting under the first. So an expanded group opens with a small grey `SHOP · MANAGER ·
-TABLES` line of its own, quieter than the table's header so it reads as belonging to the
-rows beneath it rather than competing with the one at the top.
+CEO sitting under the first. So an expanded group opens with its own `SHOP · MANAGER ·
+TABLES · ACTIONS` row.
+
+It took two goes. Set in grey text one weight apart from the rows beneath it, the header
+still read as more of the same list. It is now a **band**: a darker fill, spaced caps, a
+rule under it, and the whole group tinted and carrying a bar down its left edge so it reads
+as one block belonging to the company above rather than three rows floating between two
+companies.
+
+**Every branch has a Details button**, and a sheet behind it: address, manager, manager's
+phone, tables. There is no Edit on that sheet — a shop belongs to its CEO, and the platform
+owner reading one does not make it theirs.
+
+That sheet is also why the company's own Shops list stopped carrying everything. It used to
+print manager, tables, phone and address into two crammed lines per branch; it now prints
+the branch and its table count, and the line **opens** — so a phone, where the expanded rows
+do not exist at all, still has a way through to the same sheet.
 
 Considered and rejected: labelling each cell inline (*"Manager · Thura Zaw"*), which repeats
 the word down the list; and dropping the columns entirely for one sentence per branch, which

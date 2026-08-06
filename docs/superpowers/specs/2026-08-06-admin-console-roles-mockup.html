@@ -189,8 +189,16 @@ th.acth{text-align:right}
    revision and it muddled both: you could not tell what was a value and what was a
    control. Nothing here is a form. */
 .facts{margin:0 0 4px}
-.facts>div{display:grid;grid-template-columns:112px 1fr;gap:14px;padding:11px 0;font-size:13.5px}
-.facts>div+div{border-top:1px solid var(--line)}
+.facts>div,.facts>button>div{display:grid;grid-template-columns:112px 1fr;gap:14px;
+                             padding:11px 0;font-size:13.5px}
+.facts>div+div,.facts>button+div,.facts>div+button,.facts>button+button{border-top:1px solid var(--line)}
+/* A fact that opens something. Same line, plus a mark and somewhere to press. */
+.facts>button{display:block;width:100%;padding:0 26px 0 0;border:0;background:none;
+              text-align:left;position:relative}
+.facts>button::after{content:"";position:absolute;right:6px;top:50%;margin-top:-4px;
+  border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.facts>button:hover{background:#f7f8f9}
+.facts>button:hover::after{border-left-color:var(--accent)}
 .facts .k{color:var(--muted);font-size:13px}
 .facts .sub2{display:block;margin-top:1px;font-size:12.5px;color:var(--muted)}
 .facts .head{margin-top:8px;padding:14px 0 4px;border-top:1px solid var(--line);
@@ -225,14 +233,17 @@ th.acth{text-align:right}
 tr.open>td{background:var(--accent-soft)}
 tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
 
-tr.sub td{background:#fbfbfc;padding-top:8px;padding-bottom:8px;font-size:13px;color:var(--muted)}
-tr.sub .leaf{padding-left:43px}
+/* The group is a block, not a few paler rows. A tinted band and a rule down its left edge
+   tie it to the company above it and keep it off the companies below. */
+tr.sub td{background:#f4f5f7;padding-top:9px;padding-bottom:9px;font-size:13px;color:var(--ink)}
+tr.sub td:first-child{box-shadow:inset 3px 0 0 #d8dfdb}
+tr.sub .leaf{padding-left:40px}
 tr.sub .leaf-mgr.none{color:#9c5c17;font-weight:550}
-/* The group's own header. Smaller and quieter than the table's, so it reads as belonging
-   to the rows under it rather than competing with the one at the top. */
-tr.subhead td{padding-top:12px;padding-bottom:3px;font-size:11px;font-weight:600;
-              letter-spacing:.05em;text-transform:uppercase;color:#9aa0a6}
-tr.open+tr.subhead td{border-top:0}
+/* And its header is a header: darker band, spaced caps, a rule under it. Grey-on-grey at
+   one weight apart was not enough — a manager's name read as more of the heading. */
+tr.subhead td{background:#e7eaec;padding-top:7px;padding-bottom:7px;
+              font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+              color:#5d646d;border-bottom:1px solid #d7dbdf}
 tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
@@ -1196,11 +1207,11 @@ function openInfo(row){
     const branches=shopsOf(name);
     rows.push(["##","Shops"]);
     if(!branches.length) rows.push(["","No shops yet."]);
-    // Who runs each branch, how to reach them, and how big it is. Reaching a manager is
-    // still not managing one — every control over that person stays with the CEO.
-    for(const b of branches)
-      rows.push([b.shop, (b.manager||"No manager")+" · "+b.tables+" tables", false,
-                 {tel:b.manager?(PHONE[b.manager]||""):"", text:b.address}]);
+    // Each branch is a line you can open, not a line with everything crammed into it. The
+    // manager, the phone and the address live on the branch's own sheet, which is also how
+    // a phone reaches them now that the expanded rows are not there.
+    branches.forEach((b,i)=>rows.push([b.shop, b.tables+" tables", false, null,
+      ()=>openBranch(name,i)]));
     if(branches.length) rows.push(["Total",
       branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
   }else if(kind==="shop"){
@@ -1231,8 +1242,33 @@ function openInfo(row){
   document.getElementById("info-h").textContent=name;
   document.getElementById("info-sub").textContent=sub;
   facts(document.getElementById("info-facts"),rows);
+  document.getElementById("info-edit").hidden=false;
   infoDialog.showModal();
 }
+
+/* A branch has its own sheet, reached from the expanded row or from the company's Shops
+   list. There is no Edit on it: a shop belongs to the CEO, and the platform owner reading
+   one does not make it theirs. */
+function openBranch(company,i){
+  const b=shopsOf(company)[i];
+  if(!b) return;
+  infoFor=null;
+  document.getElementById("info-h").textContent=b.shop;
+  document.getElementById("info-sub").textContent="Shop of "+company;
+  facts(document.getElementById("info-facts"),[
+    ["Address",       b.address],
+    ["Manager",       b.manager||"No manager"],
+    ["Manager phone", b.manager?(PHONE[b.manager]||""):"", true],
+    ["Tables",        b.tables],
+  ]);
+  document.getElementById("info-edit").hidden=true;
+  if(!infoDialog.open) infoDialog.showModal();
+}
+
+document.getElementById("co-rows").addEventListener("click",e=>{
+  const go=e.target.closest(".branch");
+  if(go) openBranch(go.dataset.company, Number(go.dataset.branch));
+},true);
 
 document.getElementById("info-close").addEventListener("click",()=>infoDialog.close());
 // Looking often ends in changing. The way through is one button, not a second hunt.
@@ -1249,7 +1285,7 @@ function facts(el,rows){
   el.textContent="";
   const shown=rows.filter(r=>r[1]);
   el.hidden=!shown.length;
-  for(const [key,value,tel,sub] of shown){
+  for(const [key,value,tel,sub,go] of shown){
     // A run of lines that means something on its own gets a heading, or it reads as more
     // of the list above it. The branches were doing exactly that at the bottom of the
     // company sheet: present, and invisible.
@@ -1287,6 +1323,16 @@ function facts(el,rows){
       v.append(s2);
     }
     line.append(k,v);
+    // A line that leads somewhere is a button and looks like one, so a phone — where the
+    // expanded rows do not exist — still has a way through to the branch.
+    if(go){
+      const b=document.createElement("button");
+      b.type="button"; b.className="factgo";
+      b.append(line);
+      b.addEventListener("click",go);
+      el.append(b);
+      continue;
+    }
     el.append(line);
   }
 }
@@ -1430,27 +1476,31 @@ function toggleBranches(row){
   /* Two of these columns change meaning inside a group — Company becomes Shop, CEO becomes
      Manager — and without saying so a manager's name reads as another CEO. The group gets
      its own header rather than borrowing one that no longer describes it. */
+  const company=row.querySelector("[data-company]").dataset.company;
   const head=document.createElement("tr");
   head.className="sub subhead";
   head.innerHTML='<td class="leaf">Shop</td><td>Manager</td><td></td>'+
-                 '<td>Tables</td><td></td><td></td>';
+                 '<td>Tables</td><td></td><td class="act">Actions</td>';
   row.after(head);
 
   let at=head;
-  for(const b of list){
+  list.forEach((b,i)=>{
     const tr=document.createElement("tr");
     tr.className="sub";
     // Manager under the CEO column, tables under the company's total: each branch figure
-    // sits beneath the thing it is part of.
+    // sits beneath the thing it is part of. Its own Details sheet holds the rest.
     tr.innerHTML='<td class="leaf"></td><td class="leaf-mgr"></td><td></td>'+
-                 '<td class="meta state" data-label="Tables"></td><td></td><td></td>';
+                 '<td class="meta state" data-label="Tables"></td><td></td>'+
+                 '<td class="act"><button type="button" class="edit branch">Details</button></td>';
     tr.querySelector(".leaf").textContent=b.shop;
     const mgr=tr.querySelector(".leaf-mgr");
     mgr.textContent=b.manager||"No manager";
     if(!b.manager) mgr.classList.add("none");
     tr.querySelector('[data-label="Tables"]').textContent=b.tables;
+    const go=tr.querySelector(".branch");
+    go.dataset.company=company; go.dataset.branch=String(i);
     at.after(tr); at=tr;
-  }
+  });
 }
 document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
 
