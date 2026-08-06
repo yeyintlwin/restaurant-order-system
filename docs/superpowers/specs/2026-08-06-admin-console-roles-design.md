@@ -111,23 +111,63 @@ screen**: Manager is not merely the field that makes one-manager-per-shop true, 
 only field the CEO has there at all. The name, the address and the table count sit above it
 as facts.
 
-### 3.0 One person, one shop — and the list says so
+### 3.0 A manager may run two shops, and the list says who already runs what
 
-Somebody already running a branch cannot be handed a second one. A manager is on a floor,
-and two floors at once is not a thing a person can do.
+**Reversed.** This briefly forbade it — anyone holding a shop was greyed out, on the
+reasoning that a person cannot stand on two floors.
 
-The rule is enforced where the choice is made, and it is **shown, not hidden**:
+Real restaurants do not work like that. When a chain opens a branch, the CEO sends the
+manager whose shop is already steady: *"you take the new one, this place runs itself now."*
+For a while that person holds both. **Forbidding it does not prevent the arrangement — it
+just means the arrangement stops being written down**, and the console shows a shop with no
+manager while somebody is plainly managing it.
 
-> Ko Ko Naing — manages Hledan   *(greyed out)*
+So the label informs and does not block:
 
-A name quietly missing from the list reads as a bug. The CEO would go hunting for it,
-because they know Ko Ko Naing works here. A name that is present, greyed and says why is an
-answer to the question before it is asked.
+> Ko Ko Naing — also manages Hledan
 
-The shop's own current manager stays selectable — they are the current value, not a clash.
+The same sentence doing the opposite job. Before it explained a refusal; now it is what a
+CEO needs to know before deciding, and the deciding is theirs.
 
-Freeing someone is the same two levers as before: replace them here (§3.1), or suspend them
-from the Users screen, which empties their slot in the same action (§3.2).
+**The shops are the slots, not a field on the person.** A manager's shops are read back from
+the shop rows that name them — the Users list says *"Bogyoke and Insein"* because those two
+slots hold that name, not because anything was written on the manager. A handover therefore
+cannot leave a stale second copy behind.
+
+Two consequences fall out and both are handled:
+
+- **The CEO's person dialog no longer offers a Shop field for a manager.** A single-value
+  picker would collapse two shops into whichever one it happened to be showing. The limit
+  line says where the decision lives: *"Which shops this manager runs is set on the Shops
+  screen, one shop at a time. They can run more than one."*
+- **Suspending a manager empties every slot they hold**, not one. Clearing the first and
+  leaving the second would leave a shop being run by somebody who can no longer sign in —
+  the exact failure §3.2 exists to prevent, just harder to notice.
+
+### 3.0.1 Two shops is a switch, not a bigger screen
+
+Every screen a manager has is about **one** shop: their staff, the shop's phone, its hours,
+its receipt footer, the country it is in. So holding two does not make those screens larger.
+It adds a question — *which one am I looking at?* — and the honest place for that is the
+line in the rail that already answers it.
+
+The shop name under the company becomes a picker, **only when there is a second shop to
+pick**. A picker with one option pretends there is a choice, and the first thing anyone does
+with it is open it to find out there is not.
+
+It is deliberately the same size and colour as the text it replaces. The rail does not grow
+a widget; the same line starts answering back.
+
+Switching repaints everything shop-shaped at once: the staff list, the shop settings, and
+the language default in Account settings — which follows the shop you are in, so a manager
+of a Yangon branch and a Bangkok one sees the right default on each.
+
+The manager's staff list is **read off the CEO's own Users table**, filtered to the selected
+shop. A second hand-written copy would be one switch away from disagreeing with the list it
+came from — the same bargain the shop tree already makes (§6.2).
+
+Freeing someone remains the same two levers: replace them on a shop (§3.1), or suspend them
+from the Users screen (§3.2).
 
 ### 3.1 Replacing a manager is one decision, not two
 
@@ -849,11 +889,19 @@ them.
 Neither column exists. The `0001_init` schema keys companies and shops on name, which is a
 display string and is not URL-safe.
 
-**One person, one shop needs a constraint, not a check in a handler.** A user may hold at
-most one manager slot. Expressed in the shop table it is trivial — the manager is a column
-on the shop, and one person appearing on two rows is what has to be refused. A unique
-partial index on that column does it; application code alone will lose the race the first
-time two CEOs save at once. §3.0 is the screen; this is what makes it true.
+**A manager may hold more than one shop, so there is no constraint to add — and that is a
+change of plan, not an absence of one.** An earlier draft asked for a unique partial index
+on the shop's manager column to enforce one-person-one-shop. **Do not add it.** §3.0 now
+allows the arrangement a CEO actually makes when a branch opens, and an index would refuse
+it at the database, where the console could not explain why.
+
+What does need care is the read: a manager's shops are the slots that name them, so the
+Users list and every "which shops does this person run" question is a query over shops, not
+a column on the user. Storing it twice is how the two disagree.
+
+**Suspending a manager must clear every slot they hold, in the same transaction.** One
+slot was enough while one was all they could hold. Now, clearing the first and leaving the
+second leaves a shop run by an account that cannot sign in.
 
 **Language and currency go on the SHOP, beside the time zone that is already there.**
 `shops.time_zone` exists and is NOT NULL; `shops.currency` and `shops.language` do not exist

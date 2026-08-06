@@ -46,6 +46,23 @@ body[data-as="staff"]    [data-for]:not([data-for~="staff"]){display:none}
 .scope{display:flex;align-items:center;gap:10px;padding:0 8px 22px}
 .scope .co{font-size:14px;font-weight:600;letter-spacing:-.01em}
 .scope .sh{font-size:12px;color:var(--rail-dim);margin-top:1px}
+/* A manager can run two shops, so the line that says which one becomes the control that
+   changes it. It only appears when there is a second shop to change to — a picker with one
+   option is a lie about how much choice there is. It is deliberately the same size and
+   colour as the text it replaces, so the rail does not grow a widget; it is the same line,
+   now answering back. */
+.scope-pick{display:block;margin:1px 0 0 -5px;padding:1px 18px 1px 5px;max-width:150px;
+  border:0;border-radius:5px;background:transparent;color:var(--rail-dim);
+  font:inherit;font-size:12px;line-height:1.5;cursor:pointer;
+  appearance:none;-webkit-appearance:none}
+.scope-pick:hover{background:rgb(255 255 255/8%);color:#fff}
+.scope-pick:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.scope-pick option{color:var(--ink);background:#fff}
+/* the mark that says this one opens, drawn on the wrapper so the select stays borderless */
+.scope-shop{position:relative}
+.scope-shop::after{content:"";position:absolute;right:5px;top:50%;margin-top:-2px;
+  pointer-events:none;border-top:4px solid var(--rail-dim);
+  border-left:3.5px solid transparent;border-right:3.5px solid transparent}
 /* Where the CEO actually sees their own brand. Nothing sits here until they set one. */
 .brand{flex:none;width:26px;height:26px;border-radius:6px;background:#fff center/cover no-repeat}
 
@@ -316,6 +333,11 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
 /* The line that says where this person's authority stops. */
 .limit{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);
        font-size:12.5px;color:var(--muted)}
+/* The same sentence inside a settings panel rather than a dialog. The row above it has
+   already drawn a rule, so a second one plus a 16px gap read as an empty row nobody put
+   there. It takes the rows' own gutter and separates itself from what follows instead. */
+.panel>.limit{margin:0;padding:14px 18px;border-top:0;border-bottom:1px solid var(--line)}
+.panel>.limit:last-child{border-bottom:0}
 
 .pair{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
 .pair.start{justify-content:flex-start;margin-top:10px}
@@ -444,7 +466,13 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <span class="brand" id="scope-logo" hidden></span>
       <div>
         <div class="co" id="scope-co">Restaurant OS</div>
+        <!-- One of these is shown at a time. A manager running a single shop reads their
+             shop's name; a manager running two picks between them here, because every screen
+             below is about one shop and this is the line that says which. -->
         <div class="sh" id="scope-sh">Platform</div>
+        <span class="scope-shop" id="scope-shop-wrap" hidden>
+          <select class="scope-pick" id="scope-shop" aria-label="Which shop you are looking at"></select>
+        </span>
       </div>
     </div>
 
@@ -2071,10 +2099,16 @@ function openPerson(btn,who){
     ? "They use this to sign in."
     : "This is how they sign in, so it cannot be changed here.";
 
-  // Only a CEO may move someone between shops.
+  /* Only a CEO may move someone between shops — and not even they may do it HERE for a
+     manager. A manager's shops are the slots that name them, they can now be two, and a
+     single-value picker would quietly collapse both into whichever one it happened to be
+     showing. The limit line below already says where that decision lives; this makes the
+     screen agree with it. */
   const shopField=document.getElementById("st-shop-field");
-  shopField.hidden=!ceo;
-  if(ceo && !adding && btn.dataset.shop!=="None") document.getElementById("st-shop").value=btn.dataset.shop;
+  const isManager=!adding && role==="Manager";
+  shopField.hidden=!ceo || isManager;
+  if(ceo && !adding && !isManager && btn.dataset.shop!=="None")
+    document.getElementById("st-shop").value=btn.dataset.shop;
 
   stTempField.hidden=!adding;
   if(adding) stTemp.value=firstPassword();
@@ -2087,7 +2121,9 @@ function openPerson(btn,who){
   if(!adding) document.querySelector('input[name="access"][value="'+btn.dataset.access+'"]').checked=true;
 
   document.getElementById("st-limit").textContent = ceo
-    ? "Managers are chosen on the Shops screen, not here."
+    ? (isManager
+        ? "Which shops this manager runs is set on the Shops screen, one shop at a time. They can run more than one."
+        : "Managers are chosen on the Shops screen, not here.")
     : "Only your CEO can make someone a manager or move them to another shop.";
 
   document.getElementById("staff-save").textContent=
@@ -2157,29 +2193,34 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
     btn.dataset.phone=phone;
     let note=name+" is now "+label.toLowerCase()+".";
     if(ceo){
-      const shop=document.getElementById("st-shop").value;
-      const shopCell=staffRow.querySelector('[data-label="Shop"]');
-      if(shopCell && btn.dataset.shop!=="None"){ shopCell.textContent=shop; shopCell.classList.remove("none"); btn.dataset.shop=shop; }
-      // Suspending a manager empties the slot on the shop too, or the Shops screen would
-      // keep showing someone who can no longer sign in.
-      if(btn.dataset.role==="Manager" && access==="suspended" && btn.dataset.shop!=="None"){
-        // Scoped to the shops table. data-shop is carried by every PERSON button too, and
-        // this resolved correctly only because #shops-rows happens to come first in the
-        // document — a promise this important should not rest on document order.
-        const shopBtn=document.querySelector('#shops-rows [data-shop="'+btn.dataset.shop+'"]');
-        if(shopBtn){
+      const manager=btn.dataset.role==="Manager";
+      // A manager's shops are their slots, not a field on them — moving one is done on the
+      // Shops screen, so this dialog does not offer it and does not overwrite it either.
+      if(!manager){
+        const shop=document.getElementById("st-shop").value;
+        const shopCell=staffRow.querySelector('[data-label="Shop"]');
+        if(shopCell && btn.dataset.shop!=="None"){ shopCell.textContent=shop; shopCell.classList.remove("none"); btn.dataset.shop=shop; }
+      }
+      /* Suspending a manager empties EVERY slot they hold. One used to be enough because
+         one was all they could hold; now that a manager can run two shops, clearing the
+         first and leaving the second would leave a shop being run by somebody who can no
+         longer sign in — which is the exact failure this rule exists to prevent, just
+         harder to notice. */
+      if(manager && access==="suspended"){
+        const held=shopsManagedBy(name);
+        for(const s of held){
+          const shopBtn=document.querySelector('#shops-rows [data-shop="'+s+'"]');
+          if(!shopBtn) continue;
           const cell=shopBtn.closest("tr").querySelector('[data-label="Manager"]');
           cell.classList.add("none");
           cell.textContent="No manager";
           shopBtn.textContent="Assign";
           shopBtn.dataset.manager="";
         }
-        note+=" "+btn.dataset.shop+" now has no manager.";
-        btn.dataset.shop="None";
-        const shopCell2=staffRow.querySelector('[data-label="Shop"]');
-        if(shopCell2){ shopCell2.textContent="None"; shopCell2.classList.add("none"); }
+        if(held.length) note+=" "+listOf(held)+(held.length>1?" now have":" now has")+" no manager.";
         refreshShopGaps(); refreshCompanyTotals();
       }
+      if(manager){ refreshManagerShopCells(); paintManagerScreens(); }
     }
     banner.textContent=note;
     staffDialog.close();
@@ -2369,7 +2410,7 @@ function openShop(btn, who="company", branch=null){
   document.getElementById("sh-mgr-hint").textContent = (wasManager
     ? "Only one person manages a shop. Choosing someone else replaces them."
     : "Nobody manages this shop yet. Until you choose someone, it is yours to run.")
-    + " Anyone already running a branch is greyed out.";
+    + " Anyone already running a branch says so — they can run two.";
   document.getElementById("sh-limit").textContent = platform
     ? "Who manages this shop is the CEO's to choose. You do not see the people inside a company."
     : "The name, address and number of tables are the platform owner's to set. Phone, "+
@@ -2395,30 +2436,59 @@ document.getElementById("shops-rows").addEventListener("click",e=>{
   if(row && !row.classList.contains("sub")) toggleShopPeople(row);
 });
 
-/* One person, one shop. Somebody already running a branch cannot be handed a second one:
-   a manager is on the floor, and two floors at once is not a thing a person can do.
+/* A manager MAY run two shops, and the list says who already runs what.
 
-   The rule is enforced where the choice is made, and it is SHOWN rather than hidden. A
-   name quietly missing from the list reads as a bug — "why can I not find Ko Ko Naing?" —
-   and the CEO would go hunting. A name that is present, greyed, and says why is an answer:
+   This was the other way round for one commit: anyone already holding a shop was greyed
+   out, on the reasoning that a person cannot stand on two floors. Real restaurants do not
+   work like that. When a chain opens a branch, the CEO sends the manager whose shop is
+   already steady — "you take the new one, this place runs itself now" — and for a while
+   that person holds both. Forbidding it does not prevent the arrangement; it just means
+   the arrangement stops being written down.
 
-       Ko Ko Naing — manages Hledan
+   So the label informs and does not block:
 
-   The person already managing THIS shop is of course still selectable; they are the
-   current value. Freeing someone up is done the way it always was — replace them here, or
-   suspend them from the Users screen, which empties their slot in the same action. */
-function paintManagerChoices(){
-  const taken={};
-  for(const b of document.querySelectorAll("#shops-rows [data-shop]"))
-    if(b.dataset.manager) taken[b.dataset.manager]=b.dataset.shop;
+       Ko Ko Naing — also manages Hledan
 
-  for(const o of shopMgr.options){
-    if(!o.value) continue;                       // "No manager" is always available
-    const at=taken[o.value];
-    const blocked=!!at && at!==shopWasName;
-    o.disabled=blocked;
-    o.textContent = blocked ? o.value+" — manages "+at : o.value;
+   Which is the same sentence doing the opposite job. Before it explained a refusal; now it
+   is the thing a CEO needs to know before deciding, and the deciding is theirs. */
+function shopsManagedBy(name){
+  if(!name) return [];
+  return [...document.querySelectorAll("#shops-rows [data-shop]")]
+    .filter(b=>b.dataset.manager===name).map(b=>b.dataset.shop);
+}
+
+/* A manager's shops are not stored on the manager. They are the slots that name them, so
+   the Users list reads them back rather than keeping a second copy that a handover would
+   leave behind. A manager holding two shops says both, in the one cell that has always
+   said where a person works. */
+function refreshManagerShopCells(){
+  for(const b of document.querySelectorAll("#ceo-rows [data-person]")){
+    if(b.dataset.role!=="Manager") continue;
+    const shops=shopsManagedBy(b.dataset.person);
+    const cell=b.closest("tr").querySelector('[data-label="Shop"]');
+    b.dataset.shop=shops.length?shops.join(", "):"None";
+    if(!cell) continue;
+    cell.textContent=shops.length?listOf(shops):"None";
+    cell.classList.toggle("none",!shops.length);
   }
+  tagCardLines();
+}
+
+function paintManagerChoices(){
+  for(const o of shopMgr.options){
+    if(!o.value) continue;                       // "No manager" is never annotated
+    const elsewhere=shopsManagedBy(o.value).filter(s=>s!==shopWasName);
+    o.disabled=false;
+    o.textContent = elsewhere.length
+      ? o.value+" — also manages "+listOf(elsewhere)
+      : o.value;
+  }
+}
+
+// "Bogyoke", "Bogyoke and Hledan", "Bogyoke, Hledan and Insein"
+function listOf(names){
+  return names.length<2 ? (names[0]||"")
+    : names.slice(0,-1).join(", ")+" and "+names[names.length-1];
 }
 
 // Only ask about the outgoing manager when there is one and they are being replaced.
@@ -2627,15 +2697,21 @@ function saveManager(){
   }
   btn.dataset.manager=picked;
 
-  shopDone.textContent = !picked
+  // Said out loud when it is now two, because that is the arrangement the CEO just made and
+  // the one they will want to remember making.
+  const alsoAt=picked ? shopsManagedBy(picked).filter(s=>s!==shop) : [];
+  shopDone.textContent = (!picked
     ? shop+" now has no manager."
     : wasManager
       ? picked+" now manages "+shop+". "+wasManager+
         (kept==="staff" ? " stays on as staff." : " has been suspended.")
-      : picked+" now manages "+shop+".";
+      : picked+" now manages "+shop+".")
+    + (alsoAt.length ? " They also manage "+listOf(alsoAt)+"." : "");
   shopDialog.close();
   shopDone.hidden=false;
   refreshShopGaps();
+  refreshManagerShopCells();       // the Users list says where each person works
+  paintManagerScreens();           // and the manager's own rail may have gained a shop
   closeShopPeople();
   shopDone.scrollIntoView({block:"nearest"});
 }
@@ -2721,6 +2797,100 @@ function paintShopSettingsPanel(){
   document.getElementById("m-lang").value=s.lang;
 }
 
+/* ── a manager who runs two shops ─────────────────────────────────────────── */
+/* Every screen a manager has is about ONE shop: their staff, the shop's phone, its hours,
+   its receipt footer. So holding two is not a bigger screen, it is a switch — and the
+   honest place for it is the line in the rail that already says which shop you are in.
+
+   It appears only when there is a second shop to switch to. A picker with one option
+   pretends there is a choice, and the first thing anyone does with it is open it to find
+   out there is not. */
+function myShops(){
+  const as=document.body.dataset.as;
+  if(as==="manager") return shopsManagedBy(PERSON.manager.nm);
+  if(as==="staff")   return [PERSON.staff.sh];
+  return [];
+}
+
+function paintScope(){
+  const as=document.body.dataset.as;
+  const shops=myShops();
+  const many=as==="manager" && shops.length>1;
+  const wrap=document.getElementById("scope-shop-wrap");
+  const sel=document.getElementById("scope-shop");
+
+  // A manager whose shops changed under them — appointed to a second, or moved off the one
+  // they were looking at — lands on a shop they still hold rather than on a stale name.
+  if(as==="manager" && shops.length && !shops.includes(PERSON.manager.sh))
+    PERSON.manager.sh=shops[0];
+
+  document.getElementById("scope-sh").hidden=many;
+  wrap.hidden=!many;
+  if(!many) return;
+
+  sel.textContent="";
+  for(const s of shops){
+    const o=document.createElement("option");
+    o.value=s; o.textContent=s;
+    sel.append(o);
+  }
+  sel.value=PERSON.manager.sh;
+}
+
+document.getElementById("scope-shop").addEventListener("change",e=>{
+  PERSON.manager.sh=e.target.value;
+  paintManagerScreens();
+});
+// Not navigation, so it must not close the drawer it sits inside.
+document.getElementById("scope-shop").addEventListener("click",e=>e.stopPropagation());
+
+/* Everything below the rail that is about "the shop I am in". Called on a switch, on a
+   role change, and whenever a manager slot moves underneath them. */
+function paintManagerScreens(){
+  paintScope();
+  renderManagerStaff();
+  paintShopSettingsPanel();
+  paintLanguage();
+}
+
+/* A manager's staff list is READ OFF the CEO's own Users table, filtered to the shop they
+   are looking at — the same bargain the shop tree makes. A second hand-written copy would
+   be one switch away from disagreeing with the list it came from. */
+function renderManagerStaff(){
+  const shop=PERSON.manager.sh;
+  const body=document.getElementById("staff-rows");
+  body.textContent="";
+  const mine=[...document.querySelectorAll("#ceo-rows [data-person]")]
+    .filter(b=>b.dataset.role!=="Manager" && b.dataset.shop===shop);
+
+  for(const p of mine){
+    const suspended=p.dataset.access==="suspended";
+    const tr=document.createElement("tr");
+    tr.innerHTML=
+      '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
+      '<td class="meta state" data-label="Status"></td>'+
+      '<td class="act"><button class="edit">Edit</button></td>';
+    tr.querySelector(".av").textContent=initials(p.dataset.person);
+    tr.querySelector(".nm").textContent=p.dataset.person;
+    tr.querySelector(".em").textContent=p.dataset.email||"";
+    const st=tr.querySelector('[data-label="Status"]');
+    st.textContent=suspended?"Suspended":"Active";
+    st.classList.toggle("ok",!suspended);
+    const b=tr.querySelector(".edit");
+    b.dataset.staff=p.dataset.person;
+    b.dataset.phone=p.dataset.phone||"";
+    b.dataset.email=p.dataset.email||"";
+    b.dataset.access=p.dataset.access||"active";
+    body.append(tr);
+  }
+  if(!mine.length){
+    const tr=document.createElement("tr");
+    tr.innerHTML='<td colspan="3"><p class="blank" style="margin:0">Nobody here yet.<span>Add the people who work at '+shop+'.</span></p></td>';
+    body.append(tr);
+  }
+  addDetailButtons(); tagCardLines();
+}
+
 /* ── changing a password ──────────────────────────────────────────────────── */
 const pwDialog=document.getElementById("pw-dialog");
 const pwOpen=document.getElementById("pw-open");
@@ -2769,8 +2939,7 @@ function setAs(as){
      someone above them except the platform owner, who has nobody to ask — the same gap
      that leaves them with no way to reset their own password. */
   paintLogo();                              // the rail's mark belongs to the company, not the platform
-  paintShopSettingsPanel();                 // a manager's screen is about their shop
-  paintLanguage();                          // and what is above them differs per level
+  paintManagerScreens();                    // every manager screen is about ONE shop
 
   const above={platform:"", company:"the platform owner", manager:"your CEO", staff:"your manager"}[as];
   const name=document.getElementById("a1");
@@ -2807,8 +2976,8 @@ go(document.querySelector("[data-go].on"));
 // switched roles yet and the control rendered with no options at all: an empty box on
 // Account settings for whoever opened the console and never touched Viewing as.
 // A screen that is only correct after you have been somewhere else is not correct.
-paintShopSettingsPanel();
-paintLanguage();
+refreshManagerShopCells();
+paintManagerScreens();
 refreshShopsEmpty();
 </script>
 </body>
