@@ -1124,8 +1124,13 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <!-- Explicit values, because the label is rewritten at runtime to say why a name
            cannot be chosen. Without them the option's value IS its text, and appending
            "— manages Hledan" would quietly change who is being appointed. -->
+      <!-- Three kinds of answer, not two. "Nobody yet" is a gap and says so in amber;
+           "I run it myself" is a decision and says nothing alarming, because for a small
+           shop it is the permanent, correct answer. Conflating them meant a one-person shop
+           wore a warning for ever about work that was never coming. -->
       <select id="sh-mgr">
-        <option value="">No manager</option>
+        <option value="">Nobody yet — still looking</option>
+        <option value="__owner">I run this shop myself</option>
         <option value="Thura Zaw">Thura Zaw</option>
         <option value="Ko Ko Naing">Ko Ko Naing</option>
         <option value="Aye Aye Mon">Aye Aye Mon</option>
@@ -1133,6 +1138,30 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
         <option value="Hnin Wai">Hnin Wai</option>
       </select>
       <p class="hint" id="sh-mgr-hint">Only one person manages a shop. Choosing someone else replaces them.</p>
+    </div>
+
+    <!-- The day-to-day three, shown to the CEO ONLY while the shop has no manager to own
+         them — either because nobody is hired yet or because the CEO runs it themselves.
+         This closes a hole rather than adding a feature: the Shops screen has always
+         promised "until you appoint one, that shop is yours to run — you can already do
+         everything a manager can there", and until now the CEO could not reach that shop's
+         phone number at all. A receipt was printing without one and nobody could fix it. -->
+    <div class="group" id="sh-day">
+      <strong class="who">Day to day</strong>
+      <p class="ask" id="sh-day-why"></p>
+      <div class="field">
+        <label for="sh-phone">Phone</label>
+        <input id="sh-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+        <p class="hint">Printed on the receipt.</p>
+      </div>
+      <div class="field">
+        <label for="sh-hours">Opening hours</label>
+        <input id="sh-hours" />
+      </div>
+      <div class="field">
+        <label for="sh-footer">Receipt footer</label>
+        <input id="sh-footer" />
+      </div>
     </div>
 
     <!-- Appears the moment a different name is picked, because that is the moment the
@@ -1451,8 +1480,8 @@ function openInfo(row){
     sub="Shop of Sakura Kitchen";
     rows=[
       ["Address",       under],
-      ["Manager",       mgr||"None"],
-      ["Manager phone", mgr?(PHONE[mgr]||""):"", true],
+      ["Manager",       mgr===OWNER ? "You run this one" : (mgr||"None")],
+      ["Manager phone", mgr&&mgr!==OWNER?(PHONE[mgr]||""):"", true],
       ["Tables",        cell("Tables")],
       ["Staff",         cell("Staff")],
       ["Status",        cell("Status")],
@@ -1499,8 +1528,10 @@ function openBranch(company,i){
     // Readable after the fact, not only while it is being typed. The URL is a fact about
     // this branch the way its address is.
     ["Address on the web", coSlugOf&&b.slug ? coSlugOf+"/"+b.slug : ""],
-    ["Manager",       b.manager||"No manager"],
-    ["Manager phone", b.manager?(PHONE[b.manager]||""):"", true],
+    // The platform owner needs a number for whoever runs this branch at nine on a Friday.
+    // When that is the CEO, the CEO's number is the right one to print here.
+    ["Manager", b.manager===OWNER ? "Run by the owner" : (b.manager||"No manager")],
+    ["Manager phone", b.manager && b.manager!==OWNER ? (PHONE[b.manager]||"") : "", true],
     ["Tables",        String(b.tables)],
   ]);
   document.getElementById("info-edit").hidden=false;
@@ -1873,7 +1904,8 @@ function toggleBranches(row){
                  '<button type="button" class="twig-go"></button></div></td>';
     tr.querySelector(".twig-name").textContent=b.shop;
     const meta=tr.querySelector(".twig-meta");
-    if(b.manager) meta.textContent=b.manager+" · "+b.tables+" tables";
+    if(b.manager===OWNER) meta.textContent="Run by the owner · "+b.tables+" tables";
+    else if(b.manager) meta.textContent=b.manager+" · "+b.tables+" tables";
     else{
       const none=document.createElement("span");
       none.className="none"; none.textContent="No manager";
@@ -2399,22 +2431,43 @@ function openShop(btn, who="company", branch=null){
     ["Tables",  String(shopTables.value)],
   ]);
 
+  const owned=wasManager===OWNER, named=wasManager&&!owned;
   document.getElementById("shop-h").textContent = platform
     ? (shopAdding ? "Add branch" : "Edit branch")
-    : (wasManager ? "Change the manager" : "Assign a manager");
+    : (named ? "Change the manager" : owned ? btn.dataset.shop : "Assign a manager");
   document.getElementById("shop-sub").textContent = platform
     ? (shopAdding ? "A new branch of "+company+"." : b.shop+" · "+company)
-    : (wasManager ? btn.dataset.shop : btn.dataset.shop+" has been running without one.");
-  // The CEO can never be looking at a brand-new shop again, so the old "adding" sentence
-  // has gone. What is left is the two states a CEO actually meets.
-  document.getElementById("sh-mgr-hint").textContent = (wasManager
-    ? "Only one person manages a shop. Choosing someone else replaces them."
-    : "Nobody manages this shop yet. Until you choose someone, it is yours to run.")
-    + " Anyone already running a branch says so — they can run two.";
+    : (named ? btn.dataset.shop
+       : owned ? "You run this one yourself."
+       : btn.dataset.shop+" has been running without one.");
+  // Three states now, and the middle one is not a warning. A small shop the owner runs is
+  // the permanent right answer, not a gap waiting to be filled.
+  document.getElementById("sh-mgr-hint").textContent = (
+      named ? "Only one person manages a shop. Choosing someone else replaces them. "+
+              "Anyone already running a branch says so — they can run two."
+    : owned ? "Nobody else needs an account for this shop. Name someone here when you hire one."
+            : "Nobody manages this shop yet. Until you choose someone, it is yours to run.");
+
+  // The day-to-day three: the CEO's only while no manager owns them.
+  const mine=!platform && !named;
+  const day=document.getElementById("sh-day");
+  day.hidden=!mine;
+  if(mine){
+    const s=shopSettings(btn.dataset.shop);
+    document.getElementById("sh-day-why").textContent = owned
+      ? "Yours, because you run this shop."
+      : "Yours until this shop has a manager, then theirs.";
+    document.getElementById("sh-phone").value=s.phone;
+    document.getElementById("sh-hours").value=s.hours;
+    document.getElementById("sh-footer").value=s.footer;
+  }
+  // The line has to agree with the screen above it. Saying "the phone is the manager's"
+  // directly under a phone field the CEO is filling in is the sort of contradiction that
+  // makes a person distrust every other sentence on the page.
   document.getElementById("sh-limit").textContent = platform
     ? "Who manages this shop is the CEO's to choose. You do not see the people inside a company."
-    : "The name, address and number of tables are the platform owner's to set. Phone, "+
-      "opening hours and the receipt footer are the manager's.";
+    : "The name, address and number of tables are the platform owner's to set."
+      + (named ? " Phone, opening hours and the receipt footer are the manager's." : "");
 
   document.getElementById("shop-save").textContent=shopAdding?"Add branch":"Save";
 
@@ -2451,10 +2504,36 @@ document.getElementById("shops-rows").addEventListener("click",e=>{
 
    Which is the same sentence doing the opposite job. Before it explained a refusal; now it
    is the thing a CEO needs to know before deciding, and the deciding is theirs. */
+const OWNER="__owner";                       // "the CEO runs this one" — not a person's name
+
 function shopsManagedBy(name){
-  if(!name) return [];
+  if(!name || name===OWNER) return [];
   return [...document.querySelectorAll("#shops-rows [data-shop]")]
     .filter(b=>b.dataset.manager===name).map(b=>b.dataset.shop);
+}
+
+/* Three states, and the difference between two of them is the whole point of this control.
+   "" is a HOLE — nobody hired yet, amber, named in the notice above the table.
+   OWNER is a DECISION — the CEO runs this shop, which for a small shop is the permanent and
+   correct answer, so it is stated in plain grey and stays out of the notice.
+   Anything else is a person. */
+function paintManagerCell(cell,btn,who){
+  cell.classList.remove("none");
+  cell.textContent="";
+  if(who===OWNER){
+    cell.textContent="Run by the owner";
+    btn.textContent="Edit";
+  }else if(who){
+    cell.innerHTML="<b></b>";
+    cell.querySelector("b").textContent=who;
+    cell.append(EMAIL[who]||"");
+    btn.textContent="Edit";
+  }else{
+    cell.classList.add("none");
+    cell.textContent="No manager";
+    btn.textContent="Assign";
+  }
+  btn.dataset.manager=who;
 }
 
 /* A manager's shops are not stored on the manager. They are the slots that name them, so
@@ -2476,7 +2555,8 @@ function refreshManagerShopCells(){
 
 function paintManagerChoices(){
   for(const o of shopMgr.options){
-    if(!o.value) continue;                       // "No manager" is never annotated
+    // The two answers that are not people are never annotated.
+    if(!o.value || o.value===OWNER) continue;
     const elsewhere=shopsManagedBy(o.value).filter(s=>s!==shopWasName);
     o.disabled=false;
     o.textContent = elsewhere.length
@@ -2493,10 +2573,19 @@ function listOf(names){
 
 // Only ask about the outgoing manager when there is one and they are being replaced.
 shopMgr.addEventListener("change",()=>{
-  const replacing=wasManager && shopMgr.value!==wasManager;
+  // Only a PERSON can be handed over. Taking a shop back off yourself asks nobody anything.
+  const replacing=wasManager && wasManager!==OWNER && shopMgr.value!==wasManager;
   handover.hidden=!replacing;
   if(replacing) document.getElementById("handover-who").textContent=
     wasManager+" will no longer manage "+shopName.value+".";
+  // The day-to-day three stop being the CEO's the moment a manager is named, and come back
+  // the moment one is not. Live, because the choice above them is what decides it.
+  const named=shopMgr.value && shopMgr.value!==OWNER;
+  const day=document.getElementById("sh-day");
+  day.hidden=shopWho==="platform" || named;
+  if(!day.hidden) document.getElementById("sh-day-why").textContent =
+    shopMgr.value===OWNER ? "Yours, because you run this shop."
+                          : "Yours until this shop has a manager, then theirs.";
 });
 
 document.getElementById("shop-cancel").addEventListener("click",()=>shopDialog.close());
@@ -2538,7 +2627,9 @@ function refreshShopGaps(){
     .map(td=>td.closest("tr").querySelector(".who .nm").textContent);
   const line=document.getElementById("shop-gap");
   line.hidden=!empty.length;
-  if(!empty.length) return;
+  // Cleared, not just hidden. A hidden element holding last week's sentence is a trap for
+  // anything that reads text rather than looking — a test, a screen reader, a future author.
+  if(!empty.length){ line.textContent=""; return; }
   const names=empty.length===1 ? empty[0]
     : empty.slice(0,-1).join(", ")+" and "+empty[empty.length-1];
   line.textContent=names+(empty.length===1?" has":" have")+" no manager. Until you appoint one, "+
@@ -2684,28 +2775,27 @@ function saveManager(){
   const btn=shopRow.querySelector("[data-shop]");
   const shop=btn.dataset.shop;
 
-  if(picked){
-    cell.classList.remove("none");
-    cell.innerHTML="<b></b>";
-    cell.querySelector("b").textContent=picked;
-    cell.append(EMAIL[picked]||"");
-    btn.textContent="Edit";
-  }else{
-    cell.classList.add("none");
-    cell.textContent="No manager";
-    btn.textContent="Assign";
+  paintManagerCell(cell,btn,picked);
+
+  // The day-to-day three are the CEO's to set while nobody else owns them. Written before
+  // the banner so a handover hands over a shop that already has a phone number.
+  if(!picked || picked===OWNER){
+    const s=shopSettings(shop);
+    s.phone=document.getElementById("sh-phone").value.trim();
+    s.hours=document.getElementById("sh-hours").value.trim();
+    s.footer=document.getElementById("sh-footer").value.trim();
   }
-  btn.dataset.manager=picked;
 
   // Said out loud when it is now two, because that is the arrangement the CEO just made and
   // the one they will want to remember making.
-  const alsoAt=picked ? shopsManagedBy(picked).filter(s=>s!==shop) : [];
-  shopDone.textContent = (!picked
-    ? shop+" now has no manager."
-    : wasManager
-      ? picked+" now manages "+shop+". "+wasManager+
-        (kept==="staff" ? " stays on as staff." : " has been suspended.")
-      : picked+" now manages "+shop+".")
+  const alsoAt=(picked&&picked!==OWNER) ? shopsManagedBy(picked).filter(s=>s!==shop) : [];
+  const wasReal=wasManager && wasManager!==OWNER;
+  shopDone.textContent = (
+      picked===OWNER ? "You run "+shop+" yourself now."
+    : !picked        ? shop+" now has no manager."
+    : wasReal        ? picked+" now manages "+shop+". "+wasManager+
+                       (kept==="staff" ? " stays on as staff." : " has been suspended.")
+                     : picked+" now manages "+shop+".")
     + (alsoAt.length ? " They also manage "+listOf(alsoAt)+"." : "");
   shopDialog.close();
   shopDone.hidden=false;
@@ -2739,7 +2829,12 @@ const myLang={};                                    // per level, "" means "not 
    manager standing in it. */
 const SHOP_SETTINGS={};
 function shopSettings(shop){
-  return SHOP_SETTINGS[shop] || (SHOP_SETTINGS[shop]={tz:"Asia/Yangon",cur:"MMK — Kyat",lang:LANGS[0]});
+  return SHOP_SETTINGS[shop] || (SHOP_SETTINGS[shop]={
+    tz:"Asia/Yangon", cur:"MMK — Kyat", lang:LANGS[0],
+    // The day-to-day three. They belong to whoever runs the shop — its manager, or the CEO
+    // when there is no manager to have one.
+    phone:"", hours:"10:00 – 22:00", footer:"Thank you. See you again.",
+  });
 }
 
 /* Who has a default above them, and what it is.
@@ -2795,7 +2890,17 @@ function paintShopSettingsPanel(){
   document.getElementById("m-tz").value=s.tz;
   document.getElementById("m-cur").value=s.cur;
   document.getElementById("m-lang").value=s.lang;
+  // The day-to-day three are per shop as well. They were static markup, which was harmless
+  // while a manager had one shop and a lie the moment they had two: switching to Insein
+  // showed Bogyoke's phone number and would have saved it back onto Insein.
+  document.getElementById("m2").value=s.phone;
+  document.getElementById("m3").value=s.hours;
+  document.getElementById("m4").value=s.footer;
 }
+for(const [id,key] of [["m2","phone"],["m3","hours"],["m4","footer"]])
+  document.getElementById(id).addEventListener("input",e=>{
+    shopSettings(PERSON.manager.sh)[key]=e.target.value;
+  });
 
 /* ── a manager who runs two shops ─────────────────────────────────────────── */
 /* Every screen a manager has is about ONE shop: their staff, the shop's phone, its hours,

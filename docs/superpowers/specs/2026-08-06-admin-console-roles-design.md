@@ -181,6 +181,53 @@ Choosing a different name reveals the other half of the decision immediately:
 Split into "demote the old one" then "promote the new one", the shop spends the gap with
 two managers or none.
 
+### 3.1A The small shop, where the owner is the manager
+
+A shop with two staff does not have a manager, and never will. The CEO is the manager. That
+is not a gap waiting to be filled — it is the permanent, correct arrangement, and the
+console used to have no way to say so.
+
+**The manager slot has three answers, not two:**
+
+| Answer | What it means | How it reads |
+| ------ | ------------- | ------------ |
+| *Nobody yet — still looking* | A branch waiting for a hire | **Amber**, and named in the notice above the table |
+| *I run this shop myself* | The owner runs it | Plain grey: *Run by the owner* |
+| A person | Somebody manages it | Their name |
+
+The middle one is the whole point of this section. Before it existed, a one-person shop wore
+an amber warning **for ever** about work that was never coming — and a warning that is
+always on is a warning nobody reads, including the one time it matters.
+
+**No second account is invented.** The CEO does not appear in their own Users list wearing
+two hats, and cannot suspend themselves. The shop simply records that its owner runs it.
+Considered and rejected: letting the CEO appoint themselves as manager. One account with two
+roles muddies every sentence in §2 about reaching one level down, and buys nothing the third
+state does not.
+
+### 3.1B The promise §3.2 makes, finally kept
+
+§3.2 has always said: *"until you appoint one, that shop is yours to run — you can already
+do everything a manager can there."*
+
+**That was false.** A shop's phone, opening hours and receipt footer lived only on the
+manager's Settings screen, and a CEO has no such screen. A shop with no manager was printing
+receipts with no phone number on them and nobody in the company could fix it.
+
+So the CEO's shop dialog now carries a **Day to day** block — phone, opening hours, receipt
+footer — shown whenever the shop has no named manager, whether that is because nobody is
+hired yet or because the owner runs it. The reason is stated rather than left to be inferred:
+
+- Owner-run: *"Yours, because you run this shop."*
+- Nobody yet: *"Yours until this shop has a manager, then theirs."*
+
+It disappears the moment a manager is named, live, as the picker above it changes — because
+that is the moment those fields stop being the CEO's.
+
+The boundary line at the bottom moves with it. Saying *"the phone is the manager's"* directly
+under a phone field the CEO is filling in is the kind of contradiction that makes a person
+distrust every other sentence on the page.
+
 ### 3.2 A shop with no manager is stated, never hidden
 
 The Manager cell reads **No manager** in amber and the row's button says **Assign** rather
@@ -190,9 +237,14 @@ them:
 > *Insein has no manager. Until you appoint one, that shop is yours to run — you can
 > already do everything a manager can there.*
 
-The line stays until every slot is filled. It is not an error: the CEO is above the
-manager, so the work still has somewhere to land. Saying so stops it reading as an
+The line stays until every slot is filled — **except a shop the owner has said they run
+themselves, which never appears in it at all** (§3.1A). It is not an error: the CEO is above
+the manager, so the work still has somewhere to land. Saying so stops it reading as an
 emergency.
+
+The notice is **cleared, not merely hidden**, when there is nothing left to say. A hidden
+element still holding last week's sentence is a trap for anything that reads text rather
+than looking at pixels — a test, a screen reader, or the next person to work on it.
 
 Suspending a manager from the Users screen empties the shop's slot in the same action.
 A person who can no longer sign in must not still be listed as running a shop.
@@ -902,6 +954,15 @@ a column on the user. Storing it twice is how the two disagree.
 **Suspending a manager must clear every slot they hold, in the same transaction.** One
 slot was enough while one was all they could hold. Now, clearing the first and leaving the
 second leaves a shop run by an account that cannot sign in.
+
+**A shop's manager column needs a third state, not a nullable name.** Null means *nobody
+yet*; a name means a person; and *the owner runs it* is neither (§3.1A). Two nullable
+columns would let a row claim both at once, so this wants one column with three legal
+shapes, or a flag the name column is checked against.
+
+**A shop's day-to-day details — phone, opening hours, receipt footer — are columns on the
+shop, and the route must admit both a manager and their CEO.** They are written by whoever
+runs the place, and §3.1B is the case where that is the CEO. None of the three exists yet.
 
 **Language and currency go on the SHOP, beside the time zone that is already there.**
 `shops.time_zone` exists and is NOT NULL; `shops.currency` and `shops.language` do not exist
