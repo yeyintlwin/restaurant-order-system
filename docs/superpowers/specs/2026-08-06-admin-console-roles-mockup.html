@@ -115,24 +115,25 @@ tbody tr:hover{background:#fcfcfd}
          display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
 /* A long name or address wraps instead of pushing the row wider than the screen. */
 .who>span:last-child{min-width:0;overflow-wrap:anywhere}
-.who .nm{font-weight:550}
-.who .em{font-size:12px;color:var(--muted)}
+/* Two blocks rather than a <br>. A line break you cannot address in CSS leaves an empty
+   line behind the moment you hide the thing after it. */
+.who .nm{display:block;font-weight:550}
+.who .em{display:block;font-size:12px;color:var(--muted)}
 
 .state{font-size:13px;color:var(--muted)}
 .state.ok{color:var(--ink)}
 .state b{display:block;font-weight:550;color:var(--ink)}
 .act{text-align:right}
+/* The column has a name like every other one. An unlabelled column reads as a mistake. */
+th.acth{text-align:right}
 /* 44px square is the smallest reliable finger target. The row is already taller than
    that, so growing the button does not change the layout. */
+/* Always visible. They used to fade in on row hover, which hid what a row could do until
+   you happened to point at it — and with two of them per row it hid it twice. Grey rather
+   than green so a table of them stays quiet; the colour arrives on the one you are on. */
 .edit{display:inline-grid;place-items:center;min-width:44px;min-height:44px;padding:0 6px;
-      border:0;background:none;color:var(--accent);font-size:13px;font-weight:550}
-
-/* Reveal Edit on hover ONLY where a real pointer exists. On a touch screen there
-   is no hover, so the button must simply always be there. */
-@media (hover:hover) and (pointer:fine){
-  .edit{opacity:0;transition:opacity .12s}
-  tbody tr:hover .edit,.edit:focus-visible{opacity:1}
-}
+      border:0;background:none;color:var(--muted);font-size:13px;font-weight:550}
+.edit:hover,.edit:focus-visible{color:var(--accent)}
 
 /* ── settings ───────────────────────────── */
 .row{display:grid;grid-template-columns:1fr 280px;gap:24px;align-items:center;
@@ -151,7 +152,7 @@ tbody tr:hover{background:#fcfcfd}
   .row input,.row select,.field input,.field select{font-size:13.5px}
 }
 .row input:focus,.row select:focus,.field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:1px}
-.row input:disabled{background:#f6f6f7;color:var(--muted)}
+.row input:disabled,.row input[readonly]{background:#f6f6f7;color:var(--muted)}
 .ghost{height:40px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--surface);
        font-size:13.5px}
 .ghost:hover{background:#f6f6f7}
@@ -169,15 +170,22 @@ tbody tr:hover{background:#fcfcfd}
 .modal h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em}
 .modal .sub{margin:2px 0 18px;font-size:13px;color:var(--muted)}
 
-/* What you came to look up, above what you came to change. Read-only: these are facts
-   about the record, not fields on a form. */
-.facts{margin:0 0 18px;padding:4px 14px;border-radius:10px;background:#f7f8f9;
-       border:1px solid var(--line)}
-.facts>div{display:grid;grid-template-columns:104px 1fr;gap:12px;padding:8px 0;font-size:13px}
-.facts>div+div{border-top:1px solid #ecedee}
-.facts .k{color:var(--muted)}
+/* Looking is its own screen. Facts sat above the fields in the edit dialog for one
+   revision and it muddled both: you could not tell what was a value and what was a
+   control. Nothing here is a form. */
+.facts{margin:0 0 4px}
+.facts>div{display:grid;grid-template-columns:112px 1fr;gap:14px;padding:11px 0;font-size:13.5px}
+.facts>div+div{border-top:1px solid var(--line)}
+.facts .k{color:var(--muted);font-size:13px}
+.facts .head{margin-top:8px;padding:14px 0 4px;border-top:1px solid var(--line);
+             font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+             color:var(--muted)}
+.facts .head+div{border-top:0}
 .facts a{color:var(--accent);font-weight:550;text-decoration:none}
 .facts a:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* Two words in a row, so the one that only looks does not sit under the one that changes. */
+.act .edit+.edit{margin-left:2px}
 
 .field{margin-bottom:14px}
 .field label{display:block;margin-bottom:6px;font-weight:550;font-size:13.5px}
@@ -266,25 +274,72 @@ tr.sub .leaf{padding-left:43px}
   .rail{transition:none}
 }
 
-/* ── phone: the table becomes a list ────── */
-@media (max-width:640px){
-  :root{--gut:16px}
-  .top h1{font-size:17px}
+/* ── below 901px: the table becomes a list ──
+   Same boundary as the drawer, on purpose: when the sidebar has folded away, the tables
+   fold too. It used to switch at 640px, which left 641–900px showing a six-column table in
+   two-thirds of the width it needs — every cell wrapped and the rows grew several lines
+   tall. One rule to remember: no sidebar, no table. */
+@media (max-width:900px){
   .scroll{overflow-x:visible}
   table{min-width:0}
   thead{display:none}
   table,tbody{display:block}
-  tbody tr{display:block;position:relative;padding:14px 16px;border-bottom:1px solid var(--line)}
+  /* A card, not a squashed row. Five label-and-value lines per person meant "Role", "Shop"
+     and "Status" repeated all the way down the screen while the name had to be hunted for.
+     The card carries what identifies the row; the rest is one tap away in Details, which is
+     where it was going to be read anyway. */
+  /* Every card is the same two lines tall, whatever it has to say. The badge is lifted out
+     of the flow so it centres against the pair rather than hanging off the first line. */
+  tbody tr{display:block;position:relative;min-height:66px;
+           padding:13px 38px 13px 68px;border-bottom:1px solid var(--line)}
   tbody tr:hover{background:none}
+  tbody tr:active{background:#f6f7f7}
   td{display:block;padding:0;border:0}
-  td:first-child{padding-right:56px}
-  td.meta{display:grid;grid-template-columns:64px 1fr;gap:10px;margin-top:5px;
-          font-size:13px;color:var(--ink)}
-  td.meta::before{content:attr(data-label);color:var(--muted);font-size:12.5px}
-  td.act{position:absolute;top:4px;right:8px}
-  /* In the list layout there is no row to hover, so Edit always shows. */
-  .edit{opacity:1}
 
+  .who{display:block}
+  .who .av{position:absolute;left:16px;top:50%;transform:translateY(-50%);
+           width:40px;height:40px;font-size:13px}
+  .who .em{display:none}                      /* the address is a tap away */
+
+  td.meta{display:none}                       /* the other columns live in Details */
+  td.meta::before{content:none}                /* and with them, the repeated labels */
+
+  /* Line two, all of it: what the row is, where it is, and — only when it is not the
+     ordinary case — what is wrong with it. One line, so nothing grows a card. */
+  td.m-key,td.m-key2,td.m-state{display:inline;font-size:13px;line-height:1.5;color:var(--muted)}
+  td.m-key2::before,td.m-state::before{content:"· "}
+  td.m-state{color:#9c5c17}
+  td.m-state.ok{display:none}                  /* Active is the normal case; say nothing */
+  /* Except in a list whose only other column IS the status — a manager's staff. There it
+     is not noise, it is the whole point, and printing it keeps that card two lines like
+     every other card in the console. */
+  tr.lean td.m-state.ok{display:inline;color:var(--muted)}
+  tr.lean td.m-state::before{content:none}
+  /* One name per card. The second line is said quietly, not as a second heading, and it
+     does not trail an address behind it. */
+  td.m-key b{display:inline;font-weight:400;color:var(--muted)}
+  td.m-key .tail{display:none}
+
+  td.act{display:none}                         /* the row itself is the way in */
+
+  /* A company row cannot expand here — tapping it opens Details, which lists the branches.
+     Any breakdown left open from a wider window goes away rather than sitting in the list
+     as a stack of half-rows wearing chevrons they do not answer to. */
+  tr.sub{display:none}
+  /* And with the expanding goes its triangle. Leaving it on put two arrows on every
+     company card: one for a disclosure that no longer happens, one for the row that opens
+     Details. A card gets one mark, or the mark means nothing. */
+  .disc{display:none}
+
+  /* The mark that says a row opens. Only on rows that do. */
+  tbody tr:not(.sub)::after{content:"";position:absolute;right:16px;top:50%;margin-top:-4px;
+    border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+}
+
+/* ── phone: tighter still ────────────────── */
+@media (max-width:640px){
+  :root{--gut:16px}
+  .top h1{font-size:17px}
   .row{grid-template-columns:1fr;gap:10px;align-items:stretch}
   .ghost{width:100%}
   .pair>*{flex:1;width:auto}
@@ -347,7 +402,7 @@ tr.sub .leaf{padding-left:43px}
         <div class="panel">
           <div class="scroll">
           <table>
-            <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Tables</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Tables</th><th>Status</th><th class="acth">Actions</th></tr></thead>
             <tbody id="co-rows">
               <tr>
                 <td><div class="who"><span class="av">SK</span><span><span class="nm">Sakura Kitchen</span><br><span class="em">sakura.mm</span></span></div></td>
@@ -383,7 +438,7 @@ tr.sub .leaf{padding-left:43px}
         <div class="panel">
           <div class="scroll">
           <table>
-            <thead><tr><th>Shop</th><th>Manager</th><th>Tables</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Shop</th><th>Manager</th><th>Tables</th><th>Staff</th><th>Status</th><th class="acth">Actions</th></tr></thead>
             <tbody id="shops-rows">
               <tr>
                 <td><div class="who"><span class="av">BG</span><span><span class="nm">Bogyoke</span><br><span class="em">No. 42, Bogyoke Rd</span></span></div></td>
@@ -422,7 +477,7 @@ tr.sub .leaf{padding-left:43px}
           <p class="done" id="ceo-done" hidden></p>
           <div class="scroll">
           <table>
-            <thead><tr><th>Name</th><th>Role</th><th>Shop</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Shop</th><th>Status</th><th class="acth">Actions</th></tr></thead>
             <tbody id="ceo-rows">
               <tr>
                 <td><div class="who"><span class="av">TZ</span><span><span class="nm">Thura Zaw</span><br><span class="em">thura@sakura.mm</span></span></div></td>
@@ -479,7 +534,7 @@ tr.sub .leaf{padding-left:43px}
           <p class="done" id="staff-done" hidden></p>
           <div class="scroll">
           <table>
-            <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Status</th><th class="acth">Actions</th></tr></thead>
             <tbody id="staff-rows">
               <tr>
                 <td><div class="who"><span class="av">AA</span><span><span class="nm">Aye Aye Mon</span><br><span class="em">ayeaye@sakura.mm</span></span></div></td>
@@ -504,8 +559,10 @@ tr.sub .leaf{padding-left:43px}
         <p class="done" id="pw-done" hidden>Password changed. Your other devices have been signed out.</p>
 
         <div class="panel">
+          <!-- Your own name is not yours to edit. Left open, it becomes a nickname, and the
+               person who has to recognise you on a rota or a receipt is not you. -->
           <div class="row">
-            <div><label for="a1">Name</label></div>
+            <div><label for="a1">Name</label><p id="a1-note"></p></div>
             <input id="a1" value="Ye Yint Lwin" />
           </div>
           <div class="row">
@@ -616,12 +673,27 @@ tr.sub .leaf{padding-left:43px}
      not a company. Note what is NOT a picker here: the platform owner cannot list the
      people inside a company, so a new CEO has to be typed in by name and address. The
      boundary is not decoration — it changes the control. -->
+<!-- Reading a record and changing one are different jobs, so they are different
+     screens. This one has no fields at all: every line is a value, and every phone number
+     is a link because the reason you looked it up is to ring it. -->
+<dialog class="modal" id="info-dialog" aria-labelledby="info-h">
+  <form method="dialog">
+    <h2 id="info-h"></h2>
+    <p class="sub" id="info-sub"></p>
+    <div class="facts" id="info-facts"></div>
+    <div class="pair">
+      <button type="button" class="ghost" id="info-edit">Edit</button>
+      <button type="button" class="btn" id="info-close">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="modal" id="co-dialog" aria-labelledby="co-h">
   <form id="co-form">
     <h2 id="co-h">Add company</h2>
     <p class="sub" id="co-sub">Every company starts with one CEO.</p>
 
-    <div class="facts" id="co-facts"></div>
+    
 
     <div class="field">
       <label for="co-name">Company name</label>
@@ -697,7 +769,7 @@ tr.sub .leaf{padding-left:43px}
     <h2 id="staff-h">Add staff</h2>
     <p class="sub" id="staff-sub">Bogyoke</p>
 
-    <div class="facts" id="st-facts"></div>
+    
 
     <div class="field">
       <label for="st-name">Name</label>
@@ -715,7 +787,6 @@ tr.sub .leaf{padding-left:43px}
     <div class="field">
       <label for="st-phone">Phone</label>
       <input id="st-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
-      <p class="hint" id="st-call-line" hidden><a id="st-call" href="#">Call this number</a></p>
       <p class="warn" id="st-phone-warn" role="alert" hidden>A phone number is required.</p>
     </div>
 
@@ -769,7 +840,7 @@ tr.sub .leaf{padding-left:43px}
     <h2 id="shop-h">Edit shop</h2>
     <p class="sub" id="shop-sub">Bogyoke</p>
 
-    <div class="facts" id="sh-facts"></div>
+    
 
     <div class="field">
       <label for="sh-name">Shop name</label>
@@ -945,11 +1016,155 @@ const OPENED={
   "Sakura Kitchen":"2 Feb 2026", "Mandalay Grill":"18 Mar 2026", "Shwe Café":"7 Jun 2026",
 };
 
+// The same boundary the CSS uses to fold the tables into cards. Below it a row opens
+// Details; above it a company row expands in place.
+const cards=matchMedia("(max-width:900px)");
+// Crossing into card layout retires any open breakdown, so nothing is left half-open
+// behind a rule that hides it.
+cards.addEventListener("change",e=>{ if(e.matches) closeBranches(); });
+
+/* On a phone the card shows the first column after the name — the one that says what this
+   row IS — plus the status when it is not the ordinary one. Marked here rather than in the
+   markup because each table's first column is different: CEO, Manager, Role, Company. */
+function tagCardLines(){
+  document.querySelectorAll(".who br").forEach(br=>br.remove());
+  for(const row of document.querySelectorAll("tbody tr")){
+    if(row.classList.contains("sub")) continue;
+    const first=row.querySelector("td.meta");
+    if(first){
+      first.classList.add("m-key");
+      // Cells like the CEO and Manager columns are "<b>Name</b>address" — a bold name
+      // followed by a bare text node. CSS cannot hide a bare text node, and on a card the
+      // address is a second address nobody asked for, so it gets a wrapper to hide by.
+      const b=first.querySelector("b");
+      const tail=b && b.nextSibling;
+      if(tail && tail.nodeType===3 && tail.textContent.trim()){
+        const span=document.createElement("span");
+        span.className="tail";
+        span.textContent=tail.textContent;
+        tail.replaceWith(span);
+      }
+    }
+    // A role alone does not tell two managers apart. Where a row names one shop, it joins
+    // the same line — "Manager · Hledan" — rather than becoming a line of its own. Only the
+    // people tables have a Shop column, so nothing else picks this up, and a bare count
+    // like "3" would say nothing without its heading anyway.
+    const shop=row.querySelector('[data-label="Shop"]');
+    if(shop && shop!==first) shop.classList.add("m-key2");
+    const status=row.querySelector('[data-label="Status"]');
+    if(status) status.classList.add("m-state");
+    // A manager's staff list has only Name and Status, so once Active is left unsaid the
+    // second line would be empty and that card alone would be shorter. It borrows the
+    // address instead, and every card in every list is the same two lines tall.
+    row.classList.toggle("lean", first===status || !first);
+  }
+}
+
+/* One Details control per row, added here rather than typed into every row, so a record
+   created at runtime gets one from the same line of code. */
+function addDetailButtons(){
+  for(const btn of document.querySelectorAll("[data-company],[data-shop],[data-person],[data-staff]")){
+    const cell=btn.closest(".act");
+    if(!cell || cell.querySelector(".info")) continue;
+    const d=document.createElement("button");
+    d.type="button"; d.className="edit info"; d.textContent="Details";
+    cell.prepend(d);
+  }
+}
+
+const infoDialog=document.getElementById("info-dialog");
+let infoFor=null;                              // the row's Edit button, for the Edit action
+
+function kindOf(row){
+  const body=row.closest("tbody").id;
+  return body==="co-rows" ? "company" : body==="shops-rows" ? "shop" : "person";
+}
+
+function openInfo(row){
+  const kind=kindOf(row);
+  const btn=row.querySelector("[data-company],[data-shop],[data-person],[data-staff]");
+  infoFor=btn;
+  const cell=n=>{ const c=row.querySelector('[data-label="'+n+'"]'); return c?c.textContent.trim():""; };
+  const name=row.querySelector(".who .nm").textContent;
+  const under=row.querySelector(".who .em").textContent;
+
+  let sub, rows;
+  if(kind==="company"){
+    sub="Company";
+    rows=[
+      ["Web",       under],
+      ["CEO",       btn.dataset.ceo],
+      ["CEO phone", PHONE[btn.dataset.ceo]||"", true],
+      ["CEO email", btn.dataset.ceoEmail],
+      ["Status",    cell("Status")],
+      ["Opened",    OPENED[name]||"Today"],
+    ];
+    // The branches, under their own heading. On a phone the row does not expand, so this
+    // is the only place they exist — and a bare "Shops 3" above a list nobody noticed was
+    // worse than useless, so the count is stated once, at the end, as the sum of what is
+    // actually listed.
+    const branches=shopsOf(name);
+    rows.push(["##","Shops"]);
+    if(!branches.length) rows.push(["","No shops yet."]);
+    for(const [shop,tables] of branches) rows.push([shop, tables+" tables"]);
+    if(branches.length) rows.push(["Total",
+      branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
+  }else if(kind==="shop"){
+    const mgr=btn.dataset.manager;
+    sub="Shop of Sakura Kitchen";
+    rows=[
+      ["Address",       under],
+      ["Manager",       mgr||"None"],
+      ["Manager phone", mgr?(PHONE[mgr]||""):"", true],
+      ["Tables",        cell("Tables")],
+      ["Staff",         cell("Staff")],
+      ["Status",        cell("Status")],
+      ["Opened",        OPENED[name]||"Today"],
+    ];
+  }else{
+    const role=btn.dataset.role||"Staff";
+    sub=role+(btn.dataset.shop?" · "+btn.dataset.shop:" · Bogyoke");
+    rows=[
+      ["Email",     under],
+      ["Phone",     btn.dataset.phone||PHONE[name]||"", true],
+      ["Role",      role],
+      ["Shop",      btn.dataset.shop||"Bogyoke"],
+      ["Status",    cell("Status")],
+      ["Added",     JOINED[name]||"Just now"],
+      ["Last seen", SEEN[name]||"Not yet"],
+    ];
+  }
+  document.getElementById("info-h").textContent=name;
+  document.getElementById("info-sub").textContent=sub;
+  facts(document.getElementById("info-facts"),rows);
+  infoDialog.showModal();
+}
+
+document.getElementById("info-close").addEventListener("click",()=>infoDialog.close());
+// Looking often ends in changing. The way through is one button, not a second hunt.
+document.getElementById("info-edit").addEventListener("click",()=>{
+  const btn=infoFor;
+  infoDialog.close();
+  if(!btn) return;
+  if(btn.dataset.company!==undefined)   openCompany(btn);
+  else if(btn.dataset.shop!==undefined && btn.closest("tbody").id==="shops-rows") openShop(btn);
+  else openPerson(btn, btn.dataset.person!==undefined ? "ceo" : "manager");
+});
+
 function facts(el,rows){
   el.textContent="";
   const shown=rows.filter(r=>r[1]);
   el.hidden=!shown.length;
   for(const [key,value,tel] of shown){
+    // A run of lines that means something on its own gets a heading, or it reads as more
+    // of the list above it. The branches were doing exactly that at the bottom of the
+    // company sheet: present, and invisible.
+    if(key==="##"){
+      const h=document.createElement("div");
+      h.className="head"; h.textContent=value;
+      el.append(h);
+      continue;
+    }
     const line=document.createElement("div");
     const k=document.createElement("span"); k.className="k"; k.textContent=key;
     const v=document.createElement("span");
@@ -1029,15 +1244,6 @@ function openCompany(btn){
   coPw.value=firstPassword();
   checkExisting();
 
-  const row=adding?null:btn.closest("tr");
-  facts(document.getElementById("co-facts"), adding ? [] : [
-    ["CEO",       btn.dataset.ceo],
-    ["CEO phone", PHONE[btn.dataset.ceo]||"", true],
-    ["Email",     btn.dataset.ceoEmail],
-    ["Shops",     row.querySelector('[data-label="Shops"]').textContent],
-    ["Tables",    row.querySelector('[data-label="Tables"]').textContent],
-    ["Opened",    OPENED[btn.dataset.company]||"Today"],
-  ]);
 
   document.getElementById("co-save").textContent=adding?"Add company":"Save";
   coDone.hidden=true;
@@ -1045,6 +1251,8 @@ function openCompany(btn){
 }
 
 document.getElementById("co-rows").addEventListener("click",e=>{
+  if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
+  if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   // Edit is a real action and wins over the row it sits in.
   const btn=e.target.closest("[data-company]");
   if(btn){ openCompany(btn); return; }
@@ -1197,7 +1405,9 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     const b=tr.querySelector("[data-status]");
     b.dataset.company=name; b.dataset.ceo=person; b.dataset.ceoEmail=email;
     document.getElementById("co-rows").appendChild(tr);
+    addDetailButtons(); tagCardLines();
     addDiscs();
+    addDetailButtons(); tagCardLines();
     coDone.textContent=name+" is open with "+person+" as CEO. First password: "+coPw.value;
   }
   coDialog.close();
@@ -1232,16 +1442,6 @@ function initials(name){
    than left as a missing control. */
 let personWho="manager";                    // who is doing the looking
 
-// The number is a form field, so it is not repeated in the facts. What the facts would
-// have added — being able to ring it — sits under the field instead, and follows whatever
-// is typed there.
-function syncCall(){
-  const value=document.getElementById("st-phone").value.trim();
-  const line=document.getElementById("st-call-line");
-  line.hidden=!value;
-  if(value) document.getElementById("st-call").href="tel:"+value.replace(/\s+/g,"");
-}
-document.getElementById("st-phone").addEventListener("input",syncCall);
 function openPerson(btn,who){
   personWho=who;
   staffRow=btn?btn.closest("tr"):null;
@@ -1283,13 +1483,6 @@ function openPerson(btn,who){
   document.getElementById("st-limit").textContent = ceo
     ? "Managers are chosen on the Shops screen, not here."
     : "Only your CEO can make someone a manager or move them to another shop.";
-  // Role, shop and phone are all already on this screen — the subtitle and the fields say
-  // them. Facts carry only what the form cannot.
-  facts(document.getElementById("st-facts"), adding ? [] : [
-    ["Added",     JOINED[name]||"Just now"],
-    ["Last seen", SEEN[name]||"Not yet"],
-  ]);
-  syncCall();
 
   document.getElementById("staff-save").textContent=
     adding ? (ceo?"Add":"Add staff") : "Save";
@@ -1300,10 +1493,14 @@ function openPerson(btn,who){
 const openStaff=btn=>openPerson(btn,"manager");
 
 document.getElementById("staff-rows").addEventListener("click",e=>{
+  if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
+  if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   const btn=e.target.closest("[data-staff]");
   if(btn) openPerson(btn,"manager");
 });
 document.getElementById("ceo-rows").addEventListener("click",e=>{
+  if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
+  if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   const btn=e.target.closest("[data-person]");
   if(btn) openPerson(btn,"ceo");
 });
@@ -1402,9 +1599,11 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
       tr.querySelector('[data-label="Shop"]').textContent=shop;
       b.dataset.person=name; b.dataset.role="Staff"; b.dataset.shop=shop;
       document.getElementById("ceo-rows").appendChild(tr);
+    addDetailButtons(); tagCardLines();
     }else{
       b.dataset.staff=name;
       document.getElementById("staff-rows").appendChild(tr);
+    addDetailButtons(); tagCardLines();
     }
     banner.textContent=name+" can sign in"+(ceo?" at "+shop:"")+
       " now. Their first password is "+stTemp.value+".";
@@ -1475,12 +1674,6 @@ function openShop(btn){
     adding ? "You can leave this until someone is hired. Until then the shop is yours to run."
            : "Only one person manages a shop. Choosing someone else replaces them.";
   const staffHere=adding?"":btn.closest("tr").querySelector('[data-label="Staff"]').textContent;
-  // Name, address, tables and manager are all fields below. Facts carry the rest.
-  facts(document.getElementById("sh-facts"), adding ? [] : [
-    ["Manager phone", wasManager?(PHONE[wasManager]||""):"", true],
-    ["Staff",         staffHere],
-    ["Opened",        OPENED[btn.dataset.shop]||"Today"],
-  ]);
 
   document.getElementById("shop-save").textContent=adding?"Add shop":"Save";
 
@@ -1489,6 +1682,8 @@ function openShop(btn){
   shopDialog.showModal();
 }
 document.getElementById("shops-rows").addEventListener("click",e=>{
+  if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
+  if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   const btn=e.target.closest("[data-shop]");
   if(btn) openShop(btn);
 });
@@ -1567,6 +1762,7 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
     if(picked){ mc.innerHTML="<b></b>"; mc.querySelector("b").textContent=picked; mc.append(EMAIL[picked]||""); }
     else { mc.classList.add("none"); mc.textContent="No manager"; }
     document.getElementById("shops-rows").appendChild(tr);
+    addDetailButtons(); tagCardLines();
 
     const made=Math.max(0,Number(shopTables.value)||0);
     shopDone.textContent=label+" is open with "+made+" table"+(made===1?"":"s")+". "+
@@ -1651,6 +1847,16 @@ function setAs(as){
   document.getElementById("me-ro").textContent=p.ro;
   document.getElementById("a1").value=p.nm;
   document.getElementById("a2").value=p.em;
+
+  /* Naming someone is the job of the person who has to answer for them. Everyone here has
+     someone above them except the platform owner, who has nobody to ask — the same gap
+     that leaves them with no way to reset their own password. */
+  const above={platform:"", company:"the platform owner", manager:"your CEO", staff:"your manager"}[as];
+  const name=document.getElementById("a1");
+  name.readOnly=!!above;
+  document.getElementById("a1-note").textContent=above
+    ? "Ask "+above+" to change this."
+    : "Nobody above you to ask, so this one is yours.";
   // Stay on the same screen when the new person also has it — comparing Settings across
   // levels is the point. Two exceptions: a screen they do not have, and the account page,
   // which every level has and which is the least interesting thing to compare. Coming up
@@ -1665,6 +1871,9 @@ asview.addEventListener("change",()=>setAs(asview.value));
 asview.addEventListener("click",e=>e.stopPropagation());
 
 addDiscs();
+
+addDetailButtons(); tagCardLines();
+addDetailButtons(); tagCardLines();
 
 // Run the same code path the first time as every time. Without this the heading, the
 // button's label and — the part that actually broke — the button's data-opens are only

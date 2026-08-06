@@ -178,6 +178,27 @@ Where the number is an editable field rather than a fact — a person's own phon
 sits under the field as *"Call this number"* and follows whatever is typed, appearing when
 there is a number and going away when there is not. The number is never printed twice.
 
+## 4C. Your own name is not yours to edit
+
+Account settings shows your name **read-only**, with a line naming who to ask:
+
+| Signed in as   | Name field | The line says                                    |
+| -------------- | ---------- | ------------------------------------------------ |
+| Platform owner | Editable   | *Nobody above you to ask, so this one is yours.* |
+| CEO            | Read-only  | *Ask the platform owner to change this.*         |
+| Manager        | Read-only  | *Ask your CEO to change this.*                   |
+| Staff          | Read-only  | *Ask your manager to change this.*               |
+
+Naming someone is the job of the person who answers for them. Left open, a name becomes a
+nickname — and the person who has to recognise it on a rota, an order or a receipt is not
+its owner.
+
+Everything else on that screen stays the person's own: their phone, their password, their
+sessions. Only the name, and only because other people read it.
+
+The platform owner is the exception for the same reason they are the exception in §9.1 —
+there is nobody above them to ask.
+
 ## 5. Passwords
 
 Nobody can read anyone else's password. Helping someone in means **handing them a new
