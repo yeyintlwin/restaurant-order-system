@@ -103,7 +103,10 @@ body[data-as="staff"]    [data-for]:not([data-for~="staff"]){display:none}
 /* ── table ──────────────────────────────── */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .scroll{overflow-x:auto}
-table{width:100%;min-width:560px;border-collapse:collapse}
+/* What the widest table actually needs: two name-and-address columns, two counts, a status
+   and two words of action. Short of that the panel scrolls sideways, which is honest —
+   below 560 it used to keep shrinking the columns until the words broke apart. */
+table{width:100%;min-width:760px;border-collapse:collapse}
 th{text-align:left;font-size:12px;font-weight:500;color:var(--muted);padding:12px 18px;
    border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:13px 18px;border-bottom:1px solid var(--line)}
@@ -113,8 +116,11 @@ tbody tr:hover{background:#fcfcfd}
 .who{display:flex;align-items:center;gap:11px;min-width:0}
 .who .av{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
          display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
-/* A long name or address wraps instead of pushing the row wider than the screen. */
-.who>span:last-child{min-width:0;overflow-wrap:anywhere}
+/* A long address wraps instead of pushing the row wider than the screen. `break-word` and
+   not `anywhere`: `anywhere` also drives the column's own minimum width down to one
+   character, and a table short of room then squeezes the name into a vertical stack of
+   letters rather than scrolling. */
+.who>span:last-child{min-width:0;overflow-wrap:break-word}
 /* Two blocks rather than a <br>. A line break you cannot address in CSS leaves an empty
    line behind the moment you hide the thing after it. */
 .who .nm{display:block;font-weight:550}
@@ -123,7 +129,8 @@ tbody tr:hover{background:#fcfcfd}
 .state{font-size:13px;color:var(--muted)}
 .state.ok{color:var(--ink)}
 .state b{display:block;font-weight:550;color:var(--ink)}
-.act{text-align:right}
+/* Two words, one line. Left to wrap they stack and take the row's height with them. */
+.act{text-align:right;white-space:nowrap}
 /* The column has a name like every other one. An unlabelled column reads as a mistake. */
 th.acth{text-align:right}
 /* 44px square is the smallest reliable finger target. The row is already taller than
@@ -274,12 +281,15 @@ tr.sub .leaf{padding-left:43px}
   .rail{transition:none}
 }
 
-/* ── below 901px: the table becomes a list ──
-   Same boundary as the drawer, on purpose: when the sidebar has folded away, the tables
-   fold too. It used to switch at 640px, which left 641–900px showing a six-column table in
-   two-thirds of the width it needs — every cell wrapped and the rows grew several lines
-   tall. One rule to remember: no sidebar, no table. */
-@media (max-width:900px){
+/* ── below 1050px: the table becomes a list ──
+   The widest table needs 760px to itself, plus the rail and the gutters — about 1050px
+   before it fits without scrolling sideways.
+
+   This is deliberately NOT the drawer's 900px. The two ask different questions: whether
+   there is room for a sidebar, and whether there is room for a table. Tying them together
+   is what produced a six-column table in 640px at a 923px window, with "Sakura Kitchen"
+   squeezed into a vertical stack of four letters. */
+@media (max-width:1049px){
   .scroll{overflow-x:visible}
   table{min-width:0}
   thead{display:none}
@@ -1018,7 +1028,7 @@ const OPENED={
 
 // The same boundary the CSS uses to fold the tables into cards. Below it a row opens
 // Details; above it a company row expands in place.
-const cards=matchMedia("(max-width:900px)");
+const cards=matchMedia("(max-width:1049px)");
 // Crossing into card layout retires any open breakdown, so nothing is left half-open
 // behind a rule that hides it.
 cards.addEventListener("change",e=>{ if(e.matches) closeBranches(); });
