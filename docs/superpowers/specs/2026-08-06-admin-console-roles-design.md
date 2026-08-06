@@ -285,16 +285,18 @@ The boundary is about **who is inside a company**, not how large it is. The plat
 sees, for every company:
 
 - how many shops it has, and for each one its **name, address, manager and table count**
+- **the manager's phone number**, as a `tel:` link
 - how many tables in total
 
-**Revised.** This section first said the platform owner saw only shop names and counts.
-Managers were added deliberately: hosting a company means knowing who runs each branch, and
-a name is not a control. Everything that acts on that person — their access, their password,
-their shop, whether they are a manager at all — is still the CEO's alone, and there is still
-no screen in the platform console that lists a person.
+**Revised twice.** This section first said the platform owner saw only shop names and
+counts, then added managers by name, then their phone.
 
-Their phone number is **not** shown. Knowing who runs a branch is not the same as being able
-to ring past the CEO, and nobody has asked for that.
+The line that survived all three revisions is the one that matters: **seeing is not
+managing.** Every control over that person — their access, their password, which shop they
+run, whether they are a manager at all — remains the CEO's alone, and there is still no
+screen anywhere in the platform console that lists a person or edits one. What the platform
+owner has is a way to reach the people running the branches it hosts, which is what an
+operator needs when a branch stops sending orders at nine on a Friday.
 
 Clicking a company row opens its branches beneath it. **One at a time** — opening another
 closes the last, so the table never grows into a list of everything.

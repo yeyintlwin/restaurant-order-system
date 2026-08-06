@@ -1083,6 +1083,7 @@ const PHONE={
   "Thura Zaw":"09 77 201 3344", "Aye Aye Mon":"09 42 118 9021", "Min Min":"09 79 553 6612",
   "Ko Ko Naing":"09 25 447 8890", "Hnin Wai":"09 66 330 1177", "Zaw Moe":"09 45 902 5561",
   "Khin Myat":"09 88 771 2200", "Nay Lin":"09 31 664 0912", "Su Su Hlaing":"09 50 228 7734",
+  "Thiri Aung":"09 26 550 3318", "Moe Thu":"09 44 221 8890",
 };
 const JOINED={
   "Thura Zaw":"12 Mar 2026", "Aye Aye Mon":"3 Apr 2026", "Min Min":"3 Apr 2026",
@@ -1189,10 +1190,11 @@ function openInfo(row){
     const branches=shopsOf(name);
     rows.push(["##","Shops"]);
     if(!branches.length) rows.push(["","No shops yet."]);
-    // Who runs each branch and how big it is. Knowing a manager's name is not managing
-    // them — every control over that person is still the CEO's (section 6.2).
+    // Who runs each branch, how to reach them, and how big it is. Reaching a manager is
+    // still not managing one — every control over that person stays with the CEO.
     for(const b of branches)
-      rows.push([b.shop, (b.manager||"No manager")+" · "+b.tables+" tables", false, b.address]);
+      rows.push([b.shop, (b.manager||"No manager")+" · "+b.tables+" tables", false,
+                 {tel:b.manager?(PHONE[b.manager]||""):"", text:b.address}]);
     if(branches.length) rows.push(["Total",
       branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
   }else if(kind==="shop"){
@@ -1260,11 +1262,22 @@ function facts(el,rows){
       a.textContent=value;
       v.append(a);
     }else v.textContent=value;
-    // A quieter second line for the thing the value alone leaves out — a branch's address
-    // under its manager and table count.
+    // A quieter second line for what the value leaves out — a branch's phone and address
+    // under its manager and table count. The number stays a link down here too: a contact
+    // you cannot ring is not a contact.
     if(sub){
       const s2=document.createElement("span");
-      s2.className="sub2"; s2.textContent=sub;
+      s2.className="sub2";
+      if(typeof sub==="object"){
+        if(sub.tel){
+          const a=document.createElement("a");
+          a.href="tel:"+sub.tel.replace(/\s+/g,"");
+          a.textContent=sub.tel;
+          s2.append(a);
+          if(sub.text) s2.append(" · ");
+        }
+        if(sub.text) s2.append(sub.text);
+      }else s2.textContent=sub;
       v.append(s2);
     }
     line.append(k,v);
