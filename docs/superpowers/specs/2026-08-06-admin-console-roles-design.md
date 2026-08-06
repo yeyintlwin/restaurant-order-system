@@ -346,6 +346,30 @@ ends — no tint, no band, no extra rules.
 The last branch is **marked in code**, not selected with `:last-of-type`, which on a `tr`
 means "the last row in the table" and would have quietly matched nothing.
 
+### 6.2 The CEO's shops open the same way, one rung deeper
+
+The same tree, two levels, because the CEO's world has two below it:
+
+```text
+▾ BG  Bogyoke        Thura Zaw     12   2   Active   Details  Edit
+      └─ Thura Zaw       Manager                              ›
+         ├─ Aye Aye Mon  Staff                                ›
+         └─ Min Min      Staff · Suspended                     ›
+   HL  Hledan        Ko Ko Naing    8   1   Active   Details  Edit
+```
+
+**Staff hang off the manager, not off the shop.** That is the org chart, and it is what the
+second level is for. A shop has exactly one manager, so the first level has exactly one node
+and closes its trunk immediately; the staff trunk then runs from the manager's own name.
+
+A shop with no manager puts its staff at the first level instead — the shops table already
+says *No manager* in its own column, and §3.2 says who is covering. An empty shop says
+*Nobody here yet.*
+
+The tree is read off the CEO's own Users table rather than kept as a second copy, so it can
+never disagree with the list it came from. Each person opens their own sheet, the same one
+the Users list opens.
+
 **A branch row opens its own sheet** — address, manager, manager's phone, tables. The row
 itself is the control and carries a `›`, not a button spelling out what pressing it does;
 that is the same bargain the cards make on a phone. The `›` is a real button so the keyboard
