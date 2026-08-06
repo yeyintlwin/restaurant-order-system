@@ -228,6 +228,12 @@ tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
 tr.sub td{background:#fbfbfc;padding-top:8px;padding-bottom:8px;font-size:13px;color:var(--muted)}
 tr.sub .leaf{padding-left:43px}
 tr.sub .leaf-mgr.none{color:#9c5c17;font-weight:550}
+/* The group's own header. Smaller and quieter than the table's, so it reads as belonging
+   to the rows under it rather than competing with the one at the top. */
+tr.subhead td{padding-top:12px;padding-bottom:3px;font-size:11px;font-weight:600;
+              letter-spacing:.05em;text-transform:uppercase;color:#9aa0a6}
+tr.open+tr.subhead td{border-top:0}
+tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
@@ -1421,7 +1427,16 @@ function toggleBranches(row){
     row.after(tr);
     return;
   }
-  let at=row;
+  /* Two of these columns change meaning inside a group — Company becomes Shop, CEO becomes
+     Manager — and without saying so a manager's name reads as another CEO. The group gets
+     its own header rather than borrowing one that no longer describes it. */
+  const head=document.createElement("tr");
+  head.className="sub subhead";
+  head.innerHTML='<td class="leaf">Shop</td><td>Manager</td><td></td>'+
+                 '<td>Tables</td><td></td><td></td>';
+  row.after(head);
+
+  let at=head;
   for(const b of list){
     const tr=document.createElement("tr");
     tr.className="sub";

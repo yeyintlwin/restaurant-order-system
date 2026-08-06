@@ -315,7 +315,17 @@ What was missing both times was not the amount of information. It was the two th
 disclosure has to say: *this opens*, and *this one is open*.
 
 Each branch prints its table figure in the same column as its company's total, so the parts
-line up under the sum they add to. The Edit button keeps its own click — an action inside a
+line up under the sum they add to.
+
+**The group carries its own header.** Two of the columns change meaning inside it — Company
+becomes Shop, CEO becomes Manager — and without saying so a manager's name reads as another
+CEO sitting under the first. So an expanded group opens with a small grey `SHOP · MANAGER ·
+TABLES` line of its own, quieter than the table's header so it reads as belonging to the
+rows beneath it rather than competing with the one at the top.
+
+Considered and rejected: labelling each cell inline (*"Manager · Thura Zaw"*), which repeats
+the word down the list; and dropping the columns entirely for one sentence per branch, which
+would have cost the alignment that makes the table counts read as parts of the sum. The Edit button keeps its own click — an action inside a
 row beats the row.
 
 When the numbers change underneath it, an open row reopens rather than closing, so the
