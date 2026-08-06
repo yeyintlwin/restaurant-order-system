@@ -172,15 +172,17 @@ The wording says so: *"Suspending someone keeps their record and their past orde
 A creation form asks only for what the thing cannot exist without. Everything else waits
 for the person who will know the answer.
 
-### 4A.1 Opening a branch asks three things, and never a person
+### 4A.1 Opening a branch asks four things, and never a person
 
 The **platform owner** fills this in, from inside the company the branch belongs to.
 
-| Field      | Required | Why                                                 |
-| ---------- | -------- | --------------------------------------------------- |
-| Shop name  | Yes      | What everyone calls the branch. Goes on receipts.   |
-| Address    | No       | Shown under the name everywhere the shop is listed. |
-| **Tables** | Yes      | The number creates the tables. See below.           |
+| Field         | Required | Why                                                            |
+| ------------- | -------- | -------------------------------------------------------------- |
+| Shop name     | Yes      | What everyone calls the branch. Goes on receipts.              |
+| URL name      | Yes      | The name that goes in an address. See §4D.                     |
+| Address       | No       | Shown under the name everywhere the shop is listed.            |
+| **Tables**    | Yes      | The number creates the tables. See below.                      |
+| **Time zone** | Yes      | A shop cannot say when its business day starts without one. §7A. |
 
 **There is no manager field at all.** Not optional — absent. The platform owner may not see
 the people inside a company, so there is nobody for a picker to list.
@@ -671,46 +673,88 @@ brings the focus trap, the Escape key and an inert background with it. The row t
 it stays visible behind, so the cause of what appeared is never in doubt. Closing by any
 route clears whatever was typed.
 
-## 7A. Language is two settings, one above the other
+## 7A. Time zone, currency and language belong to the shop
 
-Companies on this platform are bought by businesses in different countries — Japan,
-Thailand, Myanmar. So there is no single right language, and there are two questions, not
-one.
+**Revised, and the reason is one sentence: a chain can open a branch in another country.**
+
+These three sat on the company. That was wrong the moment Sakura Kitchen put a branch in
+Bangkok. A business day rolling over at 06:00 Yangon is the wrong day in Thailand, the
+receipts print the wrong money, and the staff read a language chosen two borders away.
+
+They now sit on the **shop**, and the **manager** sets them — the person standing in the
+country they describe. The CEO does not set them at all, for the same reason they do not
+set opening hours: they would be guessing, and they would be guessing once per country.
+
+`core-api` already agreed. `shops.time_zone` and `shops.business_day_rollover_hour` are
+NOT NULL columns **on the shops table**, and have been since the first migration. The
+console was the only place that pretended a company had one time zone. Currency exists
+nowhere yet.
+
+### 7A.1 The one that cannot wait for the manager
+
+A shop is born managerless (§4A.1), so all three would start unset. Two of them can:
+nothing breaks while a currency or a language is unchosen, and the manager is the person
+who will know.
+
+**Time zone cannot.** A shop with no time zone cannot say when its business day starts, and
+the API refuses to create one without it. So it is the fourth thing the platform owner is
+asked when opening a branch — they are opening it in a country, and they know which.
+
+Its first option is deliberately **empty**. Somebody opening a branch in Bangkok should have
+to choose Bangkok, not fail to notice that Yangon was already sitting in the box.
+
+It stays editable on the platform owner's branch form afterwards, which is the only reason a
+wrong time zone on a shop with no manager yet is fixable at all.
+
+### 7A.2 Language is two settings, one above the other
 
 | Setting | Who sets it | Where | What it means |
 | ------- | ----------- | ----- | ------------- |
-| **Company language** | The CEO | Settings, with the company's name and time zone | What everyone in this company **starts** in |
-| **Your language** | Every person, including the CEO | Account settings | What **you** read the console in |
+| **Shop language** | The manager | Settings, with the shop's time zone and currency | What everyone at this shop **starts** in |
+| **Your language** | Every person | Account settings | What **you** read the console in |
 
 The second overrides the first, for one person, and nobody else notices.
 
-This follows §8.1's existing division exactly: **Settings is the company's, Account settings
-is yours.** A console language is a preference belonging to a person, so that is where it
-lives for all four levels.
+This follows §8.1's existing division exactly: **Settings is the place's, Account settings
+is yours.**
 
-### 7A.1 "Company default" is a real state, not a pre-selected language
+### 7A.3 "Shop default" is a real state, not a pre-selected language
 
 A person's Language list opens with an option that is not a language:
 
-    Company default — 日本語
+    Shop default — ไทย — Thai
 
 This matters more than it looks. It is the difference between *"I have not chosen"* and
-*"I chose Japanese"*, and the two behave differently the day the CEO changes the company's
+*"I chose Thai"*, and the two behave differently the day the manager changes the shop's
 language: everyone who never chose **moves with it**, and everyone who did **stays put**.
 
 Collapse it into a plain pre-selected language and the two states become
 indistinguishable — identical on the day, and the link silently cut forever. Nobody would
-find out until a CEO switched the company to Thai and half the staff did not follow.
+find out until a manager switched the shop to Thai and half the staff did not follow.
 
 The line under the field says which state you are in:
 
-- Not chosen: *"Following your company. Choose one and only your own console changes."*
-- Chosen: *"Yours only. Everyone else here still reads ไทย — Thai."*
+- Not chosen: *"Following Bogyoke. Choose one and only your own console changes."*
+- Chosen: *"Yours only. Everyone else at Bogyoke still reads ไทย — Thai."*
 
-### 7A.2 The platform owner has no default to inherit
+### 7A.4 A CEO belongs to no shop, so has no default
 
-Their list carries no "Company default" option, because there is no company above them.
-Same exception, same reason, as the one that leaves their own name theirs to edit (§4C).
+Managers and staff belong to a shop and inherit its language. A **CEO belongs to none** —
+they are above all of them — and the **platform owner** belongs to no company. Neither is
+offered a default; both pick outright.
+
+That is not a special case bolted on. It is what *"nobody above you"* looks like on every
+screen it touches: the same shape as the name field, where the platform owner is the one
+person allowed to edit their own (§4C).
+
+### 7A.5 What is left on the CEO's Settings screen
+
+The logo and the company name — the mark other people see, and the words on the receipt.
+That is genuinely all a company is once its branches carry their own country. The screen
+says so rather than looking thin by accident:
+
+> *A branch keeps its own time zone, currency and language — they belong to the country it
+> is in, and your manager sets them.*
 
 ### 7A.3 The platform's Settings screen is now empty, and says so
 
@@ -789,13 +833,20 @@ on the shop, and one person appearing on two rows is what has to be refused. A u
 partial index on that column does it; application code alone will lose the race the first
 time two CEOs save at once. §3.0 is the screen; this is what makes it true.
 
-**Language needs two columns, and one of them must be nullable.** A language on the company,
-and a language on the user. The user's has to allow **null**, because null is what "following
-my company" is — §7A.1 is a data shape before it is a screen, and storing the resolved
-language instead would silently break the day a CEO changes the company's.
+**Language and currency go on the SHOP, beside the time zone that is already there.**
+`shops.time_zone` exists and is NOT NULL; `shops.currency` and `shops.language` do not exist
+at all. Putting either on the company would be the mistake §7A just undid — a chain with a
+Bangkok branch has no single currency.
 
-Neither column exists. Neither is on any plan. Nothing else about the identity slice changes:
-a language is a preference, not a permission, and every person may set their own.
+**The user's own language needs a nullable column.** Null is what *"following my shop"* is.
+§7A.3 is a data shape before it is a screen: store the resolved language instead and the
+link silently dies the day a manager changes the shop's.
+
+Nothing else about the identity slice changes. A language is a preference, not a permission,
+and every person may set their own. But note which role may write the shop's three: the
+**manager**, on a route that today is `companyAdmin`-only for shop updates. That is a second
+reason §8B's role work is not just "take it away from the CEO" — one part of a shop record
+moves *down* to the manager while the rest moves *up* to the platform owner.
 
 ## 9. Open questions
 

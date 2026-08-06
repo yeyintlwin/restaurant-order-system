@@ -750,39 +750,16 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
             <div><label for="s1">Company name</label><p>Shown on receipts and printed orders.</p></div>
             <input id="s1" value="Sakura Kitchen" />
           </div>
-          <div class="row">
-            <div><label for="s2">Time zone</label><p>Sets when a business day starts and ends.</p></div>
-            <select id="s2">
-              <option>Asia/Yangon</option>
-              <option>Asia/Bangkok</option>
-              <option>Asia/Shanghai</option>
-              <option>Asia/Tokyo</option>
-            </select>
-          </div>
-          <div class="row">
-            <div><label for="s3">Currency</label></div>
-            <select id="s3">
-              <option>MMK — Kyat</option>
-              <option>THB — Baht</option>
-              <option>CNY — Yuan</option>
-              <option>JPY — Yen</option>
-              <option>USD — Dollar</option>
-            </select>
-          </div>
-          <!-- The company is bought by a business in one country, so its CEO says which
-               language the company runs in. This is a DEFAULT, not a rule: it is what
-               everyone here starts in, and any of them can choose their own in Account
-               settings. Changing it moves everyone who never chose. -->
-          <div class="row">
-            <div><label for="s4">Language</label><p>What everyone here starts in. Each person can choose their own.</p></div>
-            <select id="s4">
-              <option>English</option>
-              <option>မြန်မာ — Burmese</option>
-              <option>ไทย — Thai</option>
-              <option>中文 — Chinese</option>
-              <option>日本語 — Japanese</option>
-            </select>
-          </div>
+          <!-- Time zone, currency and language used to be here, on the company. They are
+               gone, and the reason is a sentence: a chain can open a branch in another
+               country. One company, one time zone was a lie the moment Sakura Kitchen put a
+               branch in Bangkok — a business day that rolls over at 06:00 Yangon is the
+               wrong day in Thailand, and the receipts print the wrong money.
+               They now live on the SHOP, set by the manager who stands in it. What is left
+               here is what is genuinely the company's: the name on the receipt, and the
+               mark above it. -->
+          <p class="limit">A branch keeps its own time zone, currency and language — they
+          belong to the country it is in, and your manager sets them.</p>
         </div>
 
         <!-- A manager runs the day at one shop. The shop itself — its name, its address,
@@ -794,6 +771,40 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
             <div><label for="m1">Shop</label><p>Named when the branch was opened. Ask your CEO to have it changed.</p></div>
             <input id="m1" value="Bogyoke" disabled />
           </div>
+
+          <!-- The three that came down from the company, and they came down to the person
+               standing in the country they describe. A manager in Bangkok knows it is
+               Bangkok; a CEO two borders away is guessing. -->
+          <div class="row">
+            <div><label for="m-tz">Time zone</label><p>Sets when this shop's business day starts and ends.</p></div>
+            <select id="m-tz">
+              <option>Asia/Yangon</option>
+              <option>Asia/Bangkok</option>
+              <option>Asia/Shanghai</option>
+              <option>Asia/Tokyo</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label for="m-cur">Currency</label><p>What this shop's prices and receipts are in.</p></div>
+            <select id="m-cur">
+              <option>MMK — Kyat</option>
+              <option>THB — Baht</option>
+              <option>CNY — Yuan</option>
+              <option>JPY — Yen</option>
+              <option>USD — Dollar</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><label for="m-lang">Language</label><p>What everyone at this shop starts in. Each person can choose their own.</p></div>
+            <select id="m-lang">
+              <option>English</option>
+              <option>မြန်မာ — Burmese</option>
+              <option>ไทย — Thai</option>
+              <option>中文 — Chinese</option>
+              <option>日本語 — Japanese</option>
+            </select>
+          </div>
+
           <div class="row">
             <div><label for="m2">Phone</label><p>Printed on the receipt.</p></div>
             <input id="m2" value="09 77 123 4567" />
@@ -1036,6 +1047,26 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <label for="sh-tables">Tables</label>
       <input id="sh-tables" type="number" min="0" max="200" inputmode="numeric" value="12" />
       <p class="hint" id="sh-tables-hint"></p>
+    </div>
+
+    <!-- The one country fact that cannot wait for the manager. A shop with no time zone
+         cannot say when its business day starts, so the record is not openable without it —
+         and a branch has no manager on the day it opens. The first option is deliberately
+         empty: an operator opening a branch in Bangkok should choose Bangkok, not fail to
+         notice that Yangon was already sitting there.
+         Currency and language DO wait, because nothing breaks while they are unset and the
+         manager is the one who will know. -->
+    <div class="field" id="sh-tz-field">
+      <label for="sh-tz">Time zone</label>
+      <select id="sh-tz">
+        <option value="">Choose one…</option>
+        <option>Asia/Yangon</option>
+        <option>Asia/Bangkok</option>
+        <option>Asia/Shanghai</option>
+        <option>Asia/Tokyo</option>
+      </select>
+      <p class="hint">Sets when this branch's business day starts and ends. Its manager can change it later, along with the currency and the language.</p>
+      <p class="warn" id="sh-tz-warn" role="alert" hidden>A branch needs a time zone before it can open.</p>
     </div>
     <div class="field" id="sh-mgr-field">
       <label for="sh-mgr">Manager</label>
@@ -2278,7 +2309,12 @@ function openShop(btn, who="company", branch=null){
   document.getElementById("sh-slug-field").hidden=!platform;
   document.getElementById("sh-addr-field").hidden=!platform;
   document.getElementById("sh-tables-field").hidden=!platform;
+  document.getElementById("sh-tz-field").hidden=!platform;
   document.getElementById("sh-mgr-field").hidden=platform;
+  // Blank on a new branch so the country is chosen rather than defaulted past. Editable
+  // afterwards too: a branch with no manager yet has nobody else who could correct it.
+  document.getElementById("sh-tz").value = shopAdding ? "" : shopSettings(shopWasName).tz;
+  document.getElementById("sh-tz-warn").hidden=true;
   // Suggested from the branch name while it is new, left alone once the operator has had
   // an opinion — and an existing branch's name is already an opinion.
   shopSlug.value = shopAdding ? "" : (b ? b.slug||"" : btn.dataset.slug||"");
@@ -2432,6 +2468,8 @@ function renameShop(from,to){
   const m1=document.getElementById("m1");
   if(m1.value===from) m1.value=to;
   if(OPENED[from]!==undefined) OPENED[to]=OPENED[from];
+  // The shop's own three follow it, or a rename silently resets the branch to Yangon.
+  if(SHOP_SETTINGS[from]){ SHOP_SETTINGS[to]=SHOP_SETTINGS[from]; delete SHOP_SETTINGS[from]; }
   if(document.getElementById("scope-sh").textContent===from)
     document.getElementById("scope-sh").textContent=to;
 }
@@ -2447,6 +2485,9 @@ function savePlace(){
   if(!label){ shopName.focus(); return; }             // a silent return is how this hides
   if(!paintShopSlug()){ shopSlug.focus(); return; }
   const slug=shopSlug.value.trim();
+  const tzEl=document.getElementById("sh-tz"), tz=tzEl.value;
+  document.getElementById("sh-tz-warn").hidden=!!tz;
+  if(!tz){ tzEl.focus(); return; }
   const addr=document.getElementById("sh-addr").value.trim();
   const n=Math.max(0,Number(shopTables.value)||0);
   const company=(shopBranch&&shopBranch.company)||"Sakura Kitchen";
@@ -2481,10 +2522,15 @@ function savePlace(){
       (OTHER_SHOPS[company]=OTHER_SHOPS[company]||[])
         .push({shop:label,slug,manager:"",address:addr,tables:n});
     }
+    shopSettings(label).tz=tz;
     note=label+" is open at "+company+" with "+n+" table"+(n===1?"":"s")+
-      ". Its CEO chooses who manages it.";
+      ", on "+tz+". Its CEO chooses who manages it, and that manager sets its currency "+
+      "and language.";
   }else{
     const was=shopsOf(company)[shopBranch.index];
+    // Read BEFORE the rename, which moves the settings to the new key. Reading after would
+    // find nothing there and mint a fresh Yangon default to compare against.
+    const wasTz=shopSettings(was.shop).tz;
     if(mine){
       const row=[...document.querySelectorAll("#shops-rows tr:not(.sub)")][shopBranch.index];
       row.querySelector(".who .nm").textContent=label;
@@ -2496,11 +2542,19 @@ function savePlace(){
     }else{
       Object.assign(OTHER_SHOPS[company][shopBranch.index],
         {shop:label,slug,address:addr,tables:n});
+      // No people to fan out to over here, but the shop's own three still have to follow.
+      if(was.shop!==label && SHOP_SETTINGS[was.shop]){
+        SHOP_SETTINGS[label]=SHOP_SETTINGS[was.shop]; delete SHOP_SETTINGS[was.shop];
+      }
     }
+    shopSettings(label).tz=tz;
     const d=n-Number(was.tables||0);
     note=label+" saved."+(d>0 ? " "+d+" table"+(d>1?"s":"")+" added."
       : d<0 ? " "+(-d)+" table"+(d<-1?"s":"")+" removed — those QR codes stop working."
-      : "");
+      : "")+(tz!==wasTz ? " Now on "+tz+"." : "");
+    if(PERSON.manager.sh===was.shop||PERSON.manager.sh===label){
+      paintShopSettingsPanel(); paintLanguage();
+    }
   }
 
   shopDialog.close();
@@ -2564,19 +2618,38 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
 const LANGS=["English","မြန်မာ — Burmese","ไทย — Thai","中文 — Chinese","日本語 — Japanese"];
 const myLang={};                                    // per level, "" means "not chosen"
 
+/* Time zone, currency and language belong to the SHOP, not the company. A chain can open a
+   branch in another country, and the moment it does, one company-wide value is a lie: a
+   business day that rolls over at 06:00 Yangon is the wrong day in Bangkok, and the
+   receipts print the wrong money. So they sit on the place they describe, set by the
+   manager standing in it. */
+const SHOP_SETTINGS={};
+function shopSettings(shop){
+  return SHOP_SETTINGS[shop] || (SHOP_SETTINGS[shop]={tz:"Asia/Yangon",cur:"MMK — Kyat",lang:LANGS[0]});
+}
+
+/* Who has a default above them, and what it is.
+   A manager and their staff belong to a shop, so they inherit the shop's language.
+   A CEO belongs to no shop — they are above all of them — and the platform owner belongs to
+   no company. Neither has a default to follow, so neither is offered one. Same shape as the
+   name field: the exception is not a special case, it is what "nobody above you" looks like
+   on every screen it touches. */
+function langSourceFor(as){
+  const shop=(PERSON[as]||{}).sh;
+  return (as==="manager"||as==="staff") ? shop : "";
+}
+
 function paintLanguage(){
   const as=document.body.dataset.as;
-  const mine=as!=="platform";
+  const from=langSourceFor(as);
   const sel=document.getElementById("a5");
-  const company=document.getElementById("s4").value;
+  const shopLang=from ? shopSettings(from).lang : "";
   const chosen=myLang[as]||"";
 
   sel.textContent="";
-  // The platform owner has nobody above them, so there is no default to inherit — the same
-  // exception that leaves their own name theirs to edit.
-  if(mine){
+  if(from){
     const o=document.createElement("option");
-    o.value=""; o.textContent="Company default — "+company;
+    o.value=""; o.textContent="Shop default — "+shopLang;
     sel.append(o);
   }
   for(const l of LANGS){
@@ -2584,20 +2657,34 @@ function paintLanguage(){
     o.value=l; o.textContent=l;
     sel.append(o);
   }
-  sel.value = mine ? chosen : (chosen||LANGS[0]);
+  sel.value = from ? chosen : (chosen||LANGS[0]);
 
-  document.getElementById("a5-note").textContent = mine
-    ? (chosen ? "Yours only. Everyone else here still reads "+company+"."
-              : "Following your company. Choose one and only your own console changes.")
+  document.getElementById("a5-note").textContent = from
+    ? (chosen ? "Yours only. Everyone else at "+from+" still reads "+shopLang+"."
+              : "Following "+from+". Choose one and only your own console changes.")
     : "The language this console is shown in.";
 }
 document.getElementById("a5").addEventListener("change",e=>{
   myLang[document.body.dataset.as]=e.target.value;
   paintLanguage();
 });
-// A CEO moving the company default moves everyone who never chose, and the wording on
-// their own screen has to move with it or it names a language nobody is reading.
-document.getElementById("s4").addEventListener("change",paintLanguage);
+
+/* The manager's three. Each writes to their own shop, and the language one has to repaint
+   Account settings underneath it — the people who never chose are following this value, and
+   a note naming a language nobody is reading is worse than no note. */
+function paintShopSettingsPanel(){
+  const shop=PERSON.manager.sh;
+  const s=shopSettings(shop);
+  document.getElementById("m1").value=shop;
+  document.getElementById("m-tz").value=s.tz;
+  document.getElementById("m-cur").value=s.cur;
+  document.getElementById("m-lang").value=s.lang;
+}
+for(const [id,key] of [["m-tz","tz"],["m-cur","cur"],["m-lang","lang"]])
+  document.getElementById(id).addEventListener("change",e=>{
+    shopSettings(PERSON.manager.sh)[key]=e.target.value;
+    paintLanguage();
+  });
 
 /* ── changing a password ──────────────────────────────────────────────────── */
 const pwDialog=document.getElementById("pw-dialog");
@@ -2647,7 +2734,8 @@ function setAs(as){
      someone above them except the platform owner, who has nobody to ask — the same gap
      that leaves them with no way to reset their own password. */
   paintLogo();                              // the rail's mark belongs to the company, not the platform
-  paintLanguage();                          // and the language above them differs per level
+  paintShopSettingsPanel();                 // a manager's screen is about their shop
+  paintLanguage();                          // and what is above them differs per level
 
   const above={platform:"", company:"the platform owner", manager:"your CEO", staff:"your manager"}[as];
   const name=document.getElementById("a1");
@@ -2684,6 +2772,7 @@ go(document.querySelector("[data-go].on"));
 // switched roles yet and the control rendered with no options at all: an empty box on
 // Account settings for whoever opened the console and never touched Viewing as.
 // A screen that is only correct after you have been somewhere else is not correct.
+paintShopSettingsPanel();
 paintLanguage();
 refreshShopsEmpty();
 </script>
