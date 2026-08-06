@@ -44,8 +44,18 @@ not exist.**
 
 - The platform owner's console has **no Users menu at all**. There is no page anywhere in
   their console that lists a manager or a member of staff.
-- Staff have **no menu items whatsoever**. Signing in lands them on their own account
-  page. The empty sidebar is the message: this console is not where they work.
+- Staff have **nothing but the Dashboard**. No shops, no people, no settings — signing in
+  shows them one screen and their own account.
+
+### 2.2 Everyone lands on a Dashboard
+
+The first item in every sidebar, for every level, and the screen the console opens on.
+
+It is **empty on purpose** and says so: *"Nothing here yet."* A placeholder that admits it
+is a placeholder is honest. A grid of invented numbers would be read as real the moment
+anyone looked at it, and someone would make a decision on it.
+
+What belongs on it differs by level and is not yet decided, so nothing has been guessed.
 
 ### 2.2 Where a boundary is felt, it is stated
 

@@ -172,6 +172,12 @@ th.acth{text-align:right}
        font-size:13.5px}
 .ghost:hover{background:#f6f6f7}
 
+/* An empty screen that admits it. Better than a grid of invented numbers, which would be
+   read as real the moment anyone looked at it. */
+.blank{margin:0;padding:56px 24px;text-align:center;color:var(--ink);font-weight:550}
+.blank span{display:block;max-width:34em;margin:6px auto 0;font-weight:400;font-size:13.5px;
+            color:var(--muted)}
+
 /* ── password ───────────────────────────── */
 /* Changing a password is its own task with its own commit point, so it gets its own
    surface. Unfolding it inside the panel only made the list longer: the button that
@@ -415,9 +421,12 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
     </div>
 
     <nav class="nav">
+      <!-- Everyone lands here. It is empty on purpose for now — a placeholder that says so
+           is honest; a placeholder full of invented numbers is not. -->
+      <a href="#" data-go="dashboard" data-for="platform company manager staff" data-title="Dashboard" class="on">Dashboard</a>
       <!-- The platform owner's reach ends at companies and their CEOs. There is deliberately
            no screen here that lists a manager or a member of staff. -->
-      <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company" class="on">Companies</a>
+      <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company">Companies</a>
       <!-- A CEO owns the level below them: the shops, and everyone working in them. -->
       <a href="#" data-go="shops" data-for="company" data-title="Shops" data-action="Add shop" data-opens="shop">Shops</a>
       <a href="#" data-go="users" data-for="company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
@@ -454,8 +463,16 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
 
     <div class="body">
 
+      <!-- ══ Dashboard — everyone's first screen ══ -->
+      <section class="view on" id="v-dashboard">
+        <div class="panel">
+          <p class="blank">Nothing here yet.<span>This is where the few numbers worth
+          seeing first will go, once we know which ones those are.</span></p>
+        </div>
+      </section>
+
       <!-- ══ Companies — the platform owner's only list ══ -->
-      <section class="view on" id="v-companies" data-for="platform">
+      <section class="view" id="v-companies" data-for="platform">
         <p class="done" id="co-done" hidden></p>
         <div class="panel">
           <div class="scroll">
