@@ -233,18 +233,27 @@ th.acth{text-align:right}
 tr.open>td{background:var(--accent-soft)}
 tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
 
-/* The group is a block, not a few paler rows. A tinted band and a rule down its left edge
-   tie it to the company above it and keep it off the companies below. */
-tr.sub td{background:#f4f5f7;padding-top:9px;padding-bottom:9px;font-size:13px;color:var(--ink)}
-tr.sub td:first-child{box-shadow:inset 3px 0 0 #d8dfdb}
-tr.sub .leaf{padding-left:40px}
-tr.sub .leaf-mgr.none{color:#9c5c17;font-weight:550}
-/* And its header is a header: darker band, spaced caps, a rule under it. Grey-on-grey at
-   one weight apart was not enough — a manager's name read as more of the heading. */
-tr.subhead td{background:#e7eaec;padding-top:7px;padding-bottom:7px;
-              font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-              color:#5d646d;border-bottom:1px solid #d7dbdf}
-tr.sub:last-of-type td{border-bottom:1px solid var(--line)}
+/* Branches are a TREE, not a second table. Laying them out in the parent's columns — with
+   their own header row and their own Actions heading — made one table look like two nested
+   inside each other, and reading it took work. A branch now spans the row and hangs off a
+   line, the way a folder shows what is inside it. */
+tr.sub td{padding:0;border-bottom:0}
+.twig{display:flex;align-items:center;gap:14px;position:relative;
+      margin-left:34px;padding:3px 18px 3px 30px;font-size:13px}
+/* The tree only exists in the table layout, which is desktop only, so the 44px finger
+   target is not what is being served here — a branch that is half again as tall as it
+   needs to be is. */
+.twig .edit{min-height:34px}
+/* the trunk, running down through the group */
+.twig::before{content:"";position:absolute;left:0;top:0;bottom:0;border-left:1px solid #d3d8dc}
+/* and the elbow into this branch */
+.twig::after{content:"";position:absolute;left:0;top:50%;width:19px;border-top:1px solid #d3d8dc}
+/* the last one closes the trunk instead of running past it */
+tr.twig-last .twig::before{bottom:50%}
+.twig-name{font-weight:550;color:var(--ink);min-width:130px}
+.twig-meta{flex:1;color:var(--muted)}
+.twig-meta .none{color:#9c5c17;font-weight:550}
+tr.twig-last td{border-bottom:1px solid var(--line)}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
@@ -1468,8 +1477,8 @@ function toggleBranches(row){
   const list=shopsOf(row.querySelector("[data-company]").dataset.company);
   if(!list.length){
     const tr=document.createElement("tr");
-    tr.className="sub";
-    tr.innerHTML='<td class="leaf" colspan="6">No shops yet.</td>';
+    tr.className="sub twig-last";
+    tr.innerHTML='<td colspan="6"><div class="twig"><span class="twig-meta">No shops yet.</span></div></td>';
     row.after(tr);
     return;
   }
@@ -1477,26 +1486,24 @@ function toggleBranches(row){
      Manager — and without saying so a manager's name reads as another CEO. The group gets
      its own header rather than borrowing one that no longer describes it. */
   const company=row.querySelector("[data-company]").dataset.company;
-  const head=document.createElement("tr");
-  head.className="sub subhead";
-  head.innerHTML='<td class="leaf">Shop</td><td>Manager</td><td></td>'+
-                 '<td>Tables</td><td></td><td class="act">Actions</td>';
-  row.after(head);
-
-  let at=head;
+  let at=row;
   list.forEach((b,i)=>{
     const tr=document.createElement("tr");
     tr.className="sub";
-    // Manager under the CEO column, tables under the company's total: each branch figure
-    // sits beneath the thing it is part of. Its own Details sheet holds the rest.
-    tr.innerHTML='<td class="leaf"></td><td class="leaf-mgr"></td><td></td>'+
-                 '<td class="meta state" data-label="Tables"></td><td></td>'+
-                 '<td class="act"><button type="button" class="edit branch">Details</button></td>';
-    tr.querySelector(".leaf").textContent=b.shop;
-    const mgr=tr.querySelector(".leaf-mgr");
-    mgr.textContent=b.manager||"No manager";
-    if(!b.manager) mgr.classList.add("none");
-    tr.querySelector('[data-label="Tables"]').textContent=b.tables;
+    if(i===list.length-1) tr.classList.add("twig-last");
+    // One cell across the row. Nothing lines up under the parent's columns, so nothing
+    // claims to be the same kind of thing as the parent's values.
+    tr.innerHTML='<td colspan="6"><div class="twig">'+
+                 '<span class="twig-name"></span><span class="twig-meta"></span>'+
+                 '<button type="button" class="edit branch">Details</button></div></td>';
+    tr.querySelector(".twig-name").textContent=b.shop;
+    const meta=tr.querySelector(".twig-meta");
+    if(b.manager) meta.textContent=b.manager+" · "+b.tables+" tables";
+    else{
+      const none=document.createElement("span");
+      none.className="none"; none.textContent="No manager";
+      meta.append(none," · "+b.tables+" tables");
+    }
     const go=tr.querySelector(".branch");
     go.dataset.company=company; go.dataset.branch=String(i);
     at.after(tr); at=tr;

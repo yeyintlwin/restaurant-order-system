@@ -317,16 +317,34 @@ disclosure has to say: *this opens*, and *this one is open*.
 Each branch prints its table figure in the same column as its company's total, so the parts
 line up under the sum they add to.
 
-**The group carries its own header.** Two of the columns change meaning inside it — Company
-becomes Shop, CEO becomes Manager — and without saying so a manager's name reads as another
-CEO sitting under the first. So an expanded group opens with its own `SHOP · MANAGER ·
-TABLES · ACTIONS` row.
+**The branches are a tree, not a nested table.** This took three tries and the first two
+were the same mistake in different clothes.
 
-It took two goes. Set in grey text one weight apart from the rows beneath it, the header
-still read as more of the same list. It is now a **band**: a darker fill, spaced caps, a
-rule under it, and the whole group tinted and carrying a bar down its left edge so it reads
-as one block belonging to the company above rather than three rows floating between two
-companies.
+Laying the branches out in the parent's columns meant two of those columns quietly changed
+meaning — Company became Shop, CEO became Manager — so a manager's name read as a second
+CEO. The fix looked obvious: give the group its own header row. But a header row plus an
+Actions column *inside* an Actions column produced one table that looked like two nested
+together, and reading it took real effort. Making the header a darker band only made the
+nesting more emphatic.
+
+The answer was to stop pretending it is a table. **A branch spans the whole row and hangs
+off a line**, the way a folder shows what is inside it:
+
+```text
+▾ SK  Sakura Kitchen   Khin Myat      3   40   Active   Details  Edit
+      ├─ Bogyoke       Thura Zaw · 12 tables                     Details
+      ├─ Hledan        Ko Ko Naing · 8 tables                    Details
+      └─ Insein        No manager · 20 tables                    Details
+   MG Mandalay Grill   Nay Lin        1   10   Active   Details  Edit
+```
+
+Nothing lines up under the parent's columns, so nothing claims to be the same kind of thing
+as the parent's values, and no second header is needed to explain what changed. The trunk
+runs down through the group and stops at the last elbow, which is what says where the group
+ends — no tint, no band, no extra rules.
+
+The last branch is **marked in code**, not selected with `:last-of-type`, which on a `tr`
+means "the last row in the table" and would have quietly matched nothing.
 
 **Every branch has a Details button**, and a sheet behind it: address, manager, manager's
 phone, tables. There is no Edit on that sheet — a shop belongs to its CEO, and the platform
