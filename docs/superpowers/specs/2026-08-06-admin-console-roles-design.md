@@ -182,7 +182,12 @@ The **platform owner** fills this in, from inside the company the branch belongs
 | URL name      | Yes      | The name that goes in an address. See §4D.                     |
 | Address       | No       | Shown under the name everywhere the shop is listed.            |
 | **Tables**    | Yes      | The number creates the tables. See below.                      |
-| **Time zone** | Yes      | A shop cannot say when its business day starts without one. §7A. |
+| **Time zone** | Yes      | When this branch's business day starts and ends. §7A.          |
+| **Currency**  | Yes      | What its prices and receipts are in. §7A.                      |
+| **Language**  | Yes      | What everyone here starts in. §7A.                             |
+
+The last three are grouped under **Where this branch is** — they are one decision about one
+country, made once, and reading them as a block is how that comes across.
 
 **There is no manager field at all.** Not optional — absent. The platform owner may not see
 the people inside a company, so there is nobody for a picker to list.
@@ -681,37 +686,54 @@ These three sat on the company. That was wrong the moment Sakura Kitchen put a b
 Bangkok. A business day rolling over at 06:00 Yangon is the wrong day in Thailand, the
 receipts print the wrong money, and the staff read a language chosen two borders away.
 
-They now sit on the **shop**, and the **manager** sets them — the person standing in the
-country they describe. The CEO does not set them at all, for the same reason they do not
-set opening hours: they would be guessing, and they would be guessing once per country.
+They now sit on the **shop**, and the **platform owner** sets them, when the branch is
+opened. The CEO does not set them at all, for the same reason they do not set opening hours:
+they would be guessing, and guessing once per country.
 
 `core-api` already agreed. `shops.time_zone` and `shops.business_day_rollover_hour` are
 NOT NULL columns **on the shops table**, and have been since the first migration. The
 console was the only place that pretended a company had one time zone. Currency exists
 nowhere yet.
 
-### 7A.1 The one that cannot wait for the manager
+### 7A.1 They are the branch's country, not its settings — so the manager reads them
 
-A shop is born managerless (§4A.1), so all three would start unset. Two of them can:
-nothing breaks while a currency or a language is unchosen, and the manager is the person
-who will know.
+**Revised once more.** These briefly belonged to the manager, on the argument that the
+person standing in Bangkok knows it is Bangkok. True, and beside the point: **nobody changes
+a currency on a Tuesday.**
 
-**Time zone cannot.** A shop with no time zone cannot say when its business day starts, and
-the API refuses to create one without it. So it is the fourth thing the platform owner is
-asked when opening a branch — they are opening it in a country, and they know which.
+What a manager would actually do with three dropdowns they never need is open one by
+accident. The damage is not cosmetic — the wrong time zone moves when the business day rolls
+over, and the wrong currency reprices the whole menu. A control nobody needs weekly, that
+breaks the shop when mistyped, belongs with the operator who opened the place.
 
-Its first option is deliberately **empty**. Somebody opening a branch in Bangkok should have
-to choose Bangkok, not fail to notice that Yangon was already sitting in the box.
+So the manager's Settings screen shows all three as **read-only**, with a line naming who to
+ask. Shown rather than removed, because a manager has to *know* their shop runs on Bangkok
+time and prices in baht — and a value you cannot find anywhere is indistinguishable from one
+nobody set.
 
-It stays editable on the platform owner's branch form afterwards, which is the only reason a
-wrong time zone on a shop with no manager yet is fixable at all.
+### 7A.2 All three are asked when the branch opens, and none of them defaults past you
+
+They are grouped on the form under **Where this branch is**, with one line saying what they
+are: *"Set once, when the branch opens. Its manager can read these but not change them."*
+
+Each starts **empty**, and each is refused by name — *"A branch needs a currency before it
+can open."* Somebody opening in Bangkok should have to choose Bangkok, not fail to notice
+that Yangon was already sitting in the box. Three deliberate choices, once, for a decision
+that outlives everyone who makes it.
+
+They stay editable on the platform owner's branch form afterwards. That is the only repair
+path there is: the CEO cannot change them and the manager cannot either, so if one is wrong
+the operator who set it is the one who fixes it.
 
 ### 7A.2 Language is two settings, one above the other
 
 | Setting | Who sets it | Where | What it means |
 | ------- | ----------- | ----- | ------------- |
-| **Shop language** | The manager | Settings, with the shop's time zone and currency | What everyone at this shop **starts** in |
+| **Shop language** | The platform owner | The branch form, when it opens | What everyone at this shop **starts** in |
 | **Your language** | Every person | Account settings | What **you** read the console in |
+
+Only the first row changed hands. Which language a branch runs in is a fact about where it
+is, like its time zone and its money. Which language *you* read is yours, always.
 
 The second overrides the first, for one person, and nobody else notices.
 
@@ -725,12 +747,12 @@ A person's Language list opens with an option that is not a language:
     Shop default — ไทย — Thai
 
 This matters more than it looks. It is the difference between *"I have not chosen"* and
-*"I chose Thai"*, and the two behave differently the day the manager changes the shop's
-language: everyone who never chose **moves with it**, and everyone who did **stays put**.
+*"I chose Thai"*, and the two behave differently the day the shop's language changes:
+everyone who never chose **moves with it**, and everyone who did **stays put**.
 
 Collapse it into a plain pre-selected language and the two states become
 indistinguishable — identical on the day, and the link silently cut forever. Nobody would
-find out until a manager switched the shop to Thai and half the staff did not follow.
+find out until a branch was switched to Thai and half the staff did not follow.
 
 The line under the field says which state you are in:
 
@@ -754,7 +776,7 @@ That is genuinely all a company is once its branches carry their own country. Th
 says so rather than looking thin by accident:
 
 > *A branch keeps its own time zone, currency and language — they belong to the country it
-> is in, and your manager sets them.*
+> is in, and are set when the branch is opened.*
 
 ### 7A.3 The platform's Settings screen is now empty, and says so
 
@@ -843,10 +865,15 @@ Bangkok branch has no single currency.
 link silently dies the day a manager changes the shop's.
 
 Nothing else about the identity slice changes. A language is a preference, not a permission,
-and every person may set their own. But note which role may write the shop's three: the
-**manager**, on a route that today is `companyAdmin`-only for shop updates. That is a second
-reason §8B's role work is not just "take it away from the CEO" — one part of a shop record
-moves *down* to the manager while the rest moves *up* to the platform owner.
+and every person may set their own.
+
+**The shop's three are written by the platform owner and by nobody else** — not the CEO, not
+the manager. That is the same role question as the rest of the shop record, so it does not
+add a second one: the whole of a shop's own row moves to the scoped platform admin, and what
+stays with the CEO is the manager slot, which lives on a different route.
+
+Worth stating because a "read-only for the manager" screen is a UI fact, not a guarantee.
+The route has to refuse a manager's write, or the read-only fields are decoration.
 
 ## 9. Open questions
 
@@ -882,3 +909,8 @@ sign-in name the manager assigns.
 - **Whether a CEO should be told a branch was opened for them.** The shop simply appears in
   their list, in amber, waiting. That is honest but silent, and the two people are not in the
   same building.
+- **The branch form is now the longest dialog in the console** — about 1150px of content
+  against a 766px viewport on a laptop, so the Save button is below the fold. It scrolls, and
+  the company dialog already overflowed before any of this, so nothing here is new or broken.
+  But if a sticky footer is ever the answer, it is the answer for every dialog at once, not
+  for this one.

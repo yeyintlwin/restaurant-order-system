@@ -759,7 +759,7 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
                here is what is genuinely the company's: the name on the receipt, and the
                mark above it. -->
           <p class="limit">A branch keeps its own time zone, currency and language — they
-          belong to the country it is in, and your manager sets them.</p>
+          belong to the country it is in, and are set when the branch is opened.</p>
         </div>
 
         <!-- A manager runs the day at one shop. The shop itself — its name, its address,
@@ -772,38 +772,27 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
             <input id="m1" value="Bogyoke" disabled />
           </div>
 
-          <!-- The three that came down from the company, and they came down to the person
-               standing in the country they describe. A manager in Bangkok knows it is
-               Bangkok; a CEO two borders away is guessing. -->
+          <!-- Read, not edit. A manager has to KNOW their shop runs on Bangkok time and
+               prices in baht — they read it off this screen every time they wonder. What
+               they must not be able to do is change it with a stray click on a dropdown
+               they had no reason to open. These three are the branch's country, they are
+               set once when it opens, and the person who opens branches owns them.
+               Shown as disabled fields rather than removed, because a value you cannot find
+               is indistinguishable from one nobody set. -->
           <div class="row">
-            <div><label for="m-tz">Time zone</label><p>Sets when this shop's business day starts and ends.</p></div>
-            <select id="m-tz">
-              <option>Asia/Yangon</option>
-              <option>Asia/Bangkok</option>
-              <option>Asia/Shanghai</option>
-              <option>Asia/Tokyo</option>
-            </select>
+            <div><label for="m-tz">Time zone</label><p>When this shop's business day starts and ends.</p></div>
+            <input id="m-tz" disabled />
           </div>
           <div class="row">
             <div><label for="m-cur">Currency</label><p>What this shop's prices and receipts are in.</p></div>
-            <select id="m-cur">
-              <option>MMK — Kyat</option>
-              <option>THB — Baht</option>
-              <option>CNY — Yuan</option>
-              <option>JPY — Yen</option>
-              <option>USD — Dollar</option>
-            </select>
+            <input id="m-cur" disabled />
           </div>
           <div class="row">
-            <div><label for="m-lang">Language</label><p>What everyone at this shop starts in. Each person can choose their own.</p></div>
-            <select id="m-lang">
-              <option>English</option>
-              <option>မြန်မာ — Burmese</option>
-              <option>ไทย — Thai</option>
-              <option>中文 — Chinese</option>
-              <option>日本語 — Japanese</option>
-            </select>
+            <div><label for="m-lang">Language</label><p>What everyone here starts in. Change your own in Account settings.</p></div>
+            <input id="m-lang" disabled />
           </div>
+          <p class="limit">Time zone, currency and language are set when the branch is
+          opened and rarely change. Ask your CEO if one of them is wrong.</p>
 
           <div class="row">
             <div><label for="m2">Phone</label><p>Printed on the receipt.</p></div>
@@ -1049,24 +1038,58 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <p class="hint" id="sh-tables-hint"></p>
     </div>
 
-    <!-- The one country fact that cannot wait for the manager. A shop with no time zone
-         cannot say when its business day starts, so the record is not openable without it —
-         and a branch has no manager on the day it opens. The first option is deliberately
-         empty: an operator opening a branch in Bangkok should choose Bangkok, not fail to
-         notice that Yangon was already sitting there.
-         Currency and language DO wait, because nothing breaks while they are unset and the
-         manager is the one who will know. -->
-    <div class="field" id="sh-tz-field">
-      <label for="sh-tz">Time zone</label>
-      <select id="sh-tz">
-        <option value="">Choose one…</option>
-        <option>Asia/Yangon</option>
-        <option>Asia/Bangkok</option>
-        <option>Asia/Shanghai</option>
-        <option>Asia/Tokyo</option>
-      </select>
-      <p class="hint">Sets when this branch's business day starts and ends. Its manager can change it later, along with the currency and the language.</p>
-      <p class="warn" id="sh-tz-warn" role="alert" hidden>A branch needs a time zone before it can open.</p>
+    <!-- The three country facts, set when the branch is opened and by the only person who
+         opens branches. They were briefly the manager's; they are not, because they are not
+         day-to-day settings. Nobody changes a currency on a Tuesday. What a manager COULD
+         do is change one by accident, and the damage is not cosmetic: the wrong time zone
+         moves when the business day rolls over, and the wrong currency reprices the menu.
+         A control nobody needs weekly, that breaks the shop when mistyped, belongs with the
+         operator who opened the place.
+         Every one starts EMPTY. Opening a branch in Bangkok should mean choosing Bangkok,
+         not failing to notice that Yangon was already sitting in the box. -->
+    <div class="group" id="sh-country">
+      <strong class="who">Where this branch is</strong>
+      <p class="ask">Set once, when the branch opens. Its manager can read these but not change them.</p>
+
+      <div class="field" id="sh-tz-field">
+        <label for="sh-tz">Time zone</label>
+        <select id="sh-tz">
+          <option value="">Choose one…</option>
+          <option>Asia/Yangon</option>
+          <option>Asia/Bangkok</option>
+          <option>Asia/Shanghai</option>
+          <option>Asia/Tokyo</option>
+        </select>
+        <p class="hint">Sets when this branch's business day starts and ends.</p>
+      </div>
+
+      <div class="field" id="sh-cur-field">
+        <label for="sh-cur">Currency</label>
+        <select id="sh-cur">
+          <option value="">Choose one…</option>
+          <option>MMK — Kyat</option>
+          <option>THB — Baht</option>
+          <option>CNY — Yuan</option>
+          <option>JPY — Yen</option>
+          <option>USD — Dollar</option>
+        </select>
+        <p class="hint">What this branch's prices and receipts are in.</p>
+      </div>
+
+      <div class="field" id="sh-lang-field">
+        <label for="sh-lang">Language</label>
+        <select id="sh-lang">
+          <option value="">Choose one…</option>
+          <option>English</option>
+          <option>မြန်မာ — Burmese</option>
+          <option>ไทย — Thai</option>
+          <option>中文 — Chinese</option>
+          <option>日本語 — Japanese</option>
+        </select>
+        <p class="hint">What everyone at this branch starts in. Each person can still choose their own.</p>
+      </div>
+
+      <p class="warn" id="sh-country-warn" role="alert" hidden></p>
     </div>
     <div class="field" id="sh-mgr-field">
       <label for="sh-mgr">Manager</label>
@@ -2309,12 +2332,16 @@ function openShop(btn, who="company", branch=null){
   document.getElementById("sh-slug-field").hidden=!platform;
   document.getElementById("sh-addr-field").hidden=!platform;
   document.getElementById("sh-tables-field").hidden=!platform;
-  document.getElementById("sh-tz-field").hidden=!platform;
+  document.getElementById("sh-country").hidden=!platform;
   document.getElementById("sh-mgr-field").hidden=platform;
-  // Blank on a new branch so the country is chosen rather than defaulted past. Editable
-  // afterwards too: a branch with no manager yet has nobody else who could correct it.
-  document.getElementById("sh-tz").value = shopAdding ? "" : shopSettings(shopWasName).tz;
-  document.getElementById("sh-tz-warn").hidden=true;
+  // Blank on a new branch so the country is chosen rather than defaulted past; the branch's
+  // own values when correcting one. The platform owner is the only person who can, so this
+  // stays editable after the branch is open.
+  const cs=shopAdding ? {tz:"",cur:"",lang:""} : shopSettings(shopWasName);
+  document.getElementById("sh-tz").value=cs.tz;
+  document.getElementById("sh-cur").value=cs.cur;
+  document.getElementById("sh-lang").value=cs.lang;
+  document.getElementById("sh-country-warn").hidden=true;
   // Suggested from the branch name while it is new, left alone once the operator has had
   // an opinion — and an existing branch's name is already an opinion.
   shopSlug.value = shopAdding ? "" : (b ? b.slug||"" : btn.dataset.slug||"");
@@ -2485,9 +2512,21 @@ function savePlace(){
   if(!label){ shopName.focus(); return; }             // a silent return is how this hides
   if(!paintShopSlug()){ shopSlug.focus(); return; }
   const slug=shopSlug.value.trim();
-  const tzEl=document.getElementById("sh-tz"), tz=tzEl.value;
-  document.getElementById("sh-tz-warn").hidden=!!tz;
-  if(!tz){ tzEl.focus(); return; }
+  // All three, named one at a time. "Fill in the rest" makes you hunt; naming the field
+  // does not, and there are only ever three candidates.
+  const warnEl=document.getElementById("sh-country-warn");
+  const country={};
+  for(const [id,key,label] of [["sh-tz","tz","a time zone"],["sh-cur","cur","a currency"],
+                               ["sh-lang","lang","a language"]]){
+    const el=document.getElementById(id);
+    if(!el.value){
+      warnEl.textContent="A branch needs "+label+" before it can open.";
+      warnEl.hidden=false; el.focus(); return;
+    }
+    country[key]=el.value;
+  }
+  warnEl.hidden=true;
+  const tz=country.tz;
   const addr=document.getElementById("sh-addr").value.trim();
   const n=Math.max(0,Number(shopTables.value)||0);
   const company=(shopBranch&&shopBranch.company)||"Sakura Kitchen";
@@ -2522,10 +2561,9 @@ function savePlace(){
       (OTHER_SHOPS[company]=OTHER_SHOPS[company]||[])
         .push({shop:label,slug,manager:"",address:addr,tables:n});
     }
-    shopSettings(label).tz=tz;
+    Object.assign(shopSettings(label),country);
     note=label+" is open at "+company+" with "+n+" table"+(n===1?"":"s")+
-      ", on "+tz+". Its CEO chooses who manages it, and that manager sets its currency "+
-      "and language.";
+      ", on "+tz+", pricing in "+country.cur+". Its CEO chooses who manages it.";
   }else{
     const was=shopsOf(company)[shopBranch.index];
     // Read BEFORE the rename, which moves the settings to the new key. Reading after would
@@ -2547,7 +2585,7 @@ function savePlace(){
         SHOP_SETTINGS[label]=SHOP_SETTINGS[was.shop]; delete SHOP_SETTINGS[was.shop];
       }
     }
-    shopSettings(label).tz=tz;
+    Object.assign(shopSettings(label),country);
     const d=n-Number(was.tables||0);
     note=label+" saved."+(d>0 ? " "+d+" table"+(d>1?"s":"")+" added."
       : d<0 ? " "+(-d)+" table"+(d<-1?"s":"")+" removed — those QR codes stop working."
@@ -2669,9 +2707,11 @@ document.getElementById("a5").addEventListener("change",e=>{
   paintLanguage();
 });
 
-/* The manager's three. Each writes to their own shop, and the language one has to repaint
-   Account settings underneath it — the people who never chose are following this value, and
-   a note naming a language nobody is reading is worse than no note. */
+/* The manager's screen READS the three. It never wrote them for long: they are the branch's
+   country, they are set once when it opens, and a stray click on a dropdown that reprices
+   the menu is not a risk worth the convenience of an edit nobody needs weekly. There are no
+   change listeners here on purpose — the fields are disabled, and there is nothing to
+   listen for. */
 function paintShopSettingsPanel(){
   const shop=PERSON.manager.sh;
   const s=shopSettings(shop);
@@ -2680,11 +2720,6 @@ function paintShopSettingsPanel(){
   document.getElementById("m-cur").value=s.cur;
   document.getElementById("m-lang").value=s.lang;
 }
-for(const [id,key] of [["m-tz","tz"],["m-cur","cur"],["m-lang","lang"]])
-  document.getElementById(id).addEventListener("change",e=>{
-    shopSettings(PERSON.manager.sh)[key]=e.target.value;
-    paintLanguage();
-  });
 
 /* ── changing a password ──────────────────────────────────────────────────── */
 const pwDialog=document.getElementById("pw-dialog");
