@@ -199,7 +199,10 @@ th.acth{text-align:right}
                              padding:11px 0;font-size:13.5px}
 .facts>div+div,.facts>button+div,.facts>div+button,.facts>button+button{border-top:1px solid var(--line)}
 /* A fact that opens something. Same line, plus a mark and somewhere to press. */
-.facts>button{display:block;width:100%;padding:0 26px 0 0;border:0;background:none;
+/* A line that leads somewhere is a real target, so it carries the same 44px floor every
+   other control here does. Two of these are the only way into a branch on a stacked
+   screen, so a hair under was a hair too little. */
+.facts>button{display:block;width:100%;min-height:44px;padding:0 26px 0 0;border:0;background:none;
               text-align:left;position:relative}
 .facts>button::after{content:"";position:absolute;right:6px;top:50%;margin-top:-4px;
   border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
@@ -210,7 +213,9 @@ th.acth{text-align:right}
 .facts .head{margin-top:8px;padding:14px 0 4px;border-top:1px solid var(--line);
              font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
              color:var(--muted)}
-.facts .head+div{border-top:0}
+/* A branch line IS a button, so matching only a following DIV left the first branch under
+   the SHOPS heading wearing a rule stacked under the heading's own. */
+.facts .head+div,.facts .head+button{border-top:0}
 .facts a{color:var(--accent);font-weight:550;text-decoration:none}
 .facts a:hover{text-decoration:underline;text-underline-offset:3px}
 
@@ -269,6 +274,29 @@ tr.twig-last .twig::before{bottom:50%}
 .twig-meta{flex:1;color:var(--muted)}
 .twig-meta .none{color:#9c5c17;font-weight:550}
 tr.twig-last td{border-bottom:1px solid var(--line)}
+
+/* The way to add a branch is the last thing on the branch, so it hangs off the same trunk
+   and closes it. A group ends with the way to add to it — which also means a company with
+   no shops at all still shows one line, and that line is the one that fixes it.
+   Taller than a branch on purpose: iPad landscape is 1366px, so this tree renders on a
+   touch screen, and a 30px row is not a target. */
+.twig.add{min-height:44px;color:var(--accent);font-weight:550}
+.twig.add .twig-name{color:var(--accent);min-width:0}
+.twig.add::after{border-top-color:#c9d6cf}
+/* A plus, not a chevron: this line makes something rather than opening something. So the
+   chevron goes — but the button stays, because it is the only thing in the row a keyboard
+   can reach, and it keeps its accessible name. Without a mark of its own it needs a focus
+   ring, or tabbing through the tree lands somewhere invisible. */
+.twig.add .twig-go::before{content:none}
+/* And with no mark of its own, the button becomes the row: it covers it, so the focus ring
+   outlines the thing that is actually being pressed. A 26px ring floating at the far right
+   of a line whose words are on the left says nothing about what Enter would do. */
+.twig.add .twig-go{position:absolute;inset:0;width:auto;height:auto}
+.twig.add .twig-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.twig.add .twig-plus{flex:none;position:relative;width:13px;height:13px;margin-right:-4px}
+.twig.add .twig-plus::before,.twig.add .twig-plus::after{content:"";position:absolute;
+  left:0;top:6px;width:13px;border-top:1.5px solid currentColor}
+.twig.add .twig-plus::after{transform:rotate(90deg)}
 
 /* Replacing a manager is one decision with two halves. Splitting it into "demote the old
    one" and "promote the new one" leaves the shop with two managers or none in between. */
@@ -424,11 +452,16 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <!-- Everyone lands here. It is empty on purpose for now — a placeholder that says so
            is honest; a placeholder full of invented numbers is not. -->
       <a href="#" data-go="dashboard" data-for="platform company manager staff" data-title="Dashboard" class="on">Dashboard</a>
-      <!-- The platform owner's reach ends at companies and their CEOs. There is deliberately
-           no screen here that lists a manager or a member of staff. -->
+      <!-- Places and people are two different ladders. The platform owner builds the places
+           — companies, and the shops inside them — and appoints only the CEO. There is
+           deliberately no screen here that lists a manager or a member of staff.
+           A branch is added from inside the company it belongs to, not from this menu:
+           a shop cannot exist without a company, so the company row is where it starts. -->
       <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company">Companies</a>
-      <!-- A CEO owns the level below them: the shops, and everyone working in them. -->
-      <a href="#" data-go="shops" data-for="company" data-title="Shops" data-action="Add shop" data-opens="shop">Shops</a>
+      <!-- A CEO owns the people below them, and the manager slot on each shop. Opening a
+           branch is not theirs, so this screen has no primary action — dropping data-action
+           is the whole mechanism, the same way Dashboard and Settings have none. -->
+      <a href="#" data-go="shops" data-for="company" data-title="Shops">Shops</a>
       <a href="#" data-go="users" data-for="company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
       <!-- A manager's reach ends at their own staff, so the menu says so. -->
       <a href="#" data-go="users" data-for="manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
@@ -484,21 +517,21 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
                 <td class="meta state" data-label="CEO"><b>Khin Myat</b>khin@sakura.mm</td>
                 <td class="meta state" data-label="Shops">3</td><td class="meta state" data-label="Tables">40</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-company="Sakura Kitchen" data-ceo="Khin Myat" data-ceo-email="khin@sakura.mm" data-status="active">Edit</button></td>
+                <td class="act"><button class="edit" data-company="Sakura Kitchen" data-slug="sakura" data-ceo="Khin Myat" data-ceo-email="khin@sakura.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">MG</span><span><span class="nm">Mandalay Grill</span><br><span class="em">mandalaygrill.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Nay Lin</b>naylin@mandalaygrill.mm</td>
                 <td class="meta state" data-label="Shops">1</td><td class="meta state" data-label="Tables">10</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-company="Mandalay Grill" data-ceo="Nay Lin" data-ceo-email="naylin@mandalaygrill.mm" data-status="active">Edit</button></td>
+                <td class="act"><button class="edit" data-company="Mandalay Grill" data-slug="mandalay-grill" data-ceo="Nay Lin" data-ceo-email="naylin@mandalaygrill.mm" data-status="active">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">SC</span><span><span class="nm">Shwe Café</span><br><span class="em">shwecafe.mm</span></span></div></td>
                 <td class="meta state" data-label="CEO"><b>Su Su Hlaing</b>susu@shwecafe.mm</td>
                 <td class="meta state" data-label="Shops">2</td><td class="meta state" data-label="Tables">14</td>
                 <td class="meta state" data-label="Status">Suspended</td>
-                <td class="act"><button class="edit" data-company="Shwe Café" data-ceo="Su Su Hlaing" data-ceo-email="susu@shwecafe.mm" data-status="suspended">Edit</button></td>
+                <td class="act"><button class="edit" data-company="Shwe Café" data-slug="shwe-cafe" data-ceo="Su Su Hlaing" data-ceo-email="susu@shwecafe.mm" data-status="suspended">Edit</button></td>
               </tr>
             </tbody>
           </table>
@@ -506,10 +539,18 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
         </div>
       </section>
 
-      <!-- ══ Shops — the CEO's level below ══ -->
+      <!-- ══ Shops — the CEO reads the branch, and appoints the one person in it ══ -->
+      <!-- The branches themselves are opened by the platform owner. What is a CEO's here is
+           the manager slot on each one, which is why this screen keeps its Edit and loses
+           its Add. -->
       <section class="view" id="v-shops" data-for="company">
         <p class="notice" id="shop-gap" hidden></p>
         <p class="done" id="shop-done" hidden></p>
+        <!-- A new company has no branches until the platform owner opens one. Saying so is
+             better than an empty table, which reads as something failing to load. -->
+        <p class="blank" id="shop-none" hidden>No branches yet.<span>The platform owner
+        opens your branches. As soon as one exists it appears here, waiting for you to
+        choose who manages it.</span></p>
         <div class="panel">
           <div class="scroll">
           <table>
@@ -520,14 +561,14 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
                 <td class="meta state" data-label="Manager"><b>Thura Zaw</b>thura@sakura.mm</td>
                 <td class="meta state" data-label="Tables">12</td><td class="meta state" data-label="Staff">2</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-shop="Bogyoke" data-manager="Thura Zaw">Edit</button></td>
+                <td class="act"><button class="edit" data-shop="Bogyoke" data-slug="bogyoke" data-manager="Thura Zaw">Edit</button></td>
               </tr>
               <tr>
                 <td><div class="who"><span class="av">HL</span><span><span class="nm">Hledan</span><br><span class="em">Hledan Junction</span></span></div></td>
                 <td class="meta state" data-label="Manager"><b>Ko Ko Naing</b>kokonaing@sakura.mm</td>
                 <td class="meta state" data-label="Tables">8</td><td class="meta state" data-label="Staff">1</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-shop="Hledan" data-manager="Ko Ko Naing">Edit</button></td>
+                <td class="act"><button class="edit" data-shop="Hledan" data-slug="hledan" data-manager="Ko Ko Naing">Edit</button></td>
               </tr>
               <!-- Zaw Moe left. The slot was emptied rather than left pointing at someone
                    who no longer works here, and the hole is stated in plain words. -->
@@ -536,7 +577,7 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
                 <td class="meta state none" data-label="Manager">No manager</td>
                 <td class="meta state" data-label="Tables">20</td><td class="meta state" data-label="Staff">0</td>
                 <td class="meta state ok" data-label="Status">Active</td>
-                <td class="act"><button class="edit" data-shop="Insein" data-manager="">Assign</button></td>
+                <td class="act"><button class="edit" data-shop="Insein" data-slug="insein" data-manager="">Assign</button></td>
               </tr>
             </tbody>
           </table>
@@ -649,6 +690,18 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
             <input id="a4" type="tel" inputmode="tel" value="09 77 123 4567" />
           </div>
 
+          <!-- Yours, like everything else on this screen. The company's language is the one
+               everyone STARTS in; this is the one you read. The first option is not a
+               language at all — it is "I have not chosen", kept as a real, visible state so
+               that changing the company's default still moves the people who never picked.
+               Collapse it into a plain pre-selected language and that link is cut silently.
+               The platform owner has no company above them, so they do not get that option
+               — the same exception that leaves their name theirs to edit. -->
+          <div class="row">
+            <div><label for="a5">Language</label><p id="a5-note"></p></div>
+            <select id="a5"></select>
+          </div>
+
           <!-- A row of dots in a text field says nothing about what it is for. This row
                says when the password last changed and offers the one action there is.
                The row itself never moves — the task opens on top of it. -->
@@ -667,19 +720,17 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <!-- ══ Settings ══ -->
       <section class="view" id="v-settings" data-for="platform company manager">
 
-        <!-- One preference for now. A platform owner sets nothing that reaches inside a
-             company, so there is nothing else to put here yet. -->
+        <!-- Empty, and it says so. The one row that used to be here was the console's
+             language, which is a preference belonging to the person rather than to the
+             platform — so it moved to Account settings, where every other level's is.
+             A platform owner sets nothing that reaches inside a company, and there is no
+             platform-wide default to set either: a company's language is chosen by the CEO
+             who bought it. Rather than keep a screen alive with one borrowed row, the screen
+             admits what it is. -->
         <div class="panel" data-for="platform">
-          <div class="row">
-            <div><label for="p4">Language</label><p>The language this console is shown in.</p></div>
-            <select id="p4">
-              <option>English</option>
-              <option>မြန်မာ — Burmese</option>
-              <option>ไทย — Thai</option>
-              <option>中文 — Chinese</option>
-              <option>日本語 — Japanese</option>
-            </select>
-          </div>
+          <p class="blank">Nothing here yet.<span>Nothing the platform sets reaches inside a
+          company, and your own preferences — including the language this console is shown
+          in — live in Account settings.</span></p>
         </div>
 
         <div class="panel" data-for="company">
@@ -718,8 +769,12 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
               <option>USD — Dollar</option>
             </select>
           </div>
+          <!-- The company is bought by a business in one country, so its CEO says which
+               language the company runs in. This is a DEFAULT, not a rule: it is what
+               everyone here starts in, and any of them can choose their own in Account
+               settings. Changing it moves everyone who never chose. -->
           <div class="row">
-            <div><label for="s4">Language</label></div>
+            <div><label for="s4">Language</label><p>What everyone here starts in. Each person can choose their own.</p></div>
             <select id="s4">
               <option>English</option>
               <option>မြန်မာ — Burmese</option>
@@ -730,11 +785,13 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
           </div>
         </div>
 
-        <!-- A manager runs the day at one shop. Naming the shop, and everything about the
-             company, stays with the CEO. -->
+        <!-- A manager runs the day at one shop. The shop itself — its name, its address,
+             how many tables it has — was set when the branch was opened, and opening a
+             branch is the platform owner's job. A manager asks their CEO, who asks the
+             platform: each person still speaks only to the one above them. -->
         <div class="panel" data-for="manager">
           <div class="row">
-            <div><label for="m1">Shop</label><p>Your CEO names the shops.</p></div>
+            <div><label for="m1">Shop</label><p>Named when the branch was opened. Ask your CEO to have it changed.</p></div>
             <input id="m1" value="Bogyoke" disabled />
           </div>
           <div class="row">
@@ -785,6 +842,19 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
     <div class="field">
       <label for="co-name">Company name</label>
       <input id="co-name" />
+    </div>
+
+    <!-- The name people say, and the name the system says, are two different things and the
+         second one has to be typed. Suggested from the first until the operator edits it —
+         after that it is theirs and stops moving under them.
+         Everything below it is one live line showing the URL being built. That is the
+         explanation: a rule you read is a rule you forget, a URL you watch assemble is
+         one you understand. -->
+    <div class="field" id="co-slug-field">
+      <label for="co-slug">URL name</label>
+      <input id="co-slug" spellcheck="false" autocapitalize="off" autocorrect="off" />
+      <p class="hint" id="co-slug-url"></p>
+      <p class="warn" id="co-slug-warn" role="alert" hidden></p>
     </div>
 
     <div class="group" id="co-status-box">
@@ -919,41 +989,66 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
   </form>
 </dialog>
 
-<!-- The manager is a slot on the SHOP, not a badge on the person. Editing it here is what
-     makes "one manager per shop" true by construction: there is one field, so there can
-     never be two managers or a second one nobody noticed. -->
+<!-- ONE dialog, two readers, and the split is the whole design.
+     The PLACE — name, address, how many tables — belongs to the platform owner, who opens
+     the branch. The PERSON running it belongs to the CEO. Neither ever sees the other's
+     half: the platform owner gets no manager picker, because they may not know who is
+     inside a company, and the CEO gets the place as read-only facts.
+     The manager is still a slot on the SHOP rather than a badge on the person, and that is
+     still what makes "one manager per shop" true by construction — there is one field, so
+     there can never be two managers or a second one nobody noticed.
+     Every field stays in the DOM in both modes and is hidden by its wrapper. Four handles
+     are taken once at load and dereferenced unconditionally afterwards; removing a control
+     kills the script rather than the field. -->
 <dialog class="modal" id="shop-dialog" aria-labelledby="shop-h">
   <form id="shop-form">
     <h2 id="shop-h">Edit shop</h2>
     <p class="sub" id="shop-sub">Bogyoke</p>
 
-    
+    <!-- CEO mode only: the place, stated rather than offered. Rendered by facts(). -->
+    <div class="facts" id="sh-facts" hidden></div>
 
-    <div class="field">
+    <div class="field" id="sh-name-field">
       <label for="sh-name">Shop name</label>
       <input id="sh-name" value="Bogyoke" />
       <p class="hint">What everyone calls this branch. It goes on receipts and reports.</p>
+      <!-- Said out loud, not a silent return. The old code just did nothing when the name
+           was blank, which reads as a broken button. -->
+      <p class="warn" id="sh-name-warn" role="alert" hidden>A branch needs a name.</p>
     </div>
-    <div class="field">
+
+    <!-- A branch's URL name only has to be unique INSIDE its company, because the company's
+         own name is already in front of it. That is the whole reason the scheme is nested:
+         two different chains can each have a downtown branch and neither has to know. -->
+    <div class="field" id="sh-slug-field">
+      <label for="sh-slug">URL name</label>
+      <input id="sh-slug" spellcheck="false" autocapitalize="off" autocorrect="off" />
+      <p class="hint" id="sh-slug-url"></p>
+      <p class="warn" id="sh-slug-warn" role="alert" hidden></p>
+    </div>
+    <div class="field" id="sh-addr-field">
       <label for="sh-addr">Address</label>
       <input id="sh-addr" value="No. 42, Bogyoke Rd" />
     </div>
     <!-- A bare count is a fact nobody can act on. The number creates the tables, and each
          one is a real record that can carry a QR code. -->
-    <div class="field">
+    <div class="field" id="sh-tables-field">
       <label for="sh-tables">Tables</label>
       <input id="sh-tables" type="number" min="0" max="200" inputmode="numeric" value="12" />
       <p class="hint" id="sh-tables-hint"></p>
     </div>
-    <div class="field">
+    <div class="field" id="sh-mgr-field">
       <label for="sh-mgr">Manager</label>
+      <!-- Explicit values, because the label is rewritten at runtime to say why a name
+           cannot be chosen. Without them the option's value IS its text, and appending
+           "— manages Hledan" would quietly change who is being appointed. -->
       <select id="sh-mgr">
         <option value="">No manager</option>
-        <option>Thura Zaw</option>
-        <option>Ko Ko Naing</option>
-        <option>Aye Aye Mon</option>
-        <option>Min Min</option>
-        <option>Hnin Wai</option>
+        <option value="Thura Zaw">Thura Zaw</option>
+        <option value="Ko Ko Naing">Ko Ko Naing</option>
+        <option value="Aye Aye Mon">Aye Aye Mon</option>
+        <option value="Min Min">Min Min</option>
+        <option value="Hnin Wai">Hnin Wai</option>
       </select>
       <p class="hint" id="sh-mgr-hint">Only one person manages a shop. Choosing someone else replaces them.</p>
     </div>
@@ -967,9 +1062,11 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
       <label><input type="radio" name="handover" value="suspend" /><span>Suspend their access — they have left</span></label>
     </div>
 
-    <!-- Everything else about a shop belongs to whoever runs it day to day. Asking the CEO
-         for opening hours at the moment they open a branch is asking them to guess. -->
-    <p class="limit">Phone, opening hours and the receipt footer are the manager's to set.</p>
+    <!-- Where this person's authority stops, said out loud rather than left to be inferred
+         from a missing field. Two readers, two sentences — set in openShop, the way
+         #st-limit is. Neither of them is an apology: each names the person whose job the
+         other half is, so nothing here reads as a gap in the screen. -->
+    <p class="limit" id="sh-limit"></p>
 
     <div class="pair">
       <button type="button" class="ghost" id="shop-cancel">Cancel</button>
@@ -1070,7 +1167,8 @@ document.getElementById("action").addEventListener("click",e=>{
   if(opens==="staff")   openPerson(null,"manager");
   if(opens==="person")  openPerson(null,"ceo");
   if(opens==="company") openCompany(null);
-  if(opens==="shop")    openShop(null);
+  // There is deliberately no "shop" arm. A branch belongs to one company, and this button
+  // belongs to a screen — so adding one starts from the company's own row, not from here.
 });
 
 document.querySelectorAll("[data-go]").forEach(a=>a.addEventListener("click",e=>{
@@ -1219,7 +1317,11 @@ function kindOf(row){
 function openInfo(row){
   const kind=kindOf(row);
   const btn=row.querySelector("[data-company],[data-shop],[data-person],[data-staff]");
-  infoFor=btn;
+  // Both carriers are set on every open, never one of them. A branch sheet left its
+  // {company,index} behind, and without this line the next Edit on a company would open
+  // that stale branch instead — a sequence as ordinary as look, close, look at something
+  // else, edit.
+  infoFor=btn; branchFor=null;
   const cell=n=>{ const c=row.querySelector('[data-label="'+n+'"]'); return c?c.textContent.trim():""; };
   const name=row.querySelector(".who .nm").textContent;
   const under=row.querySelector(".who .em").textContent;
@@ -1229,6 +1331,7 @@ function openInfo(row){
     sub="Company";
     rows=[
       ["Web",       under],
+      ["URL name",  btn.dataset.slug||""],
       ["CEO",       btn.dataset.ceo],
       ["CEO phone", PHONE[btn.dataset.ceo]||"", true],
       ["CEO email", btn.dataset.ceoEmail],
@@ -1252,6 +1355,14 @@ function openInfo(row){
         ()=>openBranch(name,i)]));
       if(branches.length) rows.push(["Total",
         branches.length+" shop"+(branches.length===1?"":"s")+" · "+cell("Tables")+" tables"]);
+      /* The affordance has two homes for one reason: the tree exists on one side of 1049px
+         and not the other, and below it no row carries an action at all. This is the only
+         place a branch can be opened on a stacked screen. It sits AFTER the total, so the
+         sum still reads as the sum of the list above it. The text goes in the value slot
+         because facts() drops any row whose value is falsy — a label alone renders nothing
+         and fails silently. */
+      rows.push(["","Add a branch",false,null,
+        ()=>{ infoDialog.close(); openShop(null,"platform",{company:name}); }]);
     }
   }else if(kind==="shop"){
     const mgr=btn.dataset.manager;
@@ -1286,21 +1397,31 @@ function openInfo(row){
 }
 
 /* A branch has its own sheet, reached from the expanded row or from the company's Shops
-   list. There is no Edit on it: a shop belongs to the CEO, and the platform owner reading
-   one does not make it theirs. */
+   list. It HAS an Edit, because the branch is the platform owner's to open and to correct.
+   What Edit reaches is the place — its name, its address, how many tables it has. The
+   manager on this sheet stays a fact with no control beside it: the platform owner may
+   open the place and never the people in it. The phone number stays a link for the same
+   reason it was always there — when a branch stops sending orders at nine on a Friday,
+   somebody has to be rung. */
+let branchFor=null;                            // {company, index} — a branch has no row
 function openBranch(company,i){
   const b=shopsOf(company)[i];
   if(!b) return;
   infoFor=null;
+  branchFor={company,index:i};
   document.getElementById("info-h").textContent=b.shop;
   document.getElementById("info-sub").textContent="Shop of "+company;
+  const coSlugOf=(document.querySelector('#co-rows [data-company="'+company+'"]')||{dataset:{}}).dataset.slug||"";
   facts(document.getElementById("info-facts"),[
     ["Address",       b.address],
+    // Readable after the fact, not only while it is being typed. The URL is a fact about
+    // this branch the way its address is.
+    ["Address on the web", coSlugOf&&b.slug ? coSlugOf+"/"+b.slug : ""],
     ["Manager",       b.manager||"No manager"],
     ["Manager phone", b.manager?(PHONE[b.manager]||""):"", true],
-    ["Tables",        b.tables],
+    ["Tables",        String(b.tables)],
   ]);
-  document.getElementById("info-edit").hidden=true;
+  document.getElementById("info-edit").hidden=false;
   if(!infoDialog.open) infoDialog.showModal();
 }
 
@@ -1308,12 +1429,18 @@ function openBranch(company,i){
 document.getElementById("info-close").addEventListener("click",()=>infoDialog.close());
 // Looking often ends in changing. The way through is one button, not a second hunt.
 document.getElementById("info-edit").addEventListener("click",()=>{
-  const btn=infoFor;
+  const btn=infoFor, branch=branchFor;
   infoDialog.close();
-  if(!btn) return;
-  if(btn.dataset.company!==undefined)   openCompany(btn);
-  else if(btn.dataset.shop!==undefined && btn.closest("tbody").id==="shops-rows") openShop(btn);
-  else openPerson(btn, btn.dataset.person!==undefined ? "ceo" : "manager");
+  // A live row beats a remembered branch. openInfo already clears the branch carrier, so
+  // this ordering is belt as well as braces — each is one line and neither costs anything.
+  if(btn){
+    if(btn.dataset.company!==undefined)   openCompany(btn);
+    else if(btn.dataset.shop!==undefined && btn.closest("tbody").id==="shops-rows") openShop(btn,"company");
+    else openPerson(btn, btn.dataset.person!==undefined ? "ceo" : "manager");
+    return;
+  }
+  // The platform owner's way in: a branch has no row anywhere, so it travels as a pair.
+  if(branch) openShop(null,"platform",branch);
 });
 
 function facts(el,rows){
@@ -1372,6 +1499,69 @@ function facts(el,rows){
   }
 }
 
+/* ── URL names ────────────────────────────────────────────────────────────── */
+/* A display name is for people; a URL name is for machines, and the two cannot be the same
+   string. "Shwe Café" has a space and an accent; neither survives a path.
+
+   The scheme is NESTED, and that is what makes a clash impossible rather than merely
+   unlikely:
+
+       /sakura                     a company, unique across the platform
+       /sakura/bogyoke             a branch, unique inside its company only
+       /sakura/bogyoke/t3          a table, unique inside its branch only
+
+   Nothing is checked against everything. Two different chains can each have a downtown
+   branch and neither has to know the other exists — which also means "taken" never leaks
+   one company's names to another.
+
+   Tables are not typed. The number on the branch form already creates them, so they are
+   t1…tN and there is no form anywhere asking for twelve of them. */
+const SLUG_MAX=24;
+const SLUG_OK=/^[a-z][a-z0-9-]*$/;
+
+// A suggestion, not a transliteration. Anything it cannot map it drops, and if that leaves
+// nothing the operator types their own — which they were always allowed to do.
+function slugify(name){
+  return (name||"").toLowerCase()
+    .replace(/[''`]/g,"")
+    .normalize("NFD").replace(/[̀-ͯ]/g,"")   // an accented e becomes e
+    .replace(/[^a-z0-9]+/g,"-")
+    .replace(/^-+|-+$/g,"")
+    .replace(/-{2,}/g,"-")
+    .slice(0,SLUG_MAX)
+    .replace(/-+$/,"");
+}
+
+/* One rule set, one place, so the company form and the branch form can never drift into
+   disagreeing about what a legal name is. Returns the reason it is wrong, or "". */
+function slugProblem(v,{taken=[],parent=""}={}){
+  if(!v) return "A URL name is required.";
+  if(v.length<2) return "Too short — at least 2 characters.";
+  if(v.length>SLUG_MAX) return "Too long — at most "+SLUG_MAX+" characters.";
+  if(/\s/.test(v)) return "No spaces. Use a hyphen instead.";
+  if(/[A-Z]/.test(v)) return "Lower case only.";
+  if(!SLUG_OK.test(v)) return "Letters, numbers and hyphens only, starting with a letter.";
+  if(v.endsWith("-")) return "Cannot end with a hyphen.";
+  if(v.includes("--")) return "No double hyphens.";
+  // "Nothing unnecessary." The company is already in front of a branch's name, so repeating
+  // it builds /sakura/sakura-bogyoke — twice the length and none of the meaning.
+  if(parent && (v===parent || v.startsWith(parent+"-")))
+    return "The company is already in the address. Drop the “"+parent+"-”.";
+  if(taken.includes(v)) return "That name is taken.";
+  return "";
+}
+
+/* The field explains itself by showing what it builds. A rule you read is a rule you
+   forget; a URL you watch assemble as you type is one you understand. */
+function paintSlug(input,{urlEl,warnEl,base,taken,parent}){
+  const v=input.value.trim();
+  const why=slugProblem(v,{taken,parent});
+  warnEl.textContent=why; warnEl.hidden=!why;
+  urlEl.textContent = why ? base+"…" : base+v;
+  input.setAttribute("aria-invalid",why?"true":"false");
+  return !why;
+}
+
 /* ── the platform owner and the companies ─────────────────────────────────── */
 const coDialog=document.getElementById("co-dialog");
 const coDone=document.getElementById("co-done");
@@ -1380,7 +1570,7 @@ const coPerson=document.getElementById("co-person");
 const coCeo=document.getElementById("co-ceo");
 const coOut=document.getElementById("co-out");
 const coPw=document.getElementById("co-ppw");
-let coRow=null, coWasCeo="", coReplacing=false;
+let coRow=null, coWasCeo="", coWasCompany="", coReplacing=false;
 
 /* Every address that already has an account anywhere on the platform. The server answers
    "taken" or "free" and nothing else — the platform owner does not get to learn who is
@@ -1404,17 +1594,44 @@ function checkExisting(){
 }
 document.getElementById("co-pemail").addEventListener("input",checkExisting);
 
+const coSlug=document.getElementById("co-slug");
+let coSlugTouched=false;
+function paintCoSlug(){
+  return paintSlug(coSlug,{
+    urlEl:  document.getElementById("co-slug-url"),
+    warnEl: document.getElementById("co-slug-warn"),
+    base:   "order.yeyintlwin.com/",
+    // A company's name is unique across the whole platform. Only the platform owner ever
+    // sees this field, so "taken" tells nobody anything they should not know.
+    taken:  companySlugs(coRow?coWasCompany:null),
+  });
+}
+coName.addEventListener("input",()=>{
+  if(!coSlugTouched) coSlug.value=slugify(coName.value);
+  paintCoSlug();
+});
+coSlug.addEventListener("input",()=>{ coSlugTouched=true; paintCoSlug(); });
+
 function openCompany(btn){
   coRow=btn?btn.closest("tr"):null;
   const adding=!btn;
   coReplacing=false;
   coWasCeo=adding?"":btn.dataset.ceo;
+  coWasCompany=adding?"":btn.dataset.company;   // so "taken" does not count itself
 
   document.getElementById("co-h").textContent=adding?"Add company":btn.dataset.company;
   document.getElementById("co-sub").textContent=adding
     ? "Every company starts with one CEO."
     : "Company and CEO only.";
   coName.value=adding?"":btn.dataset.company;
+
+  /* Suggested from the name until the operator edits it, then left alone. A field that
+     keeps rewriting what you typed is worse than one that never helps. Burmese script
+     suggests nothing at all — it maps to no ASCII — so there the operator simply types it,
+     which was always allowed. */
+  coSlug.value=adding?"":(btn.dataset.slug||"");
+  coSlugTouched=!adding;
+  paintCoSlug();
 
   document.getElementById("co-status-box").hidden=adding;
   if(!adding) document.querySelector('input[name="co-status"][value="'+btn.dataset.status+'"]').checked=true;
@@ -1447,6 +1664,10 @@ document.getElementById("co-rows").addEventListener("click",e=>{
   // A branch row opens the branch. It is checked first because it sits inside a row that
   // would otherwise be read as the company's.
   const twig=e.target.closest(".twig");
+  // The add line lives in the same group and is the same shape, so it must be told apart
+  // BEFORE the generic case. Left to fall through it would read as branch NaN, shopsOf()[NaN]
+  // is undefined, and openBranch's `if(!b) return` would swallow the click with no error.
+  if(twig && twig.dataset.addBranch!==undefined){ openShop(null,"platform",{company:twig.dataset.company}); return; }
   if(twig){ openBranch(twig.dataset.company, Number(twig.dataset.branch)); return; }
   if(e.target.closest(".info")){ openInfo(e.target.closest("tr")); return; }
   if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
@@ -1461,14 +1682,29 @@ document.getElementById("co-rows").addEventListener("click",e=>{
    platform owner may see them down to the branch. Sakura Kitchen's breakdown is read off
    the CEO's own Shops table rather than kept as a second copy. */
 const OTHER_SHOPS={
-  "Mandalay Grill":[{shop:"Mandalay Central",manager:"Thiri Aung",address:"78th St, corner of 32nd",tables:10}],
-  "Shwe Café":[{shop:"Shwe Gone Daing",manager:"Moe Thu",address:"Shwe Gone Daing Rd",tables:8},
-               {shop:"Kamayut",manager:"",address:"Pyay Rd, Kamayut",tables:6}],
+  "Mandalay Grill":[{shop:"Mandalay Central",slug:"central",manager:"Thiri Aung",address:"78th St, corner of 32nd",tables:10}],
+  "Shwe Café":[{shop:"Shwe Gone Daing",slug:"shwe-gone-daing",manager:"Moe Thu",address:"Shwe Gone Daing Rd",tables:8},
+               {shop:"Kamayut",slug:"kamayut",manager:"",address:"Pyay Rd, Kamayut",tables:6}],
 };
+// Every company's URL name, so "is this taken?" can be answered without walking the DOM
+// twice. Read off the rows, which are the only copy.
+function companySlugs(exclude){
+  return [...document.querySelectorAll("#co-rows [data-company]")]
+    .filter(b=>b.dataset.company!==exclude)
+    .map(b=>b.dataset.slug||"");
+}
+function shopSlugs(company,exclude){
+  return shopsOf(company).filter(b=>b.shop!==exclude).map(b=>b.slug||"");
+}
 function shopsOf(company){
+  // :not(.sub) matters. An expanded staff tree appends rows into this same tbody, and they
+  // carry no .who and no [data-label] — reading one throws. It was reachable before this
+  // change (expand a shop's staff, switch to the platform owner, open the company) and is
+  // load-bearing after it, because this is now the platform owner's read AND write target.
   if(company==="Sakura Kitchen")
-    return [...document.querySelectorAll("#shops-rows tr")].map(r=>({
+    return [...document.querySelectorAll("#shops-rows tr:not(.sub)")].map(r=>({
       shop:    r.querySelector(".who .nm").textContent,
+      slug:    r.querySelector("[data-shop]").dataset.slug||"",
       address: r.querySelector(".who .em").textContent,
       manager: r.querySelector("[data-shop]").dataset.manager||"",
       tables:  Number(r.querySelector('[data-label="Tables"]').textContent||0),
@@ -1509,23 +1745,43 @@ function toggleBranches(row){
 
   row.classList.add("open");
   row.querySelector(".disc").setAttribute("aria-expanded","true");
-  const list=shopsOf(row.querySelector("[data-company]").dataset.company);
-  if(!list.length){
+  const company=row.querySelector("[data-company]").dataset.company;
+  const list=shopsOf(company);
+
+  /* The last thing hanging off the trunk is the way to add to it, so it takes the
+     twig-last class and closes the group. That also gives a company with no branches at
+     all one line — and it is the line that fixes the emptiness. It carries a real button
+     because the .twig itself is a div: without one the platform owner's only route to
+     creating a shop would be unreachable from a keyboard. */
+  const addLine=at=>{
     const tr=document.createElement("tr");
     tr.className="sub twig-last";
+    tr.innerHTML='<td colspan="6"><div class="twig add"><span class="twig-plus"></span>'+
+                 '<span class="twig-name">Add branch</span><span class="twig-meta"></span>'+
+                 '<button type="button" class="twig-go"></button></div></td>';
+    const twig=tr.querySelector(".twig");
+    twig.dataset.company=company; twig.dataset.addBranch="";
+    tr.querySelector(".twig-go").setAttribute("aria-label","Add a branch to "+company);
+    at.after(tr);
+    return tr;
+  };
+
+  if(!list.length){
+    const tr=document.createElement("tr");
+    tr.className="sub";
     tr.innerHTML='<td colspan="6"><div class="twig"><span class="twig-meta">No shops yet.</span></div></td>';
     row.after(tr);
+    addLine(tr);
     return;
   }
   /* Two of these columns change meaning inside a group — Company becomes Shop, CEO becomes
      Manager — and without saying so a manager's name reads as another CEO. The group gets
      its own header rather than borrowing one that no longer describes it. */
-  const company=row.querySelector("[data-company]").dataset.company;
   let at=row;
   list.forEach((b,i)=>{
     const tr=document.createElement("tr");
     tr.className="sub";
-    if(i===list.length-1) tr.classList.add("twig-last");
+    // No branch is the last one any more — the add line below closes the trunk instead.
     // One cell across the row. Nothing lines up under the parent's columns, so nothing
     // claims to be the same kind of thing as the parent's values.
     // The row IS the way in, so it carries a mark rather than a button spelling out what
@@ -1546,6 +1802,7 @@ function toggleBranches(row){
     tr.querySelector(".twig-go").setAttribute("aria-label","Details for "+b.shop);
     at.after(tr); at=tr;
   });
+  addLine(at);
 }
 document.getElementById("co-cancel").addEventListener("click",()=>coDialog.close());
 
@@ -1575,6 +1832,10 @@ document.getElementById("co-form").addEventListener("submit",e=>{
   const person=document.getElementById("co-pname").value.trim();
   const email=document.getElementById("co-pemail").value.trim();
   if(!name) return;
+  // Checked here as well as on every keystroke, because the keystroke check is a courtesy
+  // and this one is the rule.
+  if(!paintCoSlug()){ coSlug.focus(); return; }
+  const slug=coSlug.value.trim();
   if((!coRow || coReplacing) && !person) return;
   // A CEO is a user too, so the same rule applies.
   if(!coRow || coReplacing){
@@ -1588,6 +1849,7 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     const btn=coRow.querySelector("[data-company]");
     coRow.querySelector(".who .nm").textContent=name;
     btn.dataset.company=name;
+    btn.dataset.slug=slug;
 
     const st=coRow.querySelector('[data-label="Status"]');
     st.textContent=status==="active"?"Active":"Suspended";
@@ -1625,7 +1887,7 @@ document.getElementById("co-form").addEventListener("submit",e=>{
     cell.querySelector("b").textContent=person;
     cell.append(email);
     const b=tr.querySelector("[data-status]");
-    b.dataset.company=name; b.dataset.ceo=person; b.dataset.ceoEmail=email;
+    b.dataset.company=name; b.dataset.slug=slug; b.dataset.ceo=person; b.dataset.ceoEmail=email;
     document.getElementById("co-rows").appendChild(tr);
     addDetailButtons(); tagCardLines();
     addDiscs();
@@ -1847,7 +2109,10 @@ document.getElementById("staff-form").addEventListener("submit",e=>{
       // Suspending a manager empties the slot on the shop too, or the Shops screen would
       // keep showing someone who can no longer sign in.
       if(btn.dataset.role==="Manager" && access==="suspended" && btn.dataset.shop!=="None"){
-        const shopBtn=document.querySelector('[data-shop="'+btn.dataset.shop+'"]');
+        // Scoped to the shops table. data-shop is carried by every PERSON button too, and
+        // this resolved correctly only because #shops-rows happens to come first in the
+        // document — a promise this important should not rest on document order.
+        const shopBtn=document.querySelector('#shops-rows [data-shop="'+btn.dataset.shop+'"]');
         if(shopBtn){
           const cell=shopBtn.closest("tr").querySelector('[data-label="Manager"]');
           cell.classList.add("none");
@@ -1919,10 +2184,13 @@ let wasTables=0;
 function tablesHint(){
   const n=Math.max(0,Number(shopTables.value)||0);
   const hint=document.getElementById("sh-tables-hint");
-  if(!shopRow){
+  // The explicit flag, not `!shopRow`. A branch of any company but Sakura Kitchen has no
+  // row anywhere, so the DOM test would call an existing ten-table shop a new one and
+  // offer to create the tables it already has.
+  if(shopAdding){
     hint.textContent = n
       ? "We will create Table 1 to Table "+n+", each with its own QR code."
-      : "None yet. Your manager can add them later.";
+      : "None yet. They can be added when the branch is fitted out.";
     return;
   }
   const diff=n-wasTables;
@@ -1933,42 +2201,122 @@ function tablesHint(){
       : "Each table has its own QR code.";
 }
 shopTables.addEventListener("input",tablesHint);
+
+const shopSlug=document.getElementById("sh-slug");
+let shopSlugTouched=false, shopCompany="", shopCompanySlug="";
+function paintShopSlug(){
+  return paintSlug(shopSlug,{
+    urlEl:  document.getElementById("sh-slug-url"),
+    warnEl: document.getElementById("sh-slug-warn"),
+    base:   "order.yeyintlwin.com/"+shopCompanySlug+"/",
+    // Only inside this company. Two chains can each have a downtown branch, and neither
+    // learns anything about the other from this check.
+    // Excluded by the name it was OPENED with, not the one being typed — otherwise a shop
+    // starts colliding with itself the moment its display name is edited.
+    taken:  shopSlugs(shopCompany, shopAdding?null:shopWasName),
+    parent: shopCompanySlug,
+  });
+}
+shopName.addEventListener("input",()=>{
+  if(!shopSlugTouched) shopSlug.value=slugify(shopName.value);
+  paintShopSlug();
+});
+shopSlug.addEventListener("input",()=>{ shopSlugTouched=true; paintShopSlug(); });
 const handover=document.getElementById("handover");
 const shopDone=document.getElementById("shop-done");
-let shopRow=null, wasManager="";
+/* Three pieces of state, and every one of them is written on EVERY open in BOTH arms. The
+   close handler resets only the handover block, so anything set in one arm alone survives
+   into the next open of the other — a mode switch that only hides is a mode switch that
+   never shows again. */
+let shopRow=null, wasManager="", shopWho="company", shopAdding=false, shopBranch=null,
+    shopWasName="";
 
-/* A new shop is asked for the three things it cannot be without: what it is called, where
-   it is, and who runs it — and even the last of those is optional, because a branch is
-   usually opened before the manager is hired. Anything the manager will know better is
-   left for them. */
-function openShop(btn){
+/* Two readers, and the split is what the whole change is about.
+   The PLATFORM OWNER is asked for the place: what the branch is called, where it is, and
+   how many tables it has. They are never asked who runs it, because they may not see the
+   people inside a company — so a shop is always born without a manager. That is now
+   structural rather than a kindness.
+   The CEO is shown the place as facts and asked the one question that is theirs: who
+   manages it. One field, so there can never be two managers, or a second one nobody
+   noticed.
+   `who` defaults to the CEO's mode, which is the arm that writes the manager cell — so a
+   missed argument would land there silently. Every call site passes one anyway. */
+function openShop(btn, who="company", branch=null){
+  shopWho=who;
+  const platform=who==="platform";
+  shopBranch=platform?branch:null;
   shopRow=btn?btn.closest("tr"):null;
-  const adding=!btn;
-  wasManager=adding?"":btn.dataset.manager;
+  // A platform-mode open carries a branch index when it is editing one and none when it is
+  // adding. The CEO only ever edits, and always through a row.
+  shopAdding=platform ? !(branch && branch.index!==undefined) : false;
 
-  shopName.value=adding?"":btn.dataset.shop;
-  document.getElementById("sh-addr").value=adding?"":
-    (btn.closest("tr").querySelector(".who .em").textContent);
-  shopTables.value=adding ? 12
-    : btn.closest("tr").querySelector('[data-label="Tables"]').textContent;
+  const company=platform ? (branch&&branch.company) || "" : "Sakura Kitchen";
+  const b=(platform && !shopAdding) ? shopsOf(company)[branch.index] : null;
+  shopCompany=company;
+  shopCompanySlug=(document.querySelector('#co-rows [data-company="'+company+'"]')||{dataset:{}}).dataset.slug||"";
+  shopWasName=shopAdding ? "" : (b ? b.shop : btn.dataset.shop);
+
+  // Every input is populated in both modes even though half of them are hidden in each.
+  // Half a dozen later lines dereference these unconditionally, and the manager select in
+  // particular must never reach the save handler holding a stale value.
+  shopName.value = shopAdding ? "" : (b ? b.shop : btn.dataset.shop);
+  document.getElementById("sh-addr").value = shopAdding ? "" :
+    (b ? b.address : btn.closest("tr").querySelector(".who .em").textContent);
+  shopTables.value = shopAdding ? 12 :
+    (b ? b.tables : btn.closest("tr").querySelector('[data-label="Tables"]').textContent);
   wasTables=Number(shopTables.value);
+  wasManager = platform ? "" : btn.dataset.manager;
   shopMgr.value=wasManager;
+  paintManagerChoices();
   tablesHint();
 
-  document.getElementById("shop-h").textContent=
-    adding ? "Add shop" : (wasManager?"Edit shop":"Assign a manager");
-  document.getElementById("shop-sub").textContent=
-    adding ? "A new branch of Sakura Kitchen."
-           : (wasManager ? btn.dataset.shop : btn.dataset.shop+" has been running without one.");
-  document.getElementById("sh-mgr-hint").textContent=
-    adding ? "You can leave this until someone is hired. Until then the shop is yours to run."
-           : "Only one person manages a shop. Choosing someone else replaces them.";
-  const staffHere=adding?"":btn.closest("tr").querySelector('[data-label="Staff"]').textContent;
+  /* Wrappers, never the controls. Four handles are taken once at load and dereferenced
+     unconditionally afterwards; removing a field kills the script rather than the field.
+     .hidden and not data-for, because data-for answers "who is signed in" and this asks
+     "which mode was it opened in" — two axes that only coincide by accident. */
+  document.getElementById("sh-name-field").hidden=!platform;
+  document.getElementById("sh-slug-field").hidden=!platform;
+  document.getElementById("sh-addr-field").hidden=!platform;
+  document.getElementById("sh-tables-field").hidden=!platform;
+  document.getElementById("sh-mgr-field").hidden=platform;
+  // Suggested from the branch name while it is new, left alone once the operator has had
+  // an opinion — and an existing branch's name is already an opinion.
+  shopSlug.value = shopAdding ? "" : (b ? b.slug||"" : btn.dataset.slug||"");
+  shopSlugTouched = !shopAdding;
+  document.getElementById("sh-name-warn").hidden=true;
+  if(platform) paintShopSlug();
 
-  document.getElementById("shop-save").textContent=adding?"Add shop":"Save";
+  // The CEO reads the place rather than editing it. Numbers go through String() because
+  // facts() drops a falsy value, and a shop with no tables yet is a real state.
+  const sf=document.getElementById("sh-facts");
+  if(platform) sf.hidden=true;
+  else facts(sf,[
+    ["Address", document.getElementById("sh-addr").value],
+    ["Tables",  String(shopTables.value)],
+  ]);
+
+  document.getElementById("shop-h").textContent = platform
+    ? (shopAdding ? "Add branch" : "Edit branch")
+    : (wasManager ? "Change the manager" : "Assign a manager");
+  document.getElementById("shop-sub").textContent = platform
+    ? (shopAdding ? "A new branch of "+company+"." : b.shop+" · "+company)
+    : (wasManager ? btn.dataset.shop : btn.dataset.shop+" has been running without one.");
+  // The CEO can never be looking at a brand-new shop again, so the old "adding" sentence
+  // has gone. What is left is the two states a CEO actually meets.
+  document.getElementById("sh-mgr-hint").textContent = (wasManager
+    ? "Only one person manages a shop. Choosing someone else replaces them."
+    : "Nobody manages this shop yet. Until you choose someone, it is yours to run.")
+    + " Anyone already running a branch is greyed out.";
+  document.getElementById("sh-limit").textContent = platform
+    ? "Who manages this shop is the CEO's to choose. You do not see the people inside a company."
+    : "The name, address and number of tables are the platform owner's to set. Phone, "+
+      "opening hours and the receipt footer are the manager's.";
+
+  document.getElementById("shop-save").textContent=shopAdding?"Add branch":"Save";
 
   handover.hidden=true;
   shopDone.hidden=true;
+  coDone.hidden=true;
   shopDialog.showModal();
 }
 document.getElementById("shops-rows").addEventListener("click",e=>{
@@ -1979,10 +2327,36 @@ document.getElementById("shops-rows").addEventListener("click",e=>{
   if(cards.matches){ const r=e.target.closest("tr"); if(r && !r.classList.contains("sub")) openInfo(r); return; }
   // Edit and Assign are actions and win over the row they sit in.
   const btn=e.target.closest("[data-shop]");
-  if(btn){ openShop(btn); return; }
+  if(btn){ openShop(btn,"company"); return; }
   const row=e.target.closest("tr");
   if(row && !row.classList.contains("sub")) toggleShopPeople(row);
 });
+
+/* One person, one shop. Somebody already running a branch cannot be handed a second one:
+   a manager is on the floor, and two floors at once is not a thing a person can do.
+
+   The rule is enforced where the choice is made, and it is SHOWN rather than hidden. A
+   name quietly missing from the list reads as a bug — "why can I not find Ko Ko Naing?" —
+   and the CEO would go hunting. A name that is present, greyed, and says why is an answer:
+
+       Ko Ko Naing — manages Hledan
+
+   The person already managing THIS shop is of course still selectable; they are the
+   current value. Freeing someone up is done the way it always was — replace them here, or
+   suspend them from the Users screen, which empties their slot in the same action. */
+function paintManagerChoices(){
+  const taken={};
+  for(const b of document.querySelectorAll("#shops-rows [data-shop]"))
+    if(b.dataset.manager) taken[b.dataset.manager]=b.dataset.shop;
+
+  for(const o of shopMgr.options){
+    if(!o.value) continue;                       // "No manager" is always available
+    const at=taken[o.value];
+    const blocked=!!at && at!==shopWasName;
+    o.disabled=blocked;
+    o.textContent = blocked ? o.value+" — manages "+at : o.value;
+  }
+}
 
 // Only ask about the outgoing manager when there is one and they are being replaced.
 shopMgr.addEventListener("change",()=>{
@@ -2001,17 +2375,29 @@ shopDialog.addEventListener("close",()=>{ handover.hidden=true; });
 /* The platform owner sees no people inside a company, but shops and tables are not people —
    they are the size of the thing being hosted. The totals are summed from the shops rather
    than typed anywhere, so the two screens can never drift apart. */
-function refreshCompanyTotals(){
-  const rows=[...document.querySelectorAll("#shops-rows tr")];
-  const tables=rows.reduce((n,r)=>n+Number(r.querySelector('[data-label="Tables"]').textContent||0),0);
-  const btn=document.querySelector('[data-company="Sakura Kitchen"]');
+function refreshCompanyTotals(company="Sakura Kitchen"){
+  // shopsOf is the one reader of branch data, so summing through it means the totals cannot
+  // disagree with the tree — and the platform owner's new branches count without a second
+  // code path. :not(.sub) is inside shopsOf for the Sakura case; OTHER_SHOPS is plain data.
+  const list=shopsOf(company);
+  const tables=list.reduce((n,b)=>n+Number(b.tables||0),0);
+  const btn=document.querySelector('#co-rows [data-company="'+company+'"]');
   if(!btn) return;                                   // renamed by the platform owner
   const row=btn.closest("tr");
-  row.querySelector('[data-label="Shops"]').textContent=rows.length;
+  row.querySelector('[data-label="Shops"]').textContent=list.length;
   row.querySelector('[data-label="Tables"]').textContent=tables;
   // Whatever is open is now stale. Reopen the same row so the branches match the new sum.
+  // Keyed to the company that changed: collapsing every group because Sakura was assumed
+  // would tear down the very group a platform owner is working inside.
   if(row.classList.contains("open")){ closeBranches(); toggleBranches(row); }
-  else closeBranches();
+}
+
+/* The CEO's own screen says so when there is nothing on it yet. A company is opened before
+   its first branch is, so this is the ordinary first thing a new CEO sees. */
+function refreshShopsEmpty(){
+  const has=document.querySelectorAll("#shops-rows tr:not(.sub)").length;
+  document.getElementById("shop-none").hidden=!!has;
+  document.querySelector("#v-shops .panel").hidden=!has;
 }
 
 function refreshShopGaps(){
@@ -2026,55 +2412,115 @@ function refreshShopGaps(){
     (empty.length===1?"that shop is":"those shops are")+" yours to run — you can already do "+
     "everything a manager can there.";
 }
-refreshShopGaps(); refreshCompanyTotals();
+refreshShopGaps(); refreshCompanyTotals(); refreshShopsEmpty();
 
-document.getElementById("shop-form").addEventListener("submit",e=>{
-  e.preventDefault();
-  const picked=shopMgr.value;
-  const kept=document.querySelector('input[name="handover"]:checked').value;
+/* A shop has no id here — its identity is its NAME, held as a string in six unrelated
+   places that nothing joins. That was survivable while renaming was the CEO's own action
+   inside their own company. It is not survivable now: the platform owner may not see the
+   people in a company, so a rename that quietly detached every one of them would be a
+   boundary crossed by an actor who cannot see the damage. So the rename fans out. */
+function renameShop(from,to){
+  if(!from || from===to) return;
+  for(const b of document.querySelectorAll('#ceo-rows [data-shop="'+from+'"]')){
+    b.dataset.shop=to;
+    const cell=b.closest("tr").querySelector('[data-label="Shop"]');
+    if(cell) cell.textContent=to;
+  }
+  for(const o of document.querySelectorAll("#st-shop option"))
+    if(o.textContent===from) o.textContent=to;
+  for(const p of Object.values(PERSON)) if(p.sh===from) p.sh=to;
+  const m1=document.getElementById("m1");
+  if(m1.value===from) m1.value=to;
+  if(OPENED[from]!==undefined) OPENED[to]=OPENED[from];
+  if(document.getElementById("scope-sh").textContent===from)
+    document.getElementById("scope-sh").textContent=to;
+}
+
+/* THE PLATFORM OWNER'S HALF — the place, and never a person.
+   Sakura Kitchen's branches live in the CEO's own table and every other company's live in
+   OTHER_SHOPS, because shopsOf reads exactly those two sources. A write goes to whichever
+   one shopsOf will read back, so there is never a third copy to drift. */
+function savePlace(){
   const label=shopName.value.trim();
-  if(!label) return;
+  const warn=document.getElementById("sh-name-warn");
+  warn.hidden=!!label;
+  if(!label){ shopName.focus(); return; }             // a silent return is how this hides
+  if(!paintShopSlug()){ shopSlug.focus(); return; }
+  const slug=shopSlug.value.trim();
+  const addr=document.getElementById("sh-addr").value.trim();
+  const n=Math.max(0,Number(shopTables.value)||0);
+  const company=(shopBranch&&shopBranch.company)||"Sakura Kitchen";
+  const mine=company==="Sakura Kitchen";
+  let note;
 
-  // A brand-new shop starts empty: no staff, no history, and usually no manager yet.
-  if(!shopRow){
-    const tr=document.createElement("tr");
-    tr.innerHTML=
-      '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
-      '<td class="meta state" data-label="Manager"></td>'+
-      '<td class="meta state" data-label="Tables"></td>'+
-      '<td class="meta state" data-label="Staff">0</td>'+
-      '<td class="meta state ok" data-label="Status">Active</td>'+
-      '<td class="act"><button class="edit"></button></td>';
-    tr.querySelector('[data-label="Tables"]').textContent=Math.max(0,Number(shopTables.value)||0);
-    const two=label.trim().split(/\s+/);
-    tr.querySelector(".av").textContent=(two.length>1
-      ? two[0][0]+two[1][0] : label.slice(0,2)).toUpperCase();
-    tr.querySelector(".nm").textContent=label;
-    tr.querySelector(".em").textContent=document.getElementById("sh-addr").value;
-    const nb=tr.querySelector(".edit");
-    nb.dataset.shop=label; nb.dataset.manager=picked;
-    nb.textContent=picked?"Edit":"Assign";
-    const mc=tr.querySelector('[data-label="Manager"]');
-    if(picked){ mc.innerHTML="<b></b>"; mc.querySelector("b").textContent=picked; mc.append(EMAIL[picked]||""); }
-    else { mc.classList.add("none"); mc.textContent="No manager"; }
-    document.getElementById("shops-rows").appendChild(tr);
-    addDetailButtons(); tagCardLines();
-
-    const made=Math.max(0,Number(shopTables.value)||0);
-    shopDone.textContent=label+" is open with "+made+" table"+(made===1?"":"s")+". "+
-      (picked ? picked+" manages it." : "It has no manager yet, so it is yours to run.");
-    shopDialog.close();
-    shopDone.hidden=false;
-    refreshShopGaps(); refreshCompanyTotals();
-    shopDone.scrollIntoView({block:"nearest"});
-    return;
+  if(shopAdding){
+    if(mine){
+      const tr=document.createElement("tr");
+      tr.innerHTML=
+        '<td><div class="who"><span class="av"></span><span><span class="nm"></span><br><span class="em"></span></span></div></td>'+
+        '<td class="meta state none" data-label="Manager">No manager</td>'+
+        '<td class="meta state" data-label="Tables"></td>'+
+        '<td class="meta state" data-label="Staff">0</td>'+
+        '<td class="meta state ok" data-label="Status">Active</td>'+
+        '<td class="act"><button class="edit">Assign</button></td>';
+      tr.querySelector('[data-label="Tables"]').textContent=n;
+      const two=label.split(/\s+/);
+      tr.querySelector(".av").textContent=(two.length>1
+        ? two[0][0]+two[1][0] : label.slice(0,2)).toUpperCase();
+      tr.querySelector(".nm").textContent=label;
+      tr.querySelector(".em").textContent=addr;
+      // Always managerless, by construction — there is no picker in this half of the
+      // dialog. That is what lands it in the CEO's "no manager" notice as work waiting.
+      const nb=tr.querySelector(".edit");
+      nb.dataset.shop=label; nb.dataset.slug=slug; nb.dataset.manager="";
+      document.getElementById("shops-rows").appendChild(tr);
+      // All three: Details buttons, the card's second line, and the disclosure triangle.
+      // The old add path omitted addDiscs and the new row silently would not expand.
+      addDetailButtons(); tagCardLines(); addDiscs();
+    }else{
+      (OTHER_SHOPS[company]=OTHER_SHOPS[company]||[])
+        .push({shop:label,slug,manager:"",address:addr,tables:n});
+    }
+    note=label+" is open at "+company+" with "+n+" table"+(n===1?"":"s")+
+      ". Its CEO chooses who manages it.";
+  }else{
+    const was=shopsOf(company)[shopBranch.index];
+    if(mine){
+      const row=[...document.querySelectorAll("#shops-rows tr:not(.sub)")][shopBranch.index];
+      row.querySelector(".who .nm").textContent=label;
+      row.querySelector(".who .em").textContent=addr;
+      row.querySelector('[data-label="Tables"]').textContent=n;
+      row.querySelector("[data-shop]").dataset.shop=label;
+      row.querySelector("[data-shop]").dataset.slug=slug;
+      renameShop(was.shop,label);                      // every other holder of the string
+    }else{
+      Object.assign(OTHER_SHOPS[company][shopBranch.index],
+        {shop:label,slug,address:addr,tables:n});
+    }
+    const d=n-Number(was.tables||0);
+    note=label+" saved."+(d>0 ? " "+d+" table"+(d>1?"s":"")+" added."
+      : d<0 ? " "+(-d)+" table"+(d<-1?"s":"")+" removed — those QR codes stop working."
+      : "");
   }
 
+  shopDialog.close();
+  // The platform owner is standing on the Companies screen, so the banner has to be the
+  // one that lives there. Writing into the CEO's would scroll a hidden section.
+  coDone.textContent=note;
+  coDone.hidden=false;
+  refreshShopGaps(); refreshShopsEmpty(); refreshCompanyTotals(company);
+  coDone.scrollIntoView({block:"nearest"});
+}
+
+/* THE CEO'S HALF — one question, and the second half of it asked the moment it becomes
+   real. Nothing here touches the name, the address or the table count: they are not the
+   CEO's, and running those writes anyway is how a hidden field silently corrupts a record. */
+function saveManager(){
+  const picked=shopMgr.value;
+  const kept=document.querySelector('input[name="handover"]:checked').value;
   const cell=shopRow.querySelector('[data-label="Manager"]');
   const btn=shopRow.querySelector("[data-shop]");
-  shopRow.querySelector(".who .em").textContent=document.getElementById("sh-addr").value;
-  const nowTables=Math.max(0,Number(shopTables.value)||0);
-  shopRow.querySelector('[data-label="Tables"]').textContent=nowTables;
+  const shop=btn.dataset.shop;
 
   if(picked){
     cell.classList.remove("none");
@@ -2087,22 +2533,71 @@ document.getElementById("shop-form").addEventListener("submit",e=>{
     cell.textContent="No manager";
     btn.textContent="Assign";
   }
-  shopRow.querySelector(".who .nm").textContent=shopName.value;
-  btn.dataset.shop=shopName.value;
   btn.dataset.manager=picked;
 
   shopDone.textContent = !picked
-    ? shopName.value+" now has no manager."
+    ? shop+" now has no manager."
     : wasManager
-      ? picked+" now manages "+shopName.value+". "+wasManager+
+      ? picked+" now manages "+shop+". "+wasManager+
         (kept==="staff" ? " stays on as staff." : " has been suspended.")
-      : picked+" now manages "+shopName.value+".";
+      : picked+" now manages "+shop+".";
   shopDialog.close();
   shopDone.hidden=false;
-  refreshShopGaps(); refreshCompanyTotals();
+  refreshShopGaps();
   closeShopPeople();
   shopDone.scrollIntoView({block:"nearest"});
+}
+
+document.getElementById("shop-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  if(shopWho==="platform") savePlace(); else saveManager();
 });
+
+/* ── two languages, one above the other ──────────────────────────────────── */
+/* A company is bought by a business in one country, so its CEO says what language the
+   company runs in. That is a DEFAULT, not a rule: it is where everyone starts, and each
+   person can read the console in whatever they like.
+   The link between the two is the first option — "Company default", which is not a
+   language but the absence of a choice. Keeping it as a real state is what makes changing
+   the company's language move the people who never picked one. Pre-selecting the default
+   language instead would look identical on the day and cut the link forever. */
+const LANGS=["English","မြန်မာ — Burmese","ไทย — Thai","中文 — Chinese","日本語 — Japanese"];
+const myLang={};                                    // per level, "" means "not chosen"
+
+function paintLanguage(){
+  const as=document.body.dataset.as;
+  const mine=as!=="platform";
+  const sel=document.getElementById("a5");
+  const company=document.getElementById("s4").value;
+  const chosen=myLang[as]||"";
+
+  sel.textContent="";
+  // The platform owner has nobody above them, so there is no default to inherit — the same
+  // exception that leaves their own name theirs to edit.
+  if(mine){
+    const o=document.createElement("option");
+    o.value=""; o.textContent="Company default — "+company;
+    sel.append(o);
+  }
+  for(const l of LANGS){
+    const o=document.createElement("option");
+    o.value=l; o.textContent=l;
+    sel.append(o);
+  }
+  sel.value = mine ? chosen : (chosen||LANGS[0]);
+
+  document.getElementById("a5-note").textContent = mine
+    ? (chosen ? "Yours only. Everyone else here still reads "+company+"."
+              : "Following your company. Choose one and only your own console changes.")
+    : "The language this console is shown in.";
+}
+document.getElementById("a5").addEventListener("change",e=>{
+  myLang[document.body.dataset.as]=e.target.value;
+  paintLanguage();
+});
+// A CEO moving the company default moves everyone who never chose, and the wording on
+// their own screen has to move with it or it names a language nobody is reading.
+document.getElementById("s4").addEventListener("change",paintLanguage);
 
 /* ── changing a password ──────────────────────────────────────────────────── */
 const pwDialog=document.getElementById("pw-dialog");
@@ -2137,6 +2632,9 @@ document.getElementById("pw-form").addEventListener("submit",e=>{
 function setAs(as){
   const p=PERSON[as];
   document.body.dataset.as=as;
+  // Both trees belong to the person who was here a moment ago. Leaving one open means the
+  // next screen reads a tbody with rows in it that its own code never put there.
+  closeBranches(); closeShopPeople();
   document.getElementById("scope-co").textContent=p.co;
   document.getElementById("scope-sh").textContent=p.sh;
   document.getElementById("me-av").textContent=p.av;
@@ -2149,6 +2647,7 @@ function setAs(as){
      someone above them except the platform owner, who has nobody to ask — the same gap
      that leaves them with no way to reset their own password. */
   paintLogo();                              // the rail's mark belongs to the company, not the platform
+  paintLanguage();                          // and the language above them differs per level
 
   const above={platform:"", company:"the platform owner", manager:"your CEO", staff:"your manager"}[as];
   const name=document.getElementById("a1");
@@ -2179,6 +2678,14 @@ addDetailButtons(); tagCardLines();
 // whatever the markup happened to say, so Add company did nothing until you had navigated
 // somewhere and come back.
 go(document.querySelector("[data-go].on"));
+
+// The same lesson, and it bit again the same way. The language select is built by
+// paintLanguage, which until now ran only from setAs — so on first load nobody had
+// switched roles yet and the control rendered with no options at all: an empty box on
+// Account settings for whoever opened the console and never touched Viewing as.
+// A screen that is only correct after you have been somewhere else is not correct.
+paintLanguage();
+refreshShopsEmpty();
 </script>
 </body>
 </html>

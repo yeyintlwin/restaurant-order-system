@@ -28,14 +28,31 @@ Four levels, and every level has a single person in charge of the level below it
 
 ## 2. The one rule everything else follows
 
-**Each person reaches exactly one level down, and no further.**
+There are two kinds of thing in that diagram, and they do not obey the same rule.
 
-| Signed in as   | May manage                | May not touch          |
-| -------------- | ------------------------- | ---------------------- |
-| Platform owner | Companies and their CEOs  | Managers, staff        |
-| CEO            | Shops, managers, staff    | Other companies        |
-| Manager        | Staff at their own shop   | Their CEO, other shops |
-| Staff          | Their own account only    | Everything else        |
+**Places** — a company, a shop, a table — are **built by the platform owner**. They are the
+thing being hosted, and fitting one out is an operator's job: rows in a database, e-paper
+screens on the tables, QR codes that have to be printed.
+
+**People** — CEO, manager, staff — are **appointed one level down at a time**. Nobody
+reaches past the level below them, and nobody sees inside the level below that.
+
+| Signed in as   | May manage                          | May not touch                 |
+| -------------- | ----------------------------------- | ----------------------------- |
+| Platform owner | Companies, their CEOs, their shops  | Managers, staff               |
+| CEO            | Managers and staff; the manager slot on each shop | Other companies; opening or closing a branch |
+| Manager        | Staff at their own shop             | Their CEO, other shops        |
+| Staff          | Their own account only              | Everything else               |
+
+**Revised.** This first read *"each person reaches exactly one level down, and no further"*,
+and shops were the CEO's to open. That was wrong about who actually does the work. Setting a
+branch up is a systems job — tables, screens, codes — and a CEO opening a branch had no way
+to do any of it. The rule that replaced it is the one above, and it is why the platform
+owner can create a shop two levels below them while still being unable to see a single
+person inside that company.
+
+The split holds at the join: **the platform owner opens the branch, the CEO chooses who runs
+it.** Neither can do the other's half, and the shop dialog is literally cut along that line.
 
 ### 2.1 The boundary is structural, not cosmetic
 
@@ -67,6 +84,13 @@ limit:
 - CEO editing a person: *"Managers are chosen on the Shops screen, not here."*
 - Platform owner editing a company: *"You cannot see or change managers and staff. That is
   the CEO's job."*
+- Platform owner editing a shop: *"Who manages this shop is the CEO's to choose. You do not
+  see the people inside a company."*
+- CEO editing a shop: *"The name, address and number of tables are the platform owner's to
+  set. Phone, opening hours and the receipt footer are the manager's."*
+
+The last two are the same dialog read by two people. Each names the person whose job the
+other half is, so neither reads as a gap in the screen.
 
 ### 2.3 The boundary changes the controls, not just the data
 
@@ -80,6 +104,30 @@ The manager is chosen on **Shops → Edit → Manager**, never on a person's rec
 
 This is what makes "one manager per shop" true by construction. There is one field, so
 there can never be two managers, and never a second one nobody noticed.
+
+**The route survives §2's revision unchanged, and the argument gets stronger.** A CEO still
+goes Shops → Edit → Manager. What changed is that there is now **nothing else on that
+screen**: Manager is not merely the field that makes one-manager-per-shop true, it is the
+only field the CEO has there at all. The name, the address and the table count sit above it
+as facts.
+
+### 3.0 One person, one shop — and the list says so
+
+Somebody already running a branch cannot be handed a second one. A manager is on a floor,
+and two floors at once is not a thing a person can do.
+
+The rule is enforced where the choice is made, and it is **shown, not hidden**:
+
+> Ko Ko Naing — manages Hledan   *(greyed out)*
+
+A name quietly missing from the list reads as a bug. The CEO would go hunting for it,
+because they know Ko Ko Naing works here. A name that is present, greyed and says why is an
+answer to the question before it is asked.
+
+The shop's own current manager stays selectable — they are the current value, not a clash.
+
+Freeing someone is the same two levers as before: replace them here (§3.1), or suspend them
+from the Users screen, which empties their slot in the same action (§3.2).
 
 ### 3.1 Replacing a manager is one decision, not two
 
@@ -124,21 +172,28 @@ The wording says so: *"Suspending someone keeps their record and their past orde
 A creation form asks only for what the thing cannot exist without. Everything else waits
 for the person who will know the answer.
 
-### 4A.1 Adding a shop asks four things
+### 4A.1 Opening a branch asks three things, and never a person
 
-| Field      | Required | Why                                                     |
-| ---------- | -------- | ------------------------------------------------------- |
-| Shop name  | Yes      | What everyone calls the branch. Goes on receipts.       |
-| Address    | No       | Shown under the name everywhere the shop is listed.     |
-| **Tables** | Yes      | The number creates the tables. See below.               |
-| Manager    | No       | A branch is usually opened before the manager is hired. |
+The **platform owner** fills this in, from inside the company the branch belongs to.
 
-Phone, opening hours and the receipt footer are **not** asked for. Those belong to the
-manager, and a CEO opening a branch would be guessing. The form says so:
-*"Phone, opening hours and the receipt footer are the manager's to set."*
+| Field      | Required | Why                                                 |
+| ---------- | -------- | --------------------------------------------------- |
+| Shop name  | Yes      | What everyone calls the branch. Goes on receipts.   |
+| Address    | No       | Shown under the name everywhere the shop is listed. |
+| **Tables** | Yes      | The number creates the tables. See below.           |
 
-Requiring a manager would be worse than leaving it blank — CEOs would put their own name in
-as a placeholder and the data would be a lie. §3.2 already handles the empty slot.
+**There is no manager field at all.** Not optional — absent. The platform owner may not see
+the people inside a company, so there is nobody for a picker to list.
+
+That makes something true by construction that used to be a kindness: **a shop is always
+born without a manager.** It appears on the CEO's Shops screen in amber, and the notice at
+§3.2 names it as work waiting for them. The handoff between the two roles is that line.
+
+Phone, opening hours and the receipt footer are not asked for either. Those belong to the
+manager, and an operator fitting out a branch has never been there.
+
+A blank name is refused **out loud** — *"A branch needs a name."* An earlier version returned
+silently, which reads as a broken button.
 
 ### 4A.2 Tables are created, not counted
 
@@ -149,8 +204,10 @@ typed, and on an existing shop it says what the change will do instead:
 - adding: *"Adds 3 tables to the end of the list."*
 - removing: *"Removes the last 3 tables. Their QR codes stop working."*
 
-The second line matters. A printed QR code on a physical table stops working when the
-record behind it goes, and nobody should discover that from a customer.
+The second line matters more now than when it was written. It was aimed at a CEO who knows
+the branch; the reader is now an operator who may never have stood in it. A printed QR code
+on a physical table stops working when the record behind it goes, and nobody should discover
+that from a customer.
 
 ### 4A.3 The company's own mark
 
@@ -188,9 +245,18 @@ block with a grey label and a value.
 | Shop    | Manager phone, Staff, Opened                 |
 | Company | CEO, CEO phone, Email, Shops, Tables, Opened |
 
-**Nothing appears twice.** A person's role and shop are in the dialog's subtitle and in its
-fields already, so they are not repeated as facts; a shop's name, address, table count and
-manager are all fields, so the facts carry only what the form cannot say.
+**Nothing appears twice as a field and a fact.** A person's role and shop are in the
+dialog's subtitle and in its fields already, so they are not repeated as facts.
+
+**Amended.** A shop's name, address and table count used to be fields, so the facts carried
+only what the form could not say. They are no longer the CEO's fields. In the CEO's shop
+dialog they now appear as facts — above a form whose only control is the manager.
+
+That means a CEO who goes Details → Edit reads the address twice, one dialog after the
+other. Accepted, and the rule is narrowed rather than broken: **a value repeated because it
+is no longer yours to change is not a duplicate.** The second showing is doing different
+work — the first told them what the shop is, the second tells them what they cannot alter
+about it while they alter the one thing they can.
 
 ### 4B.1 A phone number is there to be rung
 
@@ -220,6 +286,78 @@ sessions. Only the name, and only because other people read it.
 
 The platform owner is the exception for the same reason they are the exception in §9.1 —
 there is nobody above them to ask.
+
+## 4D. URL names
+
+Every company and every branch carries a second name, typed by the **platform owner** when
+it is opened: the one that goes in an address. "Shwe Café" has a space and an accent, and
+neither survives a path.
+
+### 4D.1 The scheme is nested, so a clash is impossible rather than unlikely
+
+```text
+/sakura                     a company  — unique across the platform
+/sakura/bogyoke             a branch   — unique inside its company only
+/sakura/bogyoke/t3          a table    — unique inside its branch only
+```
+
+Nothing is ever checked against everything. Each name only has to be unlike its siblings,
+because the names above it are already in front of it.
+
+That buys two things at once. **Two chains can each have a downtown branch** and neither has
+to give way. And **"taken" never leaks across companies** — a CEO's branch names are not
+tested against a competitor's, so the check cannot become an existence oracle the way the
+platform boundary worries about elsewhere.
+
+Considered and rejected: one flat namespace where every name on the platform is unique.
+Shorter URLs, but the second chain to open a Bogyoke branch is told the name is taken by
+someone they cannot see, and ends up as `bogyoke-2` forever.
+
+### 4D.2 Tables are not typed
+
+The table count on the branch form already creates them, so they are `t1` … `t12`. No form
+anywhere asks for twelve names, because no one would fill it in honestly.
+
+### 4D.3 The rules, and where they are explained
+
+| Rule | Refused with |
+| ---- | ------------ |
+| Lower case only | *Lower case only.* |
+| No spaces | *No spaces. Use a hyphen instead.* |
+| Letters, digits, hyphens; starts with a letter | *Letters, numbers and hyphens only, starting with a letter.* |
+| No trailing hyphen | *Cannot end with a hyphen.* |
+| No doubled hyphens | *No double hyphens.* |
+| 2–24 characters | *Too short* / *Too long* |
+| Unique among its siblings | *That name is taken.* |
+| Nothing already in the path | *The company is already in the address. Drop the "sakura-".* |
+
+The last one is the "nothing unnecessary" rule made enforceable: a branch called
+`sakura-bogyoke` inside `sakura` builds `/sakura/sakura-bogyoke`, twice the length and none
+of the meaning.
+
+**But the rules are not the explanation.** Under the field is the address being built, and
+it assembles as you type:
+
+    order.yeyintlwin.com/sakura/bogyoke
+
+A rule you read is a rule you forget. A URL you watch assemble is one you understand — and
+it is what makes a redundant name look wrong before any message says so.
+
+### 4D.4 Suggested, then left alone
+
+The field fills itself from the display name — `Shwe Café` → `shwe-cafe` — and **stops the
+moment the operator edits it**. A field that keeps rewriting what you typed is worse than
+one that never helped.
+
+Burmese script suggests nothing at all; it maps to no ASCII, so the box stays empty and the
+operator types their own. That was always allowed, and it is why the field is a real input
+rather than a generated label.
+
+### 4D.5 Read back later, not only while typing
+
+A branch's sheet carries **Address on the web** the way it carries its street address, and a
+company's sheet carries its URL name. An identifier you can only see while creating it is
+one nobody can check afterwards.
 
 ## 5. Passwords
 
@@ -298,18 +436,45 @@ sees, for every company:
 - **the manager's phone number**, as a `tel:` link
 - how many tables in total
 
-**Revised twice.** This section first said the platform owner saw only shop names and
-counts, then added managers by name, then their phone.
+**Revised three times.** This section first said the platform owner saw only shop names and
+counts, then added managers by name, then their phone — and now says they open the branch in
+the first place.
 
-The line that survived all three revisions is the one that matters: **seeing is not
-managing.** Every control over that person — their access, their password, which shop they
-run, whether they are a manager at all — remains the CEO's alone, and there is still no
-screen anywhere in the platform console that lists a person or edits one. What the platform
-owner has is a way to reach the people running the branches it hosts, which is what an
-operator needs when a branch stops sending orders at nine on a Friday.
+The line that survived the first three revisions was *"seeing is not managing"*. Half of it
+is now gone and the other half is the whole point:
+
+> **Places are managed. People are only ever seen.**
+
+The platform owner creates, renames and re-sizes a shop. They still cannot touch a single
+person in it: not their access, not their password, not which shop they run, not whether
+they are a manager at all. **There is still no screen anywhere in the platform console that
+lists a person or edits one**, and the shop form has no manager field — so a branch is
+opened, fitted with tables and handed over without its operator ever meeting anybody.
+
+What the platform owner has beyond that is a way to *reach* the people running the branches
+it hosts, which is what an operator needs when a branch stops sending orders at nine on a
+Friday.
+
+**The cost of the wider reach, stated rather than left implied.** §6 keeps the platform
+console small partly because that account has no password-reset path above it (§9.1). The
+reach just grew: a stolen platform account can now rename every shop on the platform, and
+§4A.2 means shrinking a table count destroys table records and kills their printed QR codes.
+That is a company's floor taken offline by an account that was recovered with raw SQL on the
+box the last time it was lost. This does not reverse the decision — the work has to live
+somewhere and it is genuinely operator work — but §9.1 stops being a tidy loose end and
+becomes the most expensive thing on the open-questions list.
 
 Clicking a company row opens its branches beneath it. **One at a time** — opening another
 closes the last, so the table never grows into a list of everything.
+
+**The last thing hanging off the trunk is `+ Add branch`**, and it takes the closing elbow.
+A group ends with the way to add to it. That also means a company with no shops at all still
+shows one line, and it is the line that fixes the emptiness — the old empty state said *"No
+shops yet."* and dead-ended.
+
+It carries a plus rather than the branches' `›`: this line makes something, it does not open
+something. The whole row is the button, so the keyboard lands on the row rather than on a
+26px ring floating at the far right of a line whose words are on the left.
 
 Three attempts, and the first two both failed for the same reason: neither the affordance
 nor the state was visible.
@@ -386,13 +551,22 @@ the Users list opens.
 **A branch row opens its own sheet** — address, manager, manager's phone, tables. The row
 itself is the control and carries a `›`, not a button spelling out what pressing it does;
 that is the same bargain the cards make on a phone. The `›` is a real button so the keyboard
-can reach it. There is no Edit on that sheet — a shop belongs to its CEO, and the platform
-owner reading one does not make it theirs.
+can reach it.
+
+**That sheet has an Edit**, and it opens the place: name, address, table count. This
+reverses what this paragraph used to say. What did not move is the line beside the manager:
+on this sheet the manager is a **fact with no control next to it**, and their phone number
+stays a link for the reason it was always there.
 
 **The company's own sheet lists branches only where the tree does not.** On a wide screen
 the row behind the dialog already shows every branch with its manager, so printing them
 again in the dialog is the same list twice, three inches apart. In card layout there is no
 tree, so there the Shops section stays and each line opens the same branch sheet.
+
+**Which is why `Add a branch` has two homes, and that duplication is accepted rather than
+overlooked.** Below the card boundary the tree does not render at all and no row carries an
+action, so the company sheet is the *only* place a branch can be opened. The line sits after
+the total, so the sum still reads as the sum of the list above it.
 
 That sheet is also why the list stopped carrying everything. It used to print manager,
 tables, phone and address into two crammed lines per branch; it now prints the branch and
@@ -409,9 +583,9 @@ branches always match the sum next to them.
 This is what the platform is hosting and, eventually, what it would bill for. Nothing here
 names a manager or a member of staff, so §6 is untouched.
 
-The figures for a company are **summed from its shops, never typed**. The CEO adds a branch
-with 16 tables and the platform owner's totals move with it; there is no second copy to
-drift.
+The figures for a company are **summed from its shops, never typed**. The platform owner
+adds a branch with 16 tables and the totals they are looking at move with it; there is no
+second copy to drift.
 
 ## 7. Screen vocabulary
 
@@ -422,6 +596,16 @@ limit before the person tries to cross it.
 
 Each navigation link carries its own heading and its own primary action, so a screen and
 its button never drift apart.
+
+**A screen with nothing to add has no button.** The CEO's Shops screen keeps its heading and
+loses its action entirely — not greyed out, absent — which is the same mechanism Dashboard
+and Settings already use. The screen is now a place to read a branch and appoint the one
+person in it.
+
+When a CEO has no branches at all, the table is replaced by a line that says who opens them:
+*"No branches yet. The platform owner opens your branches. As soon as one exists it appears
+here, waiting for you to choose who manages it."* An empty table with no Add button would
+otherwise read as something that failed to load.
 
 ## 8. The screens
 
@@ -437,11 +621,20 @@ a company they do not belong to.
 
 ### 8.2 Responsive
 
-| Width         | Sidebar             | Tables      |
-| ------------- | ------------------- | ----------- |
-| 901px and up  | Permanent column    | Table       |
-| 641 – 900px   | Drawer behind ☰     | Table       |
-| 640px or less | Drawer behind ☰     | Stacked list |
+**Corrected.** This table used to say tables fold into cards at 640px. They never did — the
+card boundary is **1049px**, and it is deliberately not aligned with the drawer's 900px.
+Three independent boundaries, each set by what actually breaks at it:
+
+| Width          | Sidebar          | Tables       | Also                        |
+| -------------- | ---------------- | ------------ | --------------------------- |
+| 1050px and up  | Permanent column | Table        |                             |
+| 901 – 1049px   | Permanent column | Stacked list |                             |
+| 641 – 900px    | Drawer behind ☰  | Stacked list |                             |
+| 640px or less  | Drawer behind ☰  | Stacked list | Tighter gutters and dialogs |
+
+The 1049px figure catches an iPad in portrait (1024px) and a half-width desktop window,
+which is the point. It also means the branch tree **does** render on a touch device — an
+iPad in landscape is 1366px — so every control in it carries a 44px target.
 
 Decisions worth keeping, each one found by a defect:
 
@@ -455,8 +648,14 @@ Decisions worth keeping, each one found by a defect:
   desktop layout with no way to dismiss it.
 - **The rail carries the left safe-area inset at every width.** A Pro Max in landscape is
   932px, which is the permanent-column layout, not the drawer one.
-- **Hover-reveal only where a pointer exists.** The Edit button is always visible on touch
-  and always visible in the stacked list, and is a 44px square target.
+- **Row actions exist above 1049px only, and hover-reveal is gone everywhere.** An Edit
+  button is always visible, grey until hover or keyboard focus, and at least 44px. Below
+  1049px there are **no row actions at all** — the whole Actions column is hidden and the
+  card itself opens the record's sheet, where Edit lives. This corrects an earlier bullet
+  that claimed hover-reveal and a visible Edit in the stacked list; neither was ever true.
+  It is also the rule that shapes this change: **every power that moved had to be reachable
+  from a facts sheet, or it would not exist on a stacked screen.** Both are — the platform
+  owner's Edit on the branch sheet, and the CEO's manager form behind the shop sheet's Edit.
 - **The drawer's `visibility` flips late on close and instantly on open**, so focus can
   move into it in the same tick it opens. A plain `visibility .22s` leaves it hidden for
   half the animation and silently swallows the `.focus()` call.
@@ -471,6 +670,132 @@ Discrete tasks with a commit point open in a native `<dialog>` via `showModal()`
 brings the focus trap, the Escape key and an inert background with it. The row that opened
 it stays visible behind, so the cause of what appeared is never in doubt. Closing by any
 route clears whatever was typed.
+
+## 7A. Language is two settings, one above the other
+
+Companies on this platform are bought by businesses in different countries — Japan,
+Thailand, Myanmar. So there is no single right language, and there are two questions, not
+one.
+
+| Setting | Who sets it | Where | What it means |
+| ------- | ----------- | ----- | ------------- |
+| **Company language** | The CEO | Settings, with the company's name and time zone | What everyone in this company **starts** in |
+| **Your language** | Every person, including the CEO | Account settings | What **you** read the console in |
+
+The second overrides the first, for one person, and nobody else notices.
+
+This follows §8.1's existing division exactly: **Settings is the company's, Account settings
+is yours.** A console language is a preference belonging to a person, so that is where it
+lives for all four levels.
+
+### 7A.1 "Company default" is a real state, not a pre-selected language
+
+A person's Language list opens with an option that is not a language:
+
+    Company default — 日本語
+
+This matters more than it looks. It is the difference between *"I have not chosen"* and
+*"I chose Japanese"*, and the two behave differently the day the CEO changes the company's
+language: everyone who never chose **moves with it**, and everyone who did **stays put**.
+
+Collapse it into a plain pre-selected language and the two states become
+indistinguishable — identical on the day, and the link silently cut forever. Nobody would
+find out until a CEO switched the company to Thai and half the staff did not follow.
+
+The line under the field says which state you are in:
+
+- Not chosen: *"Following your company. Choose one and only your own console changes."*
+- Chosen: *"Yours only. Everyone else here still reads ไทย — Thai."*
+
+### 7A.2 The platform owner has no default to inherit
+
+Their list carries no "Company default" option, because there is no company above them.
+Same exception, same reason, as the one that leaves their own name theirs to edit (§4C).
+
+### 7A.3 The platform's Settings screen is now empty, and says so
+
+Its only row was the console language, which has moved to Account settings with everyone
+else's. Nothing the platform sets reaches inside a company, and there is **no platform-wide
+default language** either — a company's language is chosen by the CEO who bought it, not
+inherited from the vendor.
+
+Considered and rejected: keeping a platform-level default as a third rung above the company.
+It would have filled the screen, but it invents a fallback nobody asked for and would have to
+be right for Japan, Thailand and Myanmar at once. The screen admits it is empty instead, the
+same way the Dashboard does.
+
+## 8A. Renaming a shop reaches inside a company
+
+Worth writing down because it is the one place this change can do damage invisibly.
+
+In the mockup a shop has no id. Its identity is its **name**, held as a string in six
+unrelated places that nothing joins: the shop row, the row's `data-shop`, every person's
+`data-shop`, the Shop picker's options, the opened-on date, and the signed-in person's own
+scope. Renaming used to be the CEO's own action inside their own company, so a stale string
+was a bug. It is now done by someone who **cannot see any of the people it would strand**.
+
+Left alone, renaming Bogyoke would empty its staff tree, break the promise in §3.2 that
+suspending a manager clears the shop's slot, and leave the CEO's Users list naming a branch
+that no longer exists — with nothing on the platform owner's screen to show for it.
+
+**So the rename fans out to every holder of the string, in the same action.** Verified in
+the browser: after a rename, all three people at that shop follow it, the Users list, the
+Shop picker and the staff tree all move with them.
+
+For the real service this is the argument for a shop id. A name is a label, not a key, and
+the moment an actor outside the company can change it, every join built on it is a liability.
+
+## 8B. What the API needs — recorded, not built
+
+The console is design work; nothing here has been implemented in `core-api`. Two facts, and
+they point in opposite directions.
+
+**The platform owner creating a shop already works.** A platform admin selects a company and
+is then treated as ranking above that company's CEO, so the existing create-a-shop route
+admits them with no change. No migration, no new role, no schema work.
+
+**Taking it away from the CEO does not.** That route admits both today, and there is no way
+to say *"a platform admin acting inside a company, but not the company's own admin"* —
+the four role aliases cannot express it. Something has to be added.
+
+Two shapes, for whoever writes that plan:
+
+1. **A fifth alias** meaning *scoped platform admin only*, applied to shop create, shop
+   update, and the table routes underneath them. Smallest change; keeps shops on the tenant
+   side of the API where the per-company guard already runs.
+2. **Move the routes under the platform namespace**, nested inside the company they belong
+   to. Reads truer against the new rule, and needs no scope switch — but it takes shops out
+   from behind the tenant choke point that every other company-scoped route passes through.
+
+**Recommended: the first.** The guard is the valuable part and shops should keep it.
+
+Unresolved and belonging to that plan, not this one: whether a CEO keeps *read* access to a
+shop record (they must — they read it to appoint a manager), and whether renaming a shop
+needs to be an audited action given §8A.
+
+**URL names need a column on companies and one on shops, with two different uniqueness
+rules.** The company's is unique across the platform; the shop's is unique **within its
+company** — a compound key, not a global one. Getting that wrong in the schema is how the
+nesting quietly collapses into a flat namespace and one chain starts blocking another's
+branch names. Tables need no column: `t1` … `tN` is derived from the count that created
+them.
+
+Neither column exists. The `0001_init` schema keys companies and shops on name, which is a
+display string and is not URL-safe.
+
+**One person, one shop needs a constraint, not a check in a handler.** A user may hold at
+most one manager slot. Expressed in the shop table it is trivial — the manager is a column
+on the shop, and one person appearing on two rows is what has to be refused. A unique
+partial index on that column does it; application code alone will lose the race the first
+time two CEOs save at once. §3.0 is the screen; this is what makes it true.
+
+**Language needs two columns, and one of them must be nullable.** A language on the company,
+and a language on the user. The user's has to allow **null**, because null is what "following
+my company" is — §7A.1 is a data shape before it is a screen, and storing the resolved
+language instead would silently break the day a CEO changes the company's.
+
+Neither column exists. Neither is on any plan. Nothing else about the identity slice changes:
+a language is a preference, not a permission, and every person may set their own.
 
 ## 9. Open questions
 
@@ -496,3 +821,13 @@ sign-in name the manager assigns.
 - Managing tables one at a time — renaming them, taking one out of service, reprinting a
   QR code. §4A.2 creates them in a block; nothing edits them individually yet.
 - Whether removing tables should be blocked while a table has an open session.
+- **Closing a branch.** Nothing anywhere deletes a shop, and §4 says nobody is deleted.
+  Suspending a person is settled; suspending a *place* is not, and the platform owner is now
+  the one who would do it.
+- **Where a platform owner lands after saving on a phone.** Their route is Companies →
+  company sheet → branch sheet → shop form, and the sheet replaces itself in place with no
+  way back. Saving currently drops them on the Companies list. Tolerable at depth two, which
+  is all it used to be.
+- **Whether a CEO should be told a branch was opened for them.** The shop simply appears in
+  their list, in amber, waiting. That is honest but silent, and the two people are not in the
+  same building.
