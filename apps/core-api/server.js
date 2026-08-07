@@ -20,6 +20,8 @@ const { createRateLimiter } = require("./lib/rate-limit");
 const sessionsRepository = require("./repositories/auth/sessions");
 const scopesRepository = require("./repositories/auth/scope-materialize");
 const usersRepository = require("./repositories/auth/users");
+const companiesRepository = require("./repositories/platform/companies");
+const platformAuditRepository = require("./repositories/platform/audit");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
@@ -27,6 +29,7 @@ const usersRepository = require("./repositories/auth/users");
 require("./http/routes/health");
 require("./http/routes/table-displays");
 require("./http/routes/auth");
+require("./http/routes/companies");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -138,7 +141,11 @@ async function start(options = {}) {
     scryptSemaphore: options.scryptSemaphore || createSemaphore({ slots: config.scryptSlots }),
     users: options.users || usersRepository,
     sessions: options.sessions || sessionsRepository,
-    scopes: options.scopes || scopesRepository
+    scopes: options.scopes || scopesRepository,
+    // Whole MODULE objects, not loose functions: every handler reads them as
+    // deps.companies.listCompanies(...), matching users/sessions/scopes above.
+    companies: options.companies || companiesRepository,
+    platformAudit: options.platformAudit || platformAuditRepository
   });
   return listen(app, config.port, config.host);
 }

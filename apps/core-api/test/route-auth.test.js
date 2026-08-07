@@ -48,12 +48,19 @@ test("the origin-gated set is derived and pinned, so a new public POST cannot sk
   // route option: 8.5 is exactly ten rules and adding an `origin:` option would be a
   // design change rather than a repair. Plan 2d adds forgot-password, reset-password
   // and verify-email; the auth routes below arrive across Tasks 12-15.
+  // The two platform-companies writes join the census by DERIVATION, not by
+  // declaration: they are auth:'user' and non-GET, so requiresOriginCheck already
+  // returns true for them. That is the property this test exists to prove -- a new
+  // cookie-authenticated write cannot be added without the gate coming with it, and
+  // the only way to notice it happened is that this literal had to be widened.
   assert.deepEqual(gated, new Set([
     "POST /api/admin/auth/login",
     "POST /api/admin/auth/logout",
     "POST /api/admin/auth/logout-all",
     "POST /api/admin/auth/password",
-    "POST /api/admin/scope"
+    "POST /api/admin/scope",
+    "POST /api/platform/companies",
+    "PATCH /api/platform/companies/:companyId"
   ]));
 });
 

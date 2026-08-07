@@ -46,6 +46,21 @@ const AUDIT_ACTIONS = Object.freeze({
   // (target_kind IS NULL) = (target_id IS NULL) -- so both are NULL and the
   // address survives only in detail.email.
   "auth.password_reset_requested": entry(["anonymous"], ["success", "failure"], "user", ["email"]),
+  // Sorted position, not appended: Object.keys returns insertion order and the
+  // vocabulary test asserts it is sorted, so where these two sit in the literal IS
+  // what keeps the next addition a readable diff.
+  //
+  // *Amended by Plan 2c:* spec 5.9 declares detail ["name"] here. `slug` is added
+  // because 0003_admin_console.sql made a company's URL name a thing somebody
+  // CHOOSES -- it is globally unique, it goes in every address the company is
+  // reached by, and "who set /sakura, and when" is precisely the question an audit
+  // trail is kept for. The name alone cannot answer it.
+  "company.created": entry(["user"], ["success"], "company", ["name", "slug"]),
+  // success ONLY. A PATCH that 404s or 409s writes no row -- assertAuditEvent
+  // refuses the outcome, and a refusal inside the failure path would turn a 404
+  // into a 500. scope.selected declares 'failure' because a platform admin probing
+  // company ids is worth recording; a rename that lost a race is not.
+  "company.updated": entry(["user"], ["success"], "company", ["name", "slug", "status"]),
   // 'system' as well as 'user': scripts/create-platform-admin.js is the CLI that
   // writes the FIRST one, and there is no authenticated actor at that moment.
   // POST /api/platform/admins (Plan 2c) writes it as 'user'.
