@@ -13,8 +13,25 @@ const ROUTES = Object.freeze({
   login: "/api/admin/auth/login",
   password: "/api/admin/auth/password",
   logout: "/api/admin/auth/logout",
-  logoutAll: "/api/admin/auth/logout-all"
+  logoutAll: "/api/admin/auth/logout-all",
+  scope: "/api/admin/scope",
+  companies: "/api/platform/companies",
+  platformAdmins: "/api/platform/admins",
+  shops: "/api/admin/shops",
+  users: "/api/admin/users"
 });
+
+// Query strings are built here rather than by each caller, so a parameter the API
+// does not accept cannot be sent by accident and an absent one is never "null".
+function withQuery(path, params = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query === "" ? path : `${path}?${query}`;
+}
 
 function createApi(fetchImpl) {
   // Same-origin, so the __Host- cookie rides along and no CORS mode is involved.
@@ -107,7 +124,69 @@ function createApi(fetchImpl) {
       const { response, body } = result;
       if (response.status !== 200) return failure(body);
       return { state: "signedOut", revokedSessionCount: body.revokedSessionCount };
-    }
+    },
+
+    // ---- the console -----------------------------------------------------
+    //
+    // Every resource call funnels through `resource` below, so there is ONE place
+    // that decides what a non-2xx means. The alternative -- a status check per
+    // method -- is twenty places for the 401 handling to drift apart, and the one
+    // that drifts is the one nobody tests.
+
+    ...(() => {
+      async function resource(path, init) {
+        const result = await call(path, init);
+        if (result.state === "unreachable") return result;
+        const { response, body } = result;
+        // A session that died under the user is not a failure of the thing they
+        // clicked. The console re-checks and shows the sign-in screen, which is
+        // the only honest answer.
+        if (response.status === 401) return { state: "signedOut" };
+        if (response.status >= 200 && response.status < 300) return { state: "ok", data: body };
+        return failure(body);
+      }
+
+      const json = (method, body) => ({
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      return {
+        // A platform admin selects the company they are acting inside. null clears
+        // it, and the API insists the key is PRESENT either way -- {} and
+        // {"companyId": null} are two different requests.
+        selectScope: (companyId) => resource(ROUTES.scope, json("POST", { companyId })),
+
+        listCompanies: (params) => resource(withQuery(ROUTES.companies, params)),
+        getCompany: (id) => resource(`${ROUTES.companies}/${id}`),
+        createCompany: (input) => resource(ROUTES.companies, json("POST", input)),
+        updateCompany: (id, changes) => resource(`${ROUTES.companies}/${id}`, json("PATCH", changes)),
+
+        listPlatformAdmins: (params) => resource(withQuery(ROUTES.platformAdmins, params)),
+        createPlatformAdmin: (input) => resource(ROUTES.platformAdmins, json("POST", input)),
+        updatePlatformAdmin: (id, changes) =>
+          resource(`${ROUTES.platformAdmins}/${id}`, json("PATCH", changes)),
+        resetPlatformAdminPassword: (id) =>
+          resource(`${ROUTES.platformAdmins}/${id}/password-reset`, json("POST", {})),
+
+        listShops: (params) => resource(withQuery(ROUTES.shops, params)),
+        getShop: (id) => resource(`${ROUTES.shops}/${id}`),
+        createShop: (input) => resource(ROUTES.shops, json("POST", input)),
+        updateShop: (id, changes) => resource(`${ROUTES.shops}/${id}`, json("PATCH", changes)),
+        // PUT, not PATCH: the manager slot is REPLACED, and the body always says
+        // which of the three states the shop is being left in.
+        setShopManager: (id, input) => resource(`${ROUTES.shops}/${id}/manager`, json("PUT", input)),
+        updateShopDayToDay: (id, changes) =>
+          resource(`${ROUTES.shops}/${id}/day-to-day`, json("PATCH", changes)),
+
+        listUsers: (params) => resource(withQuery(ROUTES.users, params)),
+        getUser: (id) => resource(`${ROUTES.users}/${id}`),
+        createUser: (input) => resource(ROUTES.users, json("POST", input)),
+        updateUser: (id, changes) => resource(`${ROUTES.users}/${id}`, json("PATCH", changes)),
+        resetUserPassword: (id) => resource(`${ROUTES.users}/${id}/password-reset`, json("POST", {}))
+      };
+    })()
   };
 }
 

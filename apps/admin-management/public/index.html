@@ -8,10 +8,13 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+
+    <!-- The three states that exist before the console does. They keep the small card
+         the sign-in page has always been; the console below is a different shape and
+         only appears once we know who is looking at it. -->
     <main class="card" id="card">
       <div class="brand" aria-hidden="true">R</div>
 
-      <!-- Shown until we know. Replaced by whichever state applies. -->
       <section id="loading" class="state">
         <p class="muted">Checking your session…</p>
       </section>
@@ -29,27 +32,8 @@
         </form>
       </section>
 
-      <section id="signedIn" class="state" hidden>
-        <p class="label">Signed in as</p>
-        <p class="identity" id="identityEmail"></p>
-        <p class="muted" id="identityRole"></p>
-        <hr />
-        <p class="label">Change password</p>
-        <form id="changeForm" novalidate>
-          <label for="currentPassword">Current password</label>
-          <input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" required />
-          <label for="newPassword">New password <span class="hint">at least 12 characters</span></label>
-          <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" required />
-          <p class="error" id="changeError" role="alert" hidden></p>
-          <p class="ok" id="changeOk" role="status" hidden></p>
-          <button type="submit" id="changeButton">Update password</button>
-        </form>
-        <div class="row">
-          <button type="button" id="signOut" class="secondary">Sign out</button>
-          <button type="button" id="signOutAll" class="secondary">Sign out everywhere</button>
-        </div>
-      </section>
-
+      <!-- 4.2: a first password is a state of its own, not a warning on the console.
+           Nothing else is reachable until it has been spent. -->
       <section id="mustChange" class="state" hidden>
         <h1>Change your password</h1>
         <p class="muted">Your account needs a new password before you can do anything else.</p>
@@ -63,6 +47,616 @@
         </form>
       </section>
     </main>
+    <div class="app" id="signedIn" hidden>
+
+      <aside class="rail" id="rail">
+        <div class="scope">
+          <div>
+            <div class="co" id="scope-co">Restaurant OS</div>
+            <!-- One of these is shown at a time. A manager running a single shop reads their
+                 shop's name; a manager running two picks between them here, because every screen
+                 below is about one shop and this is the line that says which. -->
+            <div class="sh" id="scope-sh">Platform</div>
+            <span class="scope-shop" id="scope-shop-wrap" hidden>
+              <select class="scope-pick" id="scope-shop" aria-label="Which shop you are looking at"></select>
+            </span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <!-- Everyone lands here. It is empty on purpose for now — a placeholder that says so
+               is honest; a placeholder full of invented numbers is not. -->
+          <a href="#" data-go="dashboard" data-for="platform operator company manager staff" data-title="Dashboard" class="on">Dashboard</a>
+          <!-- Places and people are two different ladders. The platform owner builds the places
+               — companies, and the shops inside them — and appoints only the CEO. There is
+               deliberately no screen here that lists a manager or a member of staff.
+               A branch is added from inside the company it belongs to, not from this menu:
+               a shop cannot exist without a company, so the company row is where it starts. -->
+          <a href="#" data-go="companies" data-for="platform" data-title="Companies" data-action="Add company" data-opens="company">Companies</a>
+          <!-- A CEO owns the people below them, and the manager slot on each shop. Opening a
+               branch is not theirs, so this screen has no primary action — dropping data-action
+               is the whole mechanism, the same way Dashboard and Settings have none. -->
+          <a href="#" data-go="shops" data-for="operator company" data-title="Shops">Shops</a>
+          <a href="#" data-go="users" data-for="operator company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
+          <!-- A manager's reach ends at their own staff, so the menu says so. -->
+          <a href="#" data-go="users" data-for="manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
+          <a href="#" data-go="settings" data-for="platform operator company manager" data-title="Settings">Settings</a>
+        </nav>
+
+        <a href="#" data-go="account" data-title="Account settings" class="me">
+          <span class="av" id="me-av">YL</span>
+          <span><span class="nm" id="me-nm">Ye Yint Lwin</span><br><span class="ro" id="me-ro">Platform owner</span></span>
+        </a>
+
+      </aside>
+
+      <div class="scrim" id="scrim" hidden></div>
+
+      <div class="main">
+        <header class="top">
+          <button class="menu" id="menu" aria-label="Open menu" aria-expanded="false" aria-controls="rail"><i></i></button>
+          <h1 id="title">Companies</h1>
+          <span class="sp"></span>
+          <button class="btn" id="action">Add company</button>
+        </header>
+
+        <div class="body">
+
+          <!-- ══ Dashboard — everyone's first screen ══ -->
+          <section class="view on" id="v-dashboard">
+            <div class="panel">
+              <p class="blank">Nothing here yet.<span>This is where the few numbers worth
+              seeing first will go, once we know which ones those are.</span></p>
+            </div>
+          </section>
+
+          <!-- ══ Companies — the platform owner's only list ══ -->
+          <section class="view" id="v-companies" data-for="platform">
+            <p class="done" id="co-done" hidden></p>
+            <div class="panel">
+              <div class="scroll">
+              <table>
+                <thead><tr><th>Company</th><th>CEO</th><th>Shops</th><th>Tables</th><th>Status</th><th class="acth">Actions</th></tr></thead>
+                <tbody id="co-rows"></tbody>
+              </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══ Shops — the CEO reads the branch, and appoints the one person in it ══ -->
+          <!-- The branches themselves are opened by the platform owner. What is a CEO's here is
+               the manager slot on each one, which is why this screen keeps its Edit and loses
+               its Add. -->
+          <section class="view" id="v-shops" data-for="operator company">
+            <p class="notice" id="shop-gap" hidden></p>
+            <p class="done" id="shop-done" hidden></p>
+            <!-- A new company has no branches until the platform owner opens one. Saying so is
+                 better than an empty table, which reads as something failing to load. -->
+            <p class="blank" id="shop-none" hidden>No branches yet.<span>The platform owner
+            opens your branches. As soon as one exists it appears here, waiting for you to
+            choose who manages it.</span></p>
+            <div class="panel">
+              <div class="scroll">
+              <table>
+                <thead><tr><th>Shop</th><th>Manager</th><th>Tables</th><th>Staff</th><th>Status</th><th class="acth">Actions</th></tr></thead>
+                <tbody id="shops-rows"></tbody>
+              </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══ Users ══ -->
+          <section class="view" id="v-users" data-for="operator company manager">
+
+            <!-- The CEO sees every manager and every member of staff in their company. -->
+            <div class="panel" data-for="operator company">
+              <p class="done" id="ceo-done" hidden></p>
+              <div class="scroll">
+              <table>
+                <thead><tr><th>Name</th><th>Role</th><th>Shop</th><th>Status</th><th class="acth">Actions</th></tr></thead>
+                <tbody id="ceo-rows"></tbody>
+              </table>
+              </div>
+            </div>
+
+            <!-- A manager's list holds their own staff and nobody else. Neither the CEO above
+                 them nor a manager at another shop appears here. -->
+            <div class="panel" data-for="manager">
+              <p class="done" id="staff-done" hidden></p>
+              <div class="scroll">
+              <table>
+                <thead><tr><th>Name</th><th>Status</th><th class="acth">Actions</th></tr></thead>
+                <tbody id="staff-rows"></tbody>
+              </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══ Account settings — everyone has one ══ -->
+          <section class="view" id="v-account">
+            <!-- Only the outcome belongs out here. The mismatch warning lives inside the
+                 dialog, next to the fields that caused it. -->
+            <p class="done" id="pw-done" hidden>Password changed. Your other devices have been signed out.</p>
+
+            <div class="panel">
+              <!-- Your own name is not yours to edit. Left open, it becomes a nickname, and the
+                   person who has to recognise you on a rota or a receipt is not you. -->
+              <div class="row">
+                <div><label for="a1">Name</label><p id="a1-note"></p></div>
+                <input id="a1" />
+              </div>
+              <div class="row">
+                <div><label for="a2">Email</label><p>Also your sign-in name.</p></div>
+                <input id="a2" disabled />
+              </div>
+              <div class="row">
+                <div><label for="a4">Phone</label><p>How people reach you when something is wrong.</p></div>
+                <input id="a4" type="tel" inputmode="tel" />
+              </div>
+
+              <!-- Yours, like everything else on this screen. The company's language is the one
+                   everyone STARTS in; this is the one you read. The first option is not a
+                   language at all — it is "I have not chosen", kept as a real, visible state so
+                   that changing the company's default still moves the people who never picked.
+                   Collapse it into a plain pre-selected language and that link is cut silently.
+                   The platform owner has no company above them, so they do not get that option
+                   — the same exception that leaves their name theirs to edit. -->
+              <div class="row">
+                <div><label for="a5">Language</label><p id="a5-note"></p></div>
+                <select id="a5"></select>
+              </div>
+
+              <!-- A row of dots in a text field says nothing about what it is for. This row
+                   says when the password last changed and offers the one action there is.
+                   The row itself never moves — the task opens on top of it. -->
+              <div class="row">
+                <div><label>Password</label><p id="pw-when">Changing it signs you out everywhere else.</p></div>
+                <div><button class="ghost" id="pw-open">Change password</button></div>
+              </div>
+
+              <div class="row">
+                <div><label>Signed-in devices</label><p>Three, including this one.</p></div>
+                <div class="pair"><button class="ghost" id="signOut">Sign out</button><button class="ghost" id="signOutAll">Sign out everywhere</button></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══ Settings ══ -->
+          <section class="view" id="v-settings" data-for="platform operator company manager">
+
+            <!-- Empty, and it says so. The one row that used to be here was the console's
+                 language, which is a preference belonging to the person rather than to the
+                 platform — so it moved to Account settings, where every other level's is.
+                 A platform owner sets nothing that reaches inside a company, and there is no
+                 platform-wide default to set either: a company's language is chosen by the CEO
+                 who bought it. Rather than keep a screen alive with one borrowed row, the screen
+                 admits what it is. -->
+            <div class="panel" data-for="platform">
+              <p class="blank">Nothing here yet.<span>Nothing the platform sets reaches inside a
+              company, and your own preferences — including the language this console is shown
+              in — live in Account settings.</span></p>
+            </div>
+
+            <div class="panel" data-for="operator company">
+              <!-- The mockup opened this panel with a logo upload. It is not here, and its
+                   absence is deliberate: there is no endpoint that stores an image, so the
+                   control could be clicked, could show a preview, and could never survive a
+                   reload. A button that appears to work is worse than one that is missing.
+                   The design keeps it; it comes back with the route that carries it. -->
+              <div class="row">
+                <div><label for="s1">Company name</label><p>Shown on receipts and printed orders.</p></div>
+                <input id="s1" />
+              </div>
+              <!-- Time zone, currency and language used to be here, on the company. They are
+                   gone, and the reason is a sentence: a chain can open a branch in another
+                   country. One company, one time zone was a lie the moment a chain put a
+                   branch in Bangkok — a business day that rolls over at 06:00 Yangon is the
+                   wrong day in Thailand, and the receipts print the wrong money.
+                   They now live on the SHOP, set by the manager who stands in it. What is left
+                   here is what is genuinely the company's: the name on the receipt, and the
+                   mark above it. -->
+              <p class="limit">A branch keeps its own time zone, currency and language — they
+              belong to the country it is in, and are set when the branch is opened.</p>
+            </div>
+
+            <!-- A manager runs the day at one shop. The shop itself — its name, its address,
+                 how many tables it has — was set when the branch was opened, and opening a
+                 branch is the platform owner's job. A manager asks their CEO, who asks the
+                 platform: each person still speaks only to the one above them. -->
+            <div class="panel" data-for="manager">
+              <div class="row">
+                <div><label for="m1">Shop</label><p>Named when the branch was opened. Ask your CEO to have it changed.</p></div>
+                <input id="m1" disabled />
+              </div>
+
+              <!-- Read, not edit. A manager has to KNOW their shop runs on Bangkok time and
+                   prices in baht — they read it off this screen every time they wonder. What
+                   they must not be able to do is change it with a stray click on a dropdown
+                   they had no reason to open. These three are the branch's country, they are
+                   set once when it opens, and the person who opens branches owns them.
+                   Shown as disabled fields rather than removed, because a value you cannot find
+                   is indistinguishable from one nobody set. -->
+              <div class="row">
+                <div><label for="m-tz">Time zone</label><p>When this shop's business day starts and ends.</p></div>
+                <input id="m-tz" disabled />
+              </div>
+              <div class="row">
+                <div><label for="m-cur">Currency</label><p>What this shop's prices and receipts are in.</p></div>
+                <input id="m-cur" disabled />
+              </div>
+              <div class="row">
+                <div><label for="m-lang">Language</label><p>What everyone here starts in. Change your own in Account settings.</p></div>
+                <input id="m-lang" disabled />
+              </div>
+              <p class="limit">Time zone, currency and language are set when the branch is
+              opened and rarely change. Ask your CEO if one of them is wrong.</p>
+
+              <div class="row">
+                <div><label for="m2">Phone</label><p>Printed on the receipt.</p></div>
+                <input id="m2" />
+              </div>
+              <div class="row">
+                <div><label for="m3">Opening hours</label></div>
+                <input id="m3" />
+              </div>
+              <div class="row">
+                <div><label for="m4">Receipt footer</label></div>
+                <input id="m4" />
+              </div>
+              <!-- These three save as you leave each field, so a refusal has to land
+                   somewhere. Without it a rejected phone number would look saved. -->
+              <p class="warn" id="m-warn" role="alert" hidden></p>
+              <p class="done" id="m-done" hidden></p>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- A company and its CEO are created together, because a company with nobody in charge is
+         not a company. Note what is NOT a picker here: the platform owner cannot list the
+         people inside a company, so a new CEO has to be typed in by name and address. The
+         boundary is not decoration — it changes the control. -->
+    <!-- Reading a record and changing one are different jobs, so they are different
+         screens. This one has no fields at all: every line is a value, and every phone number
+         is a link because the reason you looked it up is to ring it. -->
+    <dialog class="modal" id="info-dialog" aria-labelledby="info-h">
+      <form method="dialog">
+        <h2 id="info-h"></h2>
+        <p class="sub" id="info-sub"></p>
+        <div class="facts" id="info-facts"></div>
+        <div class="pair">
+          <button type="button" class="ghost" id="info-edit">Edit</button>
+          <button type="button" class="btn" id="info-close">Close</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="co-dialog" aria-labelledby="co-h">
+      <form id="co-form">
+        <h2 id="co-h">Add company</h2>
+        <p class="sub" id="co-sub">Every company starts with one CEO.</p>
+
+
+
+        <div class="field">
+          <label for="co-name">Company name</label>
+          <input id="co-name" />
+        </div>
+
+        <!-- The name people say, and the name the system says, are two different things and the
+             second one has to be typed. Suggested from the first until the operator edits it —
+             after that it is theirs and stops moving under them.
+             Everything below it is one live line showing the URL being built. That is the
+             explanation: a rule you read is a rule you forget, a URL you watch assemble is
+             one you understand. -->
+        <div class="field" id="co-slug-field">
+          <label for="co-slug">URL name</label>
+          <input id="co-slug" spellcheck="false" autocapitalize="off" autocorrect="off" />
+          <p class="hint" id="co-slug-url"></p>
+          <p class="warn" id="co-slug-warn" role="alert" hidden></p>
+        </div>
+
+        <div class="group" id="co-status-box">
+          <strong class="who">Status</strong>
+          <p class="ask">Suspending a company signs out everyone in it, down to the last shop.</p>
+          <label><input type="radio" name="co-status" value="active" checked /><span>Active</span></label>
+          <label><input type="radio" name="co-status" value="suspended" /><span>Suspended</span></label>
+        </div>
+
+        <div class="group" id="co-ceo">
+          <strong class="who">CEO</strong>
+          <p class="ask" id="co-ceo-who"></p>
+          <div class="pair start">
+            <button type="button" class="ghost" id="co-reset">Reset password</button>
+            <button type="button" class="ghost" id="co-replace">Replace CEO</button>
+          </div>
+          <p class="hint" id="co-reset-out" hidden></p>
+        </div>
+
+        <!-- The same three fields serve "the first CEO" and "the next CEO". -->
+        <div id="co-person">
+          <div class="field">
+            <label for="co-pname" id="co-pname-l">CEO name</label>
+            <input id="co-pname" />
+          </div>
+          <div class="field">
+            <label for="co-pemail" id="co-pemail-l">CEO sign-in email</label>
+            <input id="co-pemail" type="email" />
+            <!-- Promoting a manager is typing an address that already exists. The system has to
+                 say so, or it quietly makes a second account for the same person. It confirms
+                 only that the address is taken — not who it belongs to, which stays inside the
+                 company. -->
+          </div>
+          <div class="field">
+            <label for="co-pphone">CEO phone</label>
+            <input id="co-pphone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+            <p class="warn" id="co-phone-warn" role="alert" hidden>A phone number is required.</p>
+          </div>
+          <div class="field" id="co-pw-field">
+            <label for="co-ppw">First password</label>
+            <input id="co-ppw" readonly />
+            <p class="hint">Read this out to them. They choose their own the first time they sign in.</p>
+          </div>
+        </div>
+
+        <div class="choice" id="co-out" hidden>
+          <strong class="who" id="co-out-who"></strong>
+          <p class="ask">What happens to their account?</p>
+          <label><input type="radio" name="ceo-out" value="suspend" checked /><span>Suspend their access — they have left</span></label>
+          <label><input type="radio" name="ceo-out" value="keep" /><span>Leave the account for the new CEO to place</span></label>
+        </div>
+
+        <p class="limit">You cannot see or change managers and staff. That is the CEO's job.</p>
+
+        <div class="pair">
+          <button type="button" class="ghost" id="co-cancel">Cancel</button>
+          <button type="submit" class="btn" id="co-save">Add company</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- What a shop manager controls is ACCESS, not rank. They can let someone in, keep them
+         out, and get them back in when the password is forgotten. Everything that would move a
+         person between shops or promote them belongs to the CEO, and the dialog says so out
+         loud rather than just omitting the fields. -->
+    <dialog class="modal" id="staff-dialog" aria-labelledby="staff-h">
+      <form id="staff-form">
+        <h2 id="staff-h">Add staff</h2>
+        <p class="sub" id="staff-sub">Bogyoke</p>
+
+
+
+        <div class="field">
+          <label for="st-name">Name</label>
+          <input id="st-name" />
+        </div>
+
+        <div class="field">
+          <label for="st-email">Sign-in email</label>
+          <input id="st-email" type="email" />
+          <p class="hint" id="st-email-hint">They use this to sign in.</p>
+        </div>
+
+        <!-- Required for everyone. In a restaurant the phone is how you actually reach a
+             person; the address is only how the system recognises them. -->
+        <div class="field">
+          <label for="st-phone">Phone</label>
+          <input id="st-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+          <p class="warn" id="st-phone-warn" role="alert" hidden>A phone number is required.</p>
+        </div>
+
+        <!-- A CEO can move someone between their own shops. A manager cannot, so this field
+             is simply not part of their version of the screen. -->
+        <div class="field" id="st-shop-field">
+          <label for="st-shop">Shop</label>
+          <select id="st-shop"></select>
+        </div>
+
+        <!-- Adding only. There is no mail server in this system, so the manager reads the
+             first password out loud. -->
+        <div class="field" id="st-temp-field">
+          <label for="st-temp">First password</label>
+          <input id="st-temp" readonly />
+          <p class="hint">Read this out to them. They choose their own the first time they sign in.</p>
+        </div>
+
+        <!-- Editing only. -->
+        <div class="group" id="st-access">
+          <strong class="who">Access</strong>
+          <p class="ask">Suspending someone keeps their record and their past orders.</p>
+          <label><input type="radio" name="access" value="active" checked /><span>Active — can sign in and take orders</span></label>
+          <label><input type="radio" name="access" value="suspended" /><span>Suspended — cannot sign in</span></label>
+        </div>
+
+        <div class="field" id="st-reset">
+          <button type="button" class="ghost" id="st-reset-btn">Reset password</button>
+          <p class="hint" id="st-reset-hint">For when they have forgotten it. You will get a new one to read out.</p>
+        </div>
+
+        <p class="limit" id="st-limit">Only your CEO can make someone a manager or move them to another shop.</p>
+
+        <div class="pair">
+          <button type="button" class="ghost" id="staff-cancel">Cancel</button>
+          <button type="submit" class="btn" id="staff-save">Add staff</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- ONE dialog, two readers, and the split is the whole design.
+         The PLACE — name, address, how many tables — belongs to the platform owner, who opens
+         the branch. The PERSON running it belongs to the CEO. Neither ever sees the other's
+         half: the platform owner gets no manager picker, because they may not know who is
+         inside a company, and the CEO gets the place as read-only facts.
+         The manager is still a slot on the SHOP rather than a badge on the person, and that is
+         still what makes "one manager per shop" true by construction — there is one field, so
+         there can never be two managers or a second one nobody noticed.
+         Every field stays in the DOM in both modes and is hidden by its wrapper. Four handles
+         are taken once at load and dereferenced unconditionally afterwards; removing a control
+         kills the script rather than the field. -->
+    <dialog class="modal" id="shop-dialog" aria-labelledby="shop-h">
+      <form id="shop-form">
+        <h2 id="shop-h">Edit shop</h2>
+        <p class="sub" id="shop-sub">Bogyoke</p>
+
+        <!-- CEO mode only: the place, stated rather than offered. Rendered by facts(). -->
+        <div class="facts" id="sh-facts" hidden></div>
+
+        <div class="field" id="sh-name-field">
+          <label for="sh-name">Shop name</label>
+          <input id="sh-name" />
+          <p class="hint">What everyone calls this branch. It goes on receipts and reports.</p>
+          <!-- Said out loud, not a silent return. The old code just did nothing when the name
+               was blank, which reads as a broken button. -->
+          <p class="warn" id="sh-name-warn" role="alert" hidden>A branch needs a name.</p>
+        </div>
+
+        <!-- A branch's URL name only has to be unique INSIDE its company, because the company's
+             own name is already in front of it. That is the whole reason the scheme is nested:
+             two different chains can each have a downtown branch and neither has to know. -->
+        <div class="field" id="sh-slug-field">
+          <label for="sh-slug">URL name</label>
+          <input id="sh-slug" spellcheck="false" autocapitalize="off" autocorrect="off" />
+          <p class="hint" id="sh-slug-url"></p>
+          <p class="warn" id="sh-slug-warn" role="alert" hidden></p>
+        </div>
+        <div class="field" id="sh-addr-field">
+          <label for="sh-addr">Address</label>
+          <input id="sh-addr" />
+        </div>
+        <!-- A bare count is a fact nobody can act on. The number creates the tables, and each
+             one is a real record that can carry a QR code. -->
+        <div class="field" id="sh-tables-field">
+          <label for="sh-tables">Tables</label>
+          <input id="sh-tables" type="number" min="0" max="200" inputmode="numeric" />
+          <p class="hint" id="sh-tables-hint"></p>
+        </div>
+
+        <!-- The three country facts, set when the branch is opened and by the only person who
+             opens branches. They were briefly the manager's; they are not, because they are not
+             day-to-day settings. Nobody changes a currency on a Tuesday. What a manager COULD
+             do is change one by accident, and the damage is not cosmetic: the wrong time zone
+             moves when the business day rolls over, and the wrong currency reprices the menu.
+             A control nobody needs weekly, that breaks the shop when mistyped, belongs with the
+             operator who opened the place.
+             Every one starts EMPTY. Opening a branch in Bangkok should mean choosing Bangkok,
+             not failing to notice that Yangon was already sitting in the box. -->
+        <div class="group" id="sh-country">
+          <strong class="who">Where this branch is</strong>
+          <p class="ask">Set once, when the branch opens. Its manager can read these but not change them.</p>
+
+          <div class="field" id="sh-tz-field">
+            <label for="sh-tz">Time zone</label>
+            <select id="sh-tz"></select>
+            <p class="hint">Sets when this branch's business day starts and ends.</p>
+          </div>
+
+          <div class="field" id="sh-cur-field">
+            <label for="sh-cur">Currency</label>
+            <select id="sh-cur"></select>
+            <p class="hint">What this branch's prices and receipts are in.</p>
+          </div>
+
+          <div class="field" id="sh-lang-field">
+            <label for="sh-lang">Language</label>
+            <select id="sh-lang"></select>
+            <p class="hint">What everyone at this branch starts in. Each person can still choose their own.</p>
+          </div>
+
+          <p class="warn" id="sh-country-warn" role="alert" hidden></p>
+        </div>
+        <div class="field" id="sh-mgr-field">
+          <label for="sh-mgr">Manager</label>
+          <!-- Explicit values, because the label is rewritten at runtime to say why a name
+               cannot be chosen. Without them the option's value IS its text, and appending
+               "— manages Hledan" would quietly change who is being appointed. -->
+          <!-- Three kinds of answer, not two. "Nobody yet" is a gap and says so in amber;
+               "I run it myself" is a decision and says nothing alarming, because for a small
+               shop it is the permanent, correct answer. Conflating them meant a one-person shop
+               wore a warning for ever about work that was never coming. -->
+          <!-- Filled from the company's own people. The two answers above the names are
+               built with them, in one list, so the three states cannot be assembled
+               differently in two places. -->
+          <select id="sh-mgr"></select>
+          <p class="hint" id="sh-mgr-hint">Choosing someone else replaces whoever is there now.</p>
+        </div>
+
+        <!-- The day-to-day three, shown to the CEO ONLY while the shop has no manager to own
+             them — either because nobody is hired yet or because the CEO runs it themselves.
+             This closes a hole rather than adding a feature: the Shops screen has always
+             promised "until you appoint one, that shop is yours to run — you can already do
+             everything a manager can there", and until now the CEO could not reach that shop's
+             phone number at all. A receipt was printing without one and nobody could fix it. -->
+        <div class="group" id="sh-day">
+          <strong class="who">Day to day</strong>
+          <p class="ask" id="sh-day-why"></p>
+          <div class="field">
+            <label for="sh-phone">Phone</label>
+            <input id="sh-phone" type="tel" inputmode="tel" placeholder="09 7xx xxx xxx" />
+            <p class="hint">Printed on the receipt.</p>
+          </div>
+          <div class="field">
+            <label for="sh-hours">Opening hours</label>
+            <input id="sh-hours" />
+          </div>
+          <div class="field">
+            <label for="sh-footer">Receipt footer</label>
+            <input id="sh-footer" />
+          </div>
+        </div>
+
+        <!-- Appears the moment a different name is picked, because that is the moment the
+             question becomes real. -->
+        <div class="choice" id="handover" hidden>
+          <strong class="who" id="handover-who"></strong>
+          <p class="ask">What happens to their account?</p>
+          <label><input type="radio" name="handover" value="staff" checked /><span>Keep them here as staff</span></label>
+          <label><input type="radio" name="handover" value="suspend" /><span>Suspend their access — they have left</span></label>
+        </div>
+
+        <!-- Where this person's authority stops, said out loud rather than left to be inferred
+             from a missing field. Two readers, two sentences — set in openShop, the way
+             #st-limit is. Neither of them is an apology: each names the person whose job the
+             other half is, so nothing here reads as a gap in the screen. -->
+        <p class="limit" id="sh-limit"></p>
+
+        <div class="pair">
+          <button type="button" class="ghost" id="shop-cancel">Cancel</button>
+          <button type="submit" class="btn" id="shop-save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- showModal() brings the focus trap, the Escape key and an inert background with it,
+         which is the same set of problems the drawer had to solve by hand. -->
+    <dialog class="modal" id="pw-dialog" aria-labelledby="pw-h">
+      <form id="pw-form">
+        <h2 id="pw-h">Change password</h2>
+        <p class="sub">Your other devices will be signed out.</p>
+
+        <div class="field">
+          <label for="currentPassword">Current password</label>
+          <input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" autofocus />
+        </div>
+        <div class="field">
+          <label for="newPassword">New password <span class="hint">at least 12 characters</span></label>
+          <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" />
+          <p class="hint">At least 12 characters.</p>
+        </div>
+        <div class="field">
+          <label for="confirmPassword">Confirm new password</label>
+          <input id="confirmPassword" type="password" autocomplete="new-password" />
+        </div>
+
+        <p class="warn" id="pw-warn" role="alert" hidden>The two new passwords do not match.</p>
+
+        <div class="pair">
+          <button type="button" class="ghost" id="pw-cancel">Cancel</button>
+          <button type="submit" class="btn">Change password</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

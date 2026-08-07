@@ -119,3 +119,84 @@ test("the password appears in the body and nowhere else", async () => {
   assert.doesNotMatch(calls[0].url, /correct-horse-battery/);
   assert.doesNotMatch(JSON.stringify(calls[0].init.headers), /correct-horse-battery/);
 });
+
+// --- the console resources --------------------------------------------------
+
+test("a query string is built here, so an absent filter is absent and never 'null'", async () => {
+  const { fetch, calls } = stubFetch([{ status: 200, body: { companies: [] } }, { status: 200, body: { companies: [] } }]);
+  const api = createApi(fetch);
+  await api.listCompanies({ status: "active", limit: 25 });
+  assert.equal(calls[0].url, "/api/platform/companies?status=active&limit=25");
+  // undefined, null and "" are all "do not send it" -- a caller passing an empty
+  // filter box must not turn into ?status=.
+  await api.listCompanies({ status: null, limit: undefined, cursor: "" });
+  assert.equal(calls[1].url, "/api/platform/companies");
+});
+
+test("every resource call reports a dead session as signedOut, not as a failure", async () => {
+  // The thing they clicked did not fail; their session did. Reporting it as a
+  // failure leaves the console showing an error over a screen it can no longer
+  // fill, and the user retrying forever.
+  for (const invoke of [
+    (api) => api.listCompanies(),
+    (api) => api.createShop({}),
+    (api) => api.updateUser("u1", {}),
+    (api) => api.setShopManager("s1", { managerUserId: null })
+  ]) {
+    const { fetch } = stubFetch({ status: 401, body: { error: { code: "unauthenticated" } } });
+    assert.equal((await invoke(createApi(fetch))).state, "signedOut");
+  }
+});
+
+test("a 2xx is ok with the body, and a 4xx carries the server's own words", async () => {
+  const { fetch } = stubFetch({ status: 201, body: { id: "c1", slug: "sakura" } });
+  const created = await createApi(fetch).createCompany({ name: "Sakura Kitchen", slug: "sakura" });
+  assert.deepEqual(created, { state: "ok", data: { id: "c1", slug: "sakura" } });
+
+  const { fetch: clash } = stubFetch({
+    status: 409,
+    body: { error: { code: "company_slug_taken", message: "That URL name is already in use." } }
+  });
+  const refused = await createApi(clash).createCompany({ name: "X", slug: "sakura" });
+  assert.equal(refused.state, "failed");
+  assert.equal(refused.code, "company_slug_taken");
+  // Verbatim: a client that writes its own text is how the two drift apart.
+  assert.equal(refused.message, "That URL name is already in use.");
+});
+
+test("field errors survive so a form can point at the field that is wrong", async () => {
+  const { fetch } = stubFetch({
+    status: 422,
+    body: { error: { code: "validation_failed", errors: [{ field: "slug", code: "pattern" }] } }
+  });
+  const result = await createApi(fetch).createShop({ slug: "Bogyoke" });
+  assert.deepEqual(result.fieldErrors, [{ field: "slug", code: "pattern" }]);
+});
+
+test("the manager slot is PUT and always says which of the three states it leaves", async () => {
+  const { fetch, calls } = stubFetch([{ status: 200, body: {} }, { status: 200, body: {} }]);
+  const api = createApi(fetch);
+  await api.setShopManager("s1", { managerUserId: null, runByOwner: true });
+  assert.equal(calls[0].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { managerUserId: null, runByOwner: true });
+  // Replacing a person carries the handover in the same request, because it is
+  // one decision and not two.
+  await api.setShopManager("s1", { managerUserId: "u9", outgoing: "suspend" });
+  assert.deepEqual(JSON.parse(calls[1].init.body), { managerUserId: "u9", outgoing: "suspend" });
+});
+
+test("selecting a company sends the key even when it is null", async () => {
+  const { fetch, calls } = stubFetch([{ status: 200, body: {} }, { status: 200, body: {} }]);
+  const api = createApi(fetch);
+  await api.selectScope("c1");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { companyId: "c1" });
+  // {} and {"companyId": null} are two different requests: one is a mistake and
+  // the other clears the selection.
+  await api.selectScope(null);
+  assert.deepEqual(JSON.parse(calls[1].init.body), { companyId: null });
+});
+
+test("an unreachable server is never reported as a permissions problem", async () => {
+  const { fetch } = stubFetch(new TypeError("Failed to fetch"));
+  assert.deepEqual(await createApi(fetch).listShops(), { state: "unreachable" });
+});

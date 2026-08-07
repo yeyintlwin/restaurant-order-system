@@ -1,13 +1,20 @@
-// DOM wiring only. Every call to core-api goes through api.js, which is the file
-// with the tests -- this one must not grow a fetch of its own.
+// The shell: the four states that exist before the console does, and the handover to
+// it. Every call to core-api goes through api.js, which is the file with the tests --
+// this one must not grow a fetch of its own.
 import { createApi } from "/api.js";
+import { describeFailure } from "/shape.js";
+import { mountConsole } from "/console.js";
 
 const api = createApi(fetch);
 const $ = (id) => document.getElementById(id);
 
-const STATES = ["loading", "signedOut", "signedIn", "mustChange"];
+const STATES = ["loading", "signedOut", "mustChange"];
 
+// The console is not one of the card's states. It is a different shape -- full
+// height, its own rail -- so the card is put away rather than switched.
 function show(state) {
+  const card = $("card");
+  card.hidden = state === null;
   for (const name of STATES) $(name).hidden = name !== state;
 }
 
@@ -16,45 +23,41 @@ function setError(element, text) {
   element.hidden = !text;
 }
 
-// The server's wording, always. 5.8(b) keeps "wrong password" and "unknown email"
-// indistinguishable, and a client that writes its own text is how they drift apart.
-// Field codes get a short gloss because "too_short" is not a sentence.
-const FIELD_TEXT = Object.freeze({
-  required: "is required",
-  too_short: "must be at least 12 characters",
-  too_long: "is too long",
-  invalid_uuid: "is not valid"
-});
+let console_ = null;
 
-function describe(result) {
-  if (result.state === "unreachable") {
-    return "Could not reach the server. Check your connection and try again.";
+function toSignedOut() {
+  if (console_) {
+    console_.unmount();
+    console_ = null;
   }
-  if (result.fieldErrors && result.fieldErrors.length > 0) {
-    return result.fieldErrors
-      .map((entry) => `${entry.field} ${FIELD_TEXT[entry.code] || "is not accepted"}`)
-      .join("; ");
-  }
-  return result.message;
+  $("email").value = "";
+  $("password").value = "";
+  show("signedOut");
 }
 
-function renderSignedIn(me) {
-  $("identityEmail").textContent = me.user.email;
-  const company = me.scope.companyId ? `company ${me.scope.companyId}` : "no company selected";
-  $("identityRole").textContent = `${me.user.role} · ${company}`;
-  show("signedIn");
+function toConsole(me) {
+  show(null);
+  // Mounted once per session. Re-mounting on every /me would attach a second copy of
+  // every listener, and the second copy is the one that fires twice.
+  if (console_) return;
+  console_ = mountConsole({ api, me, onSignedOut: toSignedOut });
 }
 
 function apply(result) {
   if (result.state === "signedIn") {
-    renderSignedIn(result.me);
+    toConsole(result.me);
     return;
   }
   if (result.state === "mustChangePassword") {
     show("mustChange");
     return;
   }
-  show("signedOut");
+  if (result.state === "unreachable" || result.state === "failed") {
+    show("signedOut");
+    setError($("signInError"), describeFailure(result));
+    return;
+  }
+  toSignedOut();
 }
 
 async function submitting(button, run) {
@@ -75,7 +78,7 @@ $("signInForm").addEventListener("submit", (event) => {
       // KEEP THE EMAIL, CLEAR THE PASSWORD. A page that clears itself on a wrong
       // password makes a typo cost the whole entry.
       $("password").value = "";
-      setError($("signInError"), describe(result));
+      setError($("signInError"), describeFailure(result));
       return;
     }
     apply(result);
@@ -90,31 +93,58 @@ function changeHandler(currentId, newId, errorId, buttonId, okId) {
       if (okId) setError($(okId), "");
       const result = await api.changePassword($(currentId).value, $(newId).value);
       if (result.state !== "signedIn") {
-        setError($(errorId), describe(result));
+        setError($(errorId), describeFailure(result));
         return;
       }
       $(currentId).value = "";
       $(newId).value = "";
-      // Spec 4.3: a success mints a fresh session and kills every other one. Saying
-      // so here is why "you have been signed out on your phone" is not a surprise.
+      // 4.3: a success mints a fresh session and kills every other one. Saying so is
+      // why "you have been signed out on your phone" is not a surprise.
       if (okId) setError($(okId), "Password updated. Every other session was signed out.");
-      renderSignedIn(result.me);
+      apply(result);
     });
   };
 }
 
-$("changeForm").addEventListener("submit", changeHandler("currentPassword", "newPassword", "changeError", "changeButton", "changeOk"));
+// The card's forced form. The console has its own, in Account settings, and that one
+// also asks for the new password twice.
 $("forcedForm").addEventListener("submit", changeHandler("forcedCurrent", "forcedNew", "forcedError", "forcedButton", null));
 
-for (const [id, everywhere] of [["signOut", false], ["signOutAll", true]]) {
-  $(id).addEventListener("click", () =>
-    submitting($(id), async () => {
-      await api.logout(everywhere);
-      $("email").value = "";
-      $("password").value = "";
-      show("signedOut");
-    })
-  );
-}
+const pwDialog = $("pw-dialog");
+const pwFields = ["currentPassword", "newPassword", "confirmPassword"];
+
+$("pw-open").addEventListener("click", () => {
+  for (const id of pwFields) $(id).value = "";
+  setError($("pw-warn"), "");
+  setError($("pw-done"), "");
+  pwDialog.showModal();
+});
+$("pw-cancel").addEventListener("click", () => pwDialog.close());
+
+$("pw-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const submit = event.submitter || $("pw-form").querySelector('button[type="submit"]');
+  return submitting(submit, async () => {
+    // Checked here rather than by the server, because the server never sees the
+    // confirmation field. A mistyped new password that nobody typed twice is a
+    // lockout, and this is the only place it can be caught.
+    if ($("newPassword").value !== $("confirmPassword").value) {
+      setError($("pw-warn"), "The two new passwords do not match.");
+      return;
+    }
+    setError($("pw-warn"), "");
+    const result = await api.changePassword($("currentPassword").value, $("newPassword").value);
+    if (result.state !== "signedIn") {
+      setError($("pw-warn"), describeFailure(result));
+      return;
+    }
+    for (const id of pwFields) $(id).value = "";
+    pwDialog.close();
+    // 4.3 again: this is why "you have been signed out on your phone" is not a
+    // surprise. The line stays on the screen behind the dialog rather than inside
+    // the dialog that just closed.
+    setError($("pw-done"), "Password changed. Your other devices have been signed out.");
+  });
+});
 
 apply(await api.me());

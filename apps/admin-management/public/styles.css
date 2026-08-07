@@ -1,6 +1,10 @@
 /* The palette is apps/customer-order/public/styles.css's, so the two apps read as
    one product. Copied rather than imported: they are separate services and a shared
-   stylesheet would be a build step. */
+   stylesheet would be a build step.
+
+   The console below redefines several of these. That is the cascade doing its job:
+   this block is the card's, the later one is the console's, and both are in the same
+   document because the sign-in page and the console are the same page in two states. */
 :root {
   color-scheme: light;
   --bg: #f4f5f7;
@@ -19,27 +23,31 @@
 
 * { box-sizing: border-box; }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--bg);
-  color: var(--ink);
-}
+/* EVERY RULE BELOW IS SCOPED TO .card, and that is the whole point of this section.
+   These were written when the card was the entire application, so they styled bare
+   "button", "h1", "input" and "body". The console shares this document, and unscoped
+   they reached into it: "button { width: 100% }" stretched the console's Add company
+   button across the header, "h1 { text-align: center }" moved every screen title, and
+   "body { display: flex; align-items: center }" floated the whole console in the
+   middle of the viewport.
 
+   The card centres ITSELF rather than asking the body to do it, so the body is free
+   to be what the console needs. */
 .card {
-  width: 100%;
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: max-content;
+  width: calc(100% - 48px);
   max-width: 380px;
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: 0 8px 24px rgb(16 24 40 / 8%);
   padding: 28px 24px;
+  color: var(--ink);
 }
 
-.brand {
+.card .brand {
   width: 40px; height: 40px;
   margin: 0 auto 16px;
   border-radius: 12px;
@@ -49,15 +57,12 @@ body {
   font-weight: 700;
 }
 
-h1 { font-size: 20px; margin: 0 0 4px; text-align: center; }
-.muted { color: var(--muted); font-size: 13px; margin: 0 0 18px; text-align: center; }
-.label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
-.identity { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
-.hint { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
-hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+.card h1 { font-size: 20px; margin: 0 0 4px; text-align: center; }
+.card .muted { color: var(--muted); font-size: 13px; margin: 0 0 18px; text-align: center; }
+.card .hint { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
 
-label { display: block; font-size: 12px; font-weight: 600; margin: 0 0 6px; }
-input {
+.card label { display: block; font-size: 12px; font-weight: 600; margin: 0 0 6px; }
+.card input {
   width: 100%;
   height: 44px;
   padding: 0 12px;
@@ -68,9 +73,9 @@ input {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-button {
+.card button {
   width: 100%;
   height: 44px;
   font: inherit;
@@ -81,13 +86,492 @@ button {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-button:hover { background: var(--accent-press); }
-button[disabled] { opacity: .6; cursor: default; }
+.card button:hover { background: var(--accent-press); }
+.card button[disabled] { opacity: .6; cursor: default; }
 
-.secondary { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
-.secondary:hover { background: var(--surface-2); }
-.row { display: flex; gap: 8px; margin-top: 12px; }
+.card .error { color: var(--danger); font-size: 13px; margin: 0 0 12px; }
 
-.error { color: var(--danger); font-size: 13px; margin: 0 0 12px; }
-.ok { color: var(--accent); font-size: 13px; margin: 0 0 12px; }
+/* The browser's own rule is display:none at author-zero specificity, so any `display`
+   set anywhere beats it and the element stays on screen. `hidden` has to mean hidden.
+   Stated here as well as in the console block because the card is drawn before the
+   console block has any elements to apply to. */
 [hidden] { display: none !important; }
+
+/* ===========================================================================
+   The console.
+
+   Lifted from docs/superpowers/specs/2026-08-06-admin-console-roles-mockup.html,
+   which is where every decision in it was argued out and where the reasons still
+   live. Two deliberate changes on the way in:
+
+     - a fifth persona, `operator`. The mockup had four and faked the fifth with a
+       Viewing-as switch; the real API has a platform admin who HAS selected a
+       company, and that person is neither the platform owner nor the CEO.
+     - the Viewing-as control itself is gone. It was mockup furniture and the
+       mockup said so.
+   =========================================================================== */
+
+:root{
+  --ink:#1a1c20; --muted:#787f88; --bg:#fafafa; --surface:#fff; --line:#ebecee;
+  --accent:#2e7d5b; --accent-soft:#eef5f2;
+  --rail:#15251e; --rail-ink:#e9efec; --rail-dim:#7f9a8e;
+  --gut:28px;                       /* page gutter, tightens on small screens */
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+/* The browser's own `hidden` rule is display:none at author-zero specificity, so any
+   `display` we set — .row is display:grid — silently beats it and the element stays on
+   screen. `hidden` has to mean hidden. */
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+html,body{height:100%}
+/* Without this a downward swipe at the top of a list reloads the page on Chrome Android. */
+html,body{overscroll-behavior-y:none}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55}
+body.locked{overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* Who is signed in decides what exists at all. An element lists the people it belongs to
+   in data-for; everyone else never sees it. Higher specificity than .view.on on purpose. */
+body[data-as="platform"] [data-for]:not([data-for~="platform"]),
+body[data-as="operator"] [data-for]:not([data-for~="operator"]),
+body[data-as="company"]  [data-for]:not([data-for~="company"]),
+body[data-as="manager"]  [data-for]:not([data-for~="manager"]),
+body[data-as="staff"]    [data-for]:not([data-for~="staff"]){display:none}
+
+.app{display:grid;grid-template-columns:230px 1fr;height:100vh;height:100dvh}
+
+/* ── rail ───────────────────────────────── */
+/* The rail sits against the left edge whether it is a column or a drawer, so it carries
+   the left safe-area inset at every width. A Pro Max in landscape is 932px wide, which is
+   the permanent-column layout, not the drawer one. */
+.rail{background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;
+      padding:18px 12px;padding-left:calc(12px + env(safe-area-inset-left));
+      overflow-y:auto;overscroll-behavior:contain}
+
+.scope{display:flex;align-items:center;gap:10px;padding:0 8px 22px}
+.scope .co{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.scope .sh{font-size:12px;color:var(--rail-dim);margin-top:1px}
+/* A manager can run two shops, so the line that says which one becomes the control that
+   changes it. It only appears when there is a second shop to change to — a picker with one
+   option is a lie about how much choice there is. It is deliberately the same size and
+   colour as the text it replaces, so the rail does not grow a widget; it is the same line,
+   now answering back. */
+.scope-pick{display:block;margin:1px 0 0 -5px;padding:1px 18px 1px 5px;max-width:150px;
+  border:0;border-radius:5px;background:transparent;color:var(--rail-dim);
+  font:inherit;font-size:12px;line-height:1.5;cursor:pointer;
+  appearance:none;-webkit-appearance:none}
+.scope-pick:hover{background:rgb(255 255 255/8%);color:#fff}
+.scope-pick:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.scope-pick option{color:var(--ink);background:#fff}
+/* the mark that says this one opens, drawn on the wrapper so the select stays borderless */
+.scope-shop{position:relative}
+.scope-shop::after{content:"";position:absolute;right:5px;top:50%;margin-top:-2px;
+  pointer-events:none;border-top:4px solid var(--rail-dim);
+  border-left:3.5px solid transparent;border-right:3.5px solid transparent}
+/* Where the CEO actually sees their own brand. Nothing sits here until they set one. */
+.brand{flex:none;width:26px;height:26px;border-radius:6px;background:#fff center/cover no-repeat}
+
+.nav{flex:1}
+.nav a{display:block;padding:8px 10px;border-radius:8px;color:var(--rail-ink);text-decoration:none;font-size:13.5px}
+.nav a:hover{background:rgb(255 255 255/7%)}
+.nav a.on{background:var(--accent);font-weight:600}
+
+.me{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;
+    color:var(--rail-ink);text-decoration:none}
+.me:hover{background:rgb(255 255 255/7%)}
+.me.on{background:rgb(255 255 255/10%)}
+.me .av{width:28px;height:28px;border-radius:50%;background:rgb(255 255 255/11%);display:grid;
+        place-items:center;font-size:11px;font-weight:600;flex:none}
+.me .nm{font-size:13px;line-height:1.3}
+.me .ro{font-size:11px;color:var(--rail-dim)}
+
+.scrim{position:fixed;inset:0;background:rgb(0 0 0/38%);z-index:20}
+
+/* ── main ───────────────────────────────── */
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:4px;min-height:64px;flex:none;
+     padding:0 var(--gut);
+     padding-right:calc(var(--gut) + env(safe-area-inset-right));
+     padding-top:env(safe-area-inset-top)}
+.top h1{font-size:19px;font-weight:600;letter-spacing:-.02em;margin:0;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.btn{height:40px;padding:0 15px;border-radius:9px;border:0;background:var(--accent);color:#fff;
+     font-size:13.5px;font-weight:550;white-space:nowrap;flex:none}
+.btn:hover{background:#256849}
+
+/* hamburger — hidden until the rail becomes a drawer */
+.menu{display:none;place-items:center;width:40px;height:40px;margin-left:-9px;
+      border:0;background:none;border-radius:9px;flex:none}
+.menu:hover{background:#f0f0f1}
+.menu i{display:block;width:18px;height:1.5px;background:var(--ink);position:relative}
+.menu i::before,.menu i::after{content:"";position:absolute;left:0;width:18px;height:1.5px;background:var(--ink)}
+.menu i::before{top:-5px}
+.menu i::after{top:5px}
+
+.body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;
+      padding:0 var(--gut) var(--gut);
+      padding-right:calc(var(--gut) + env(safe-area-inset-right));
+      padding-bottom:calc(var(--gut) + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.on{display:block}
+
+/* ── table ──────────────────────────────── */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.scroll{overflow-x:auto}
+/* What the widest table actually needs: two name-and-address columns, two counts, a status
+   and two words of action. Short of that the panel scrolls sideways, which is honest —
+   below 560 it used to keep shrinking the columns until the words broke apart. */
+table{width:100%;min-width:760px;border-collapse:collapse}
+th{text-align:left;font-size:12px;font-weight:500;color:var(--muted);padding:12px 18px;
+   border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:13px 18px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fcfcfd}
+
+.who{display:flex;align-items:center;gap:11px;min-width:0}
+.who .av{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+         display:grid;place-items:center;font-size:12px;font-weight:600;flex:none}
+/* A real logo replaces the initials rather than sitting behind them. */
+.av.has-logo{background-color:#fff;background-size:cover;background-position:center;
+             color:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.av.lg{width:44px;height:44px;font-size:14px}
+.logo-set{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.logo-set .warn{flex-basis:100%;margin:2px 0 0}
+/* A long address wraps instead of pushing the row wider than the screen. `break-word` and
+   not `anywhere`: `anywhere` also drives the column's own minimum width down to one
+   character, and a table short of room then squeezes the name into a vertical stack of
+   letters rather than scrolling. */
+.who>span:last-child{min-width:0;overflow-wrap:break-word}
+/* Two blocks rather than a <br>. A line break you cannot address in CSS leaves an empty
+   line behind the moment you hide the thing after it. */
+.who .nm{display:block;font-weight:550}
+.who .em{display:block;font-size:12px;color:var(--muted)}
+
+.state{font-size:13px;color:var(--muted)}
+.state.ok{color:var(--ink)}
+.state b{display:block;font-weight:550;color:var(--ink)}
+/* Two words, one line. Left to wrap they stack and take the row's height with them. */
+.act{text-align:right;white-space:nowrap}
+/* The column has a name like every other one. An unlabelled column reads as a mistake. */
+th.acth{text-align:right}
+/* 44px square is the smallest reliable finger target. The row is already taller than
+   that, so growing the button does not change the layout. */
+/* Always visible. They used to fade in on row hover, which hid what a row could do until
+   you happened to point at it — and with two of them per row it hid it twice. Grey rather
+   than green so a table of them stays quiet; the colour arrives on the one you are on. */
+.edit{display:inline-grid;place-items:center;min-width:44px;min-height:44px;padding:0 6px;
+      border:0;background:none;color:var(--muted);font-size:13px;font-weight:550}
+.edit:hover,.edit:focus-visible{color:var(--accent)}
+
+/* ── settings ───────────────────────────── */
+.row{display:grid;grid-template-columns:1fr 280px;gap:24px;align-items:center;
+     padding:16px 18px;border-bottom:1px solid var(--line)}
+/* Only the panel's own last row loses its rule. Rows nested in the password form must
+   keep theirs, because more rows follow the form. */
+.panel>.row:last-child{border-bottom:0}
+.row label{font-weight:550}
+.row p{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+/* 16px is the smallest size iOS Safari will not zoom in to reach, and it has to be the
+   default rather than a narrow-screen override: an iPhone in landscape is 667 to 932px
+   wide, so a width query never catches it. Desktop pointers get the smaller text back. */
+.row input,.row select,.field input,.field select{width:100%;height:40px;padding:0 12px;border:1px solid var(--line);
+                       border-radius:9px;background:var(--surface);font:inherit;font-size:16px}
+@media (hover:hover) and (pointer:fine){
+  .row input,.row select,.field input,.field select{font-size:13.5px}
+}
+.row input:focus,.row select:focus,.field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.row input:disabled,.row input[readonly]{background:#f6f6f7;color:var(--muted)}
+.ghost{height:40px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:var(--surface);
+       font-size:13.5px}
+.ghost:hover{background:#f6f6f7}
+
+/* An empty screen that admits it. Better than a grid of invented numbers, which would be
+   read as real the moment anyone looked at it. */
+.blank{margin:0;padding:56px 24px;text-align:center;color:var(--ink);font-weight:550}
+.blank span{display:block;max-width:34em;margin:6px auto 0;font-weight:400;font-size:13.5px;
+            color:var(--muted)}
+
+/* ── password ───────────────────────────── */
+/* Changing a password is its own task with its own commit point, so it gets its own
+   surface. Unfolding it inside the panel only made the list longer: the button that
+   caused it disappeared, and nothing tied the new rows to the click. */
+.modal{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;
+       overscroll-behavior:contain;
+       padding:0;border:0;border-radius:14px;background:var(--surface);color:var(--ink);
+       box-shadow:0 24px 60px rgb(0 0 0/22%)}
+.modal::backdrop{background:rgb(0 0 0/40%)}
+.modal form{padding:22px}
+.modal h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em}
+.modal .sub{margin:2px 0 18px;font-size:13px;color:var(--muted)}
+
+/* Looking is its own screen. Facts sat above the fields in the edit dialog for one
+   revision and it muddled both: you could not tell what was a value and what was a
+   control. Nothing here is a form. */
+.facts{margin:0 0 4px}
+.facts>div,.facts>button>div{display:grid;grid-template-columns:112px 1fr;gap:14px;
+                             padding:11px 0;font-size:13.5px}
+.facts>div+div,.facts>button+div,.facts>div+button,.facts>button+button{border-top:1px solid var(--line)}
+/* A fact that opens something. Same line, plus a mark and somewhere to press. */
+/* A line that leads somewhere is a real target, so it carries the same 44px floor every
+   other control here does. Two of these are the only way into a branch on a stacked
+   screen, so a hair under was a hair too little. */
+.facts>button{display:block;width:100%;min-height:44px;padding:0 26px 0 0;border:0;background:none;
+              text-align:left;position:relative}
+.facts>button::after{content:"";position:absolute;right:6px;top:50%;margin-top:-4px;
+  border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.facts>button:hover{background:#f7f8f9}
+.facts>button:hover::after{border-left-color:var(--accent)}
+.facts .k{color:var(--muted);font-size:13px}
+.facts .sub2{display:block;margin-top:1px;font-size:12.5px;color:var(--muted)}
+.facts .head{margin-top:8px;padding:14px 0 4px;border-top:1px solid var(--line);
+             font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+             color:var(--muted)}
+/* A branch line IS a button, so matching only a following DIV left the first branch under
+   the SHOPS heading wearing a rule stacked under the heading's own. */
+.facts .head+div,.facts .head+button{border-top:0}
+.facts a{color:var(--accent);font-weight:550;text-decoration:none}
+.facts a:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* Two words in a row, so the one that only looks does not sit under the one that changes. */
+.act .edit+.edit{margin-left:2px}
+
+.field{margin-bottom:14px}
+.field label{display:block;margin-bottom:6px;font-weight:550;font-size:13.5px}
+.field .hint{margin:6px 0 0}
+
+/* A shop left without a manager is a hole in the company, not a blank cell. */
+.state.none{color:#9c5c17;font-weight:550}
+
+/* One company's branches at a time. The row itself is the control, the triangle says
+   which one is open, and opening another closes this one so the table never grows into a
+   list of everything. */
+.disc{width:16px;height:16px;flex:none;padding:0;border:0;background:none;position:relative;
+      margin-left:-4px}
+.disc::before{content:"";position:absolute;left:4px;top:4px;
+  border-left:5px solid var(--muted);border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transform-origin:2px 4px;transition:transform .15s}
+.disc:hover::before{border-left-color:var(--ink)}
+@media (prefers-reduced-motion:reduce){ .disc::before{transition:none} }
+
+#co-rows tr:not(.sub){cursor:pointer}
+tr.open>td{background:var(--accent-soft)}
+tr.open .disc::before{transform:rotate(90deg);border-left-color:var(--accent)}
+
+/* Branches are a TREE, not a second table. Laying them out in the parent's columns — with
+   their own header row and their own Actions heading — made one table look like two nested
+   inside each other, and reading it took work. A branch now spans the row and hangs off a
+   line, the way a folder shows what is inside it. */
+tr.sub td{padding:0;border-bottom:0}
+.twig{display:flex;align-items:center;gap:14px;position:relative;
+      margin-left:34px;padding:3px 18px 3px 30px;font-size:13px}
+.twig{cursor:pointer}
+.twig:hover{background:#f6f7f8}
+/* The mark, not a word. A row that opens says so the way every other openable row here
+   does, and the button is real so the keyboard can reach it. */
+.twig-go{flex:none;width:26px;height:26px;padding:0;border:0;background:none;position:relative}
+.twig-go::before{content:"";position:absolute;left:10px;top:9px;
+  border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.twig:hover .twig-go::before,.twig-go:focus-visible::before{border-left-color:var(--accent)}
+/* the trunk, running down through the group */
+.twig::before{content:"";position:absolute;left:0;top:0;bottom:0;border-left:1px solid #d3d8dc}
+/* and the elbow into this branch */
+.twig::after{content:"";position:absolute;left:0;top:50%;width:19px;border-top:1px solid #d3d8dc}
+/* the last one closes the trunk instead of running past it */
+tr.twig-last .twig::before{bottom:50%}
+/* Staff descend from the MANAGER column, not from the shop's name. Their row leaves the
+   first column empty and starts its cell at the manager, so the trunk lands under the name
+   already printed there — the hierarchy without a second copy of the manager. */
+.twig.under{margin-left:18px}
+.twig-name{font-weight:550;color:var(--ink);min-width:130px}
+.twig.under .twig-name{font-weight:400}
+.twig-meta{flex:1;color:var(--muted)}
+.twig-meta .none{color:#9c5c17;font-weight:550}
+tr.twig-last td{border-bottom:1px solid var(--line)}
+
+/* The way to add a branch is the last thing on the branch, so it hangs off the same trunk
+   and closes it. A group ends with the way to add to it — which also means a company with
+   no shops at all still shows one line, and that line is the one that fixes it.
+   Taller than a branch on purpose: iPad landscape is 1366px, so this tree renders on a
+   touch screen, and a 30px row is not a target. */
+.twig.add{min-height:44px;color:var(--accent);font-weight:550}
+.twig.add .twig-name{color:var(--accent);min-width:0}
+.twig.add::after{border-top-color:#c9d6cf}
+/* A plus, not a chevron: this line makes something rather than opening something. So the
+   chevron goes — but the button stays, because it is the only thing in the row a keyboard
+   can reach, and it keeps its accessible name. Without a mark of its own it needs a focus
+   ring, or tabbing through the tree lands somewhere invisible. */
+.twig.add .twig-go::before{content:none}
+/* And with no mark of its own, the button becomes the row: it covers it, so the focus ring
+   outlines the thing that is actually being pressed. A 26px ring floating at the far right
+   of a line whose words are on the left says nothing about what Enter would do. */
+.twig.add .twig-go{position:absolute;inset:0;width:auto;height:auto}
+.twig.add .twig-go:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.twig.add .twig-plus{flex:none;position:relative;width:13px;height:13px;margin-right:-4px}
+.twig.add .twig-plus::before,.twig.add .twig-plus::after{content:"";position:absolute;
+  left:0;top:6px;width:13px;border-top:1.5px solid currentColor}
+.twig.add .twig-plus::after{transform:rotate(90deg)}
+
+/* Replacing a manager is one decision with two halves. Splitting it into "demote the old
+   one" and "promote the new one" leaves the shop with two managers or none in between. */
+.group,.choice{margin:16px 0;padding:14px;border-radius:10px}
+.group{border:1px solid var(--line)}
+.choice{background:#fdf8f0;border:1px solid #f0e3cd}      /* amber: something is at stake */
+.group .who,.choice .who{display:block;margin:0 0 2px;font-weight:550;font-size:13.5px}
+.group .who{color:var(--ink)}
+.choice .who{color:#7a5320}
+.group .ask,.choice .ask{margin:0 0 8px;font-size:12.5px}
+.group .ask{color:var(--muted)}
+.choice .ask{color:#8a6534}
+.group label,.choice label{display:flex;align-items:flex-start;gap:9px;padding:6px 0;margin:0;
+              font-weight:400;font-size:13.5px;cursor:pointer}
+.group input,.choice input{flex:none;width:auto;height:auto;margin:4px 0 0}
+.field input[readonly]{background:#f6f6f7}
+/* The line that says where this person's authority stops. */
+.limit{margin:16px 0 0;padding-top:14px;border-top:1px solid var(--line);
+       font-size:12.5px;color:var(--muted)}
+/* The same sentence inside a settings panel rather than a dialog. The row above it has
+   already drawn a rule, so a second one plus a 16px gap read as an empty row nobody put
+   there. It takes the rows' own gutter and separates itself from what follows instead. */
+.panel>.limit{margin:0;padding:14px 18px;border-top:0;border-bottom:1px solid var(--line)}
+.panel>.limit:last-child{border-bottom:0}
+
+.pair{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.pair.start{justify-content:flex-start;margin-top:10px}
+
+/* The outcome has to be visible without hunting for it. The one on the sign-in page was
+   too quiet and the change looked like it had failed. */
+.done,.warn{padding:11px 14px;border-radius:10px;font-size:13.5px}
+.done{margin:0 0 14px;background:var(--accent-soft);color:#1d5b40}
+.warn{margin:0;background:#fdf0ee;color:#8d2f25}
+/* Not an error — a job nobody has picked up yet. It stays on screen until someone does. */
+.notice{margin:0 0 14px;padding:11px 14px;border-radius:10px;font-size:13.5px;
+        background:#fdf8f0;border:1px solid #f0e3cd;color:#7a5320}
+.hint{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+
+/* ── tablet & phone: the rail becomes a drawer ── */
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .menu{display:grid}
+  /* With the rail out of the flow, the header and the content own the left edge. */
+  .top,.body{padding-left:calc(var(--gut) + env(safe-area-inset-left))}
+  .rail{position:fixed;top:0;bottom:0;left:0;width:264px;z-index:30;
+        transform:translateX(-100%);visibility:hidden;
+        /* visibility flips LATE on close, so the slide-out stays visible, and instantly
+           on open, so the drawer can take focus in the same tick it is opened. A plain
+           `visibility .22s` leaves it hidden for the first half of the open and quietly
+           swallows the .focus() call. */
+        transition:transform .22s ease,visibility 0s linear .22s;
+        padding-top:calc(18px + env(safe-area-inset-top));
+        padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  .rail.open{transform:none;visibility:visible;transition:transform .22s ease,visibility 0s}
+  /* touch targets */
+  .nav a{padding:11px 10px;font-size:15px}
+  .me{padding:11px 10px}
+}
+/* Written as the exact complement of the query above. `(min-width:901px)` would leave a
+   dead band at fractional widths like 900.5 — routine on a 150%-scaled Windows display —
+   where neither query matches and the scrim covers the desktop layout with no way out. */
+@media not all and (max-width:900px){
+  .scrim{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .rail{transition:none}
+}
+
+/* ── below 1050px: the table becomes a list ──
+   The widest table needs 760px to itself, plus the rail and the gutters — about 1050px
+   before it fits without scrolling sideways.
+
+   This is deliberately NOT the drawer's 900px. The two ask different questions: whether
+   there is room for a sidebar, and whether there is room for a table. Tying them together
+   is what produced a six-column table in 640px at a 923px window, with "Sakura Kitchen"
+   squeezed into a vertical stack of four letters. */
+@media (max-width:1049px){
+  .scroll{overflow-x:visible}
+  table{min-width:0}
+  thead{display:none}
+  table,tbody{display:block}
+  /* A card, not a squashed row. Five label-and-value lines per person meant "Role", "Shop"
+     and "Status" repeated all the way down the screen while the name had to be hunted for.
+     The card carries what identifies the row; the rest is one tap away in Details, which is
+     where it was going to be read anyway. */
+  /* Every card is the same two lines tall, whatever it has to say. The badge is lifted out
+     of the flow so it centres against the pair rather than hanging off the first line. */
+  tbody tr{display:block;position:relative;min-height:66px;
+           padding:13px 38px 13px 68px;border-bottom:1px solid var(--line)}
+  tbody tr:hover{background:none}
+  tbody tr:active{background:#f6f7f7}
+  td{display:block;padding:0;border:0}
+
+  .who{display:block}
+  .who .av{position:absolute;left:16px;top:50%;transform:translateY(-50%);
+           width:40px;height:40px;font-size:13px}
+  .who .em{display:none}                      /* the address is a tap away */
+
+  td.meta{display:none}                       /* the other columns live in Details */
+  td.meta::before{content:none}                /* and with them, the repeated labels */
+
+  /* Line two, all of it: what the row is, where it is, and — only when it is not the
+     ordinary case — what is wrong with it. One line, so nothing grows a card. */
+  td.m-key,td.m-key2,td.m-state{display:inline;font-size:13px;line-height:1.5;color:var(--muted)}
+  td.m-key2::before,td.m-state::before{content:"· "}
+  td.m-state{color:#9c5c17}
+  td.m-state.ok{display:none}                  /* Active is the normal case; say nothing */
+  /* Except in a list whose only other column IS the status — a manager's staff. There it
+     is not noise, it is the whole point, and printing it keeps that card two lines like
+     every other card in the console. */
+  tr.lean td.m-state.ok{display:inline;color:var(--muted)}
+  tr.lean td.m-state::before{content:none}
+  /* One name per card. The second line is said quietly, not as a second heading, and it
+     does not trail an address behind it. */
+  td.m-key b{display:inline;font-weight:400;color:var(--muted)}
+  td.m-key .tail{display:none}
+
+  td.act{display:none}                         /* the row itself is the way in */
+
+  /* A company row cannot expand here — tapping it opens Details, which lists the branches.
+     Any breakdown left open from a wider window goes away rather than sitting in the list
+     as a stack of half-rows wearing chevrons they do not answer to. */
+  tr.sub{display:none}
+  /* And with the expanding goes its triangle. Leaving it on put two arrows on every
+     company card: one for a disclosure that no longer happens, one for the row that opens
+     Details. A card gets one mark, or the mark means nothing. */
+  .disc{display:none}
+
+  /* The mark that says a row opens. Only on rows that do. */
+  tbody tr:not(.sub)::after{content:"";position:absolute;right:16px;top:50%;margin-top:-4px;
+    border-left:5px solid #c9ccd0;border-top:4px solid transparent;border-bottom:4px solid transparent}
+}
+
+/* ── phone: tighter still ────────────────── */
+@media (max-width:640px){
+  :root{--gut:16px}
+  .top h1{font-size:17px}
+  .row{grid-template-columns:1fr;gap:10px;align-items:stretch}
+  .ghost{width:100%}
+  .pair>*{flex:1;width:auto}
+  .modal form{padding:18px}
+}
+
+/* ===========================================================================
+   Three things the console draws that the mockup, drawing from fixed data,
+   never had to.
+   =========================================================================== */
+
+/* A cell that is empty on purpose. "No manager yet" and "No CEO yet" are answers
+   (§3.1A), and they read as answers rather than as missing text. */
+.state.gap{color:var(--muted);font-style:italic}
+
+/* The way back out of a company, for a platform owner who selected one. Without it
+   the only route back to the Companies list is signing out. It sits under the scope
+   block in the rail, so it is quiet and it is where "which company am I in" is
+   already being read. */
+.leave{margin-top:8px;padding:4px 9px;border:1px solid rgba(255,255,255,.16);
+  border-radius:7px;background:none;color:var(--rail-dim);font-size:12px}
+.leave:hover{color:var(--rail-ink);border-color:rgba(255,255,255,.3)}
+
+/* An empty list inside a table. The .blank rule above is written for a section, and
+   a cell needs the column span rather than the padding. */
+td.blank{padding:40px 16px}

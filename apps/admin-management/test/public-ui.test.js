@@ -42,8 +42,73 @@ test("app.js wires the DOM and holds no fetch of its own", () => {
   assert.doesNotMatch(js.replace(/createApi\(\s*fetch\s*\)/g, ""), /\bfetch\s*\(/);
 });
 
+test("the console holds no fetch either, and no URL of its own", () => {
+  const js = read("console.js");
+  // It is handed an api object. The moment it can build a request itself, half the
+  // request layer stops being the tested one.
+  assert.doesNotMatch(js, /\bfetch\s*\(/);
+  assert.doesNotMatch(js, /["'`]\/api\//);
+  assert.match(js, /export function mountConsole/);
+});
+
+test("every element the client reaches for is in the document", () => {
+  // A typo in a getElementById is a TypeError on whichever screen nobody happened to
+  // open during review. This is the check that opens all of them.
+  const html = read("index.html");
+  const present = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
+  for (const name of ["app.js", "console.js"]) {
+    const wanted = [...read(name).matchAll(/\$\("([a-zA-Z0-9_-]+)"\)/g)].map((match) => match[1]);
+    const missing = [...new Set(wanted)].filter((id) => !present.has(id));
+    assert.deepEqual(missing, [], `${name} reaches for ids the document does not have`);
+  }
+});
+
+test("the console draws by persona, and the document hides on the same five", () => {
+  const css = read("styles.css");
+  const html = read("index.html");
+  // The mockup had four. A platform admin who has SELECTED a company is the fifth,
+  // and if the CSS does not know the name the persona resolves to, every [data-for]
+  // element stays visible for them -- including the ones that are not theirs.
+  for (const persona of ["platform", "operator", "company", "manager", "staff"]) {
+    assert.match(css, new RegExp(`body\\[data-as="${persona}"\\]`), `${persona} has no hiding rule`);
+  }
+  // The Companies screen belongs to the unscoped platform owner alone. An operator
+  // is inside one company and cannot list them all.
+  assert.match(html, /id="v-companies" data-for="platform"/);
+});
+
+test("nothing that cannot work is left on the screen", () => {
+  const html = read("index.html");
+  // The mockup's logo upload has no endpoint behind it. A control that shows a
+  // preview and loses it on reload is worse than one that is absent, so it is absent
+  // -- and the comment in its place says it comes back with the route.
+  assert.doesNotMatch(html, /id="logo-file"/);
+  assert.doesNotMatch(html, /id="logo-btn"/);
+  // The Viewing-as switch was how the mockup faked a persona. Who you are comes from
+  // the session now, and a control that could change it would be the whole
+  // authorisation model made decorative.
+  assert.doesNotMatch(html, /asview/);
+});
+
+test("no sample record from the mockup survives into the shipped document", () => {
+  const html = read("index.html");
+  // Three invented restaurants that look real until somebody clicks one. The tables
+  // are empty and fill from the API.
+  for (const invented of ["Sakura Kitchen", "Mandalay Grill", "Khin Myat", "Thura Zaw", "09 77 123 4567"]) {
+    assert.doesNotMatch(html, new RegExp(invented), `${invented} is still in the document`);
+  }
+  for (const id of ["co-rows", "shops-rows", "ceo-rows", "staff-rows"]) {
+    assert.match(html, new RegExp(`<tbody id="${id}"></tbody>`), `${id} still carries sample rows`);
+  }
+  // Every select is filled from a list the API answered with. A hard-coded <option>
+  // is a name that exists on the screen and nowhere in the database.
+  for (const id of ["sh-mgr", "st-shop", "scope-shop", "a5", "sh-tz", "sh-cur", "sh-lang"]) {
+    assert.match(html, new RegExp(`<select[^>]*id="${id}"[^>]*></select>`), `${id} carries options`);
+  }
+});
+
 test("nothing in the client logs a password or puts one in a URL", () => {
-  for (const name of ["app.js", "api.js"]) {
+  for (const name of ["app.js", "api.js", "console.js", "shape.js"]) {
     const js = read(name);
     assert.doesNotMatch(js, /console\.(log|info|warn|error)[^\n]*(password|Password)/);
     assert.doesNotMatch(js, /[?&](password|currentPassword|newPassword)=/);
