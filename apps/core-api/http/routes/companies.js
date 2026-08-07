@@ -46,7 +46,17 @@ function companyDocument(row) {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     shopCount: row.shopCount,
-    tableCount: row.tableCount
+    tableCount: row.tableCount,
+    // null, not an omitted key: a company whose CEO has not been appointed yet is a
+    // state the console draws ("No CEO yet", with the action to fix it), and a key
+    // that vanishes is a state it would have to infer.
+    // The id is here because the console acts on this person -- resetting their
+    // password, replacing them -- and the alternative is a scope switch and a user
+    // list read just to find out who they are.
+    ceo:
+      row.ceoId === null
+        ? null
+        : { id: row.ceoId, displayName: row.ceoName, email: row.ceoEmail }
   };
 }
 

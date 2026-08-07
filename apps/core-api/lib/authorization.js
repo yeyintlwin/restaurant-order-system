@@ -96,11 +96,17 @@ function mayActOnRole(actorRole, targetRole) {
   return rankOf(actorRole) > rankOf(targetRole);
 }
 
-// §6.2: "Self-targeting is allowed for displayName only." Everything else about
-// your own account goes through the account routes, which require your current
-// password -- and a route that let you change your own role would make the lattice
-// above decorative.
-const SELF_PATCHABLE_FIELDS = Object.freeze(["displayName"]);
+// The three facts about you that are YOURS: what you are called, how you are
+// reached, and what language you read the console in. §7A.3 makes the last one a
+// per-person setting that everyone below the platform owner sets for themselves, so
+// a list of one would have meant a manager filing a request to change their own
+// interface language.
+//
+// What stays out is the point of the list. `email` is your sign-in name, and a person
+// who can change it can lock the person above them out of reaching them. `role`,
+// `status` and `shopIds` are somebody else's decision about you, and a route that let
+// you patch your own role would make the lattice above decorative.
+const SELF_PATCHABLE_FIELDS = Object.freeze(["displayName", "phone", "language"]);
 
 function permitsSelfPatch(fields) {
   return fields.every((field) => SELF_PATCHABLE_FIELDS.includes(field));

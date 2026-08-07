@@ -60,7 +60,18 @@ function harness({ scope = OPERATOR_SCOPE, userId = OPERATOR, role = "platform_a
   return {
     audits,
     deps: {
-      log: () => {},
+      // Errors are surfaced rather than swallowed. A 500 in these tests presents as
+      // "500 !== 201" and nothing else, and the sentence that says WHY is in the
+      // error log the harness used to discard. Left in on purpose: it prints nothing
+      // while the suite is green.
+      log: (line) => {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.level === "error") console.error(`  core-api: ${entry.message}`);
+        } catch {
+          /* not JSON, not an error line */
+        }
+      },
       apiPublicOrigin: ORIGIN,
       trustedProxyHops: 1,
       sessionIdleSeconds: 28800,
@@ -77,6 +88,18 @@ function harness({ scope = OPERATOR_SCOPE, userId = OPERATOR, role = "platform_a
       sessions: { resolveSession: async () => sessionRow(userId, role), renewSession: async () => null },
       scopes: { materialiseScope: async () => scope },
       appendAuditEvent: async (event) => { audits.push(event); return "1"; },
+      // The REAL tenant writer, WRAPPED rather than replaced. A stub that only
+      // pushed onto an array is why a foreign key violation reached a browser: the
+      // pre-tenant writer takes its own connection and cannot see a row created in
+      // the caller's open transaction, and no test here ever wrote a real audit row
+      // to find out. The array keeps every assertion below working; the second line
+      // is what makes them mean something.
+      tenantAudit: {
+        appendTenantAuditEvent: async (scope, event) => {
+          audits.push(event);
+          return require("../repositories/audit").appendTenantAuditEvent(scope, event);
+        }
+      },
       shops: require("../repositories/shops")
     }
   };
@@ -220,6 +243,29 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
       const shop = await (await post(base, { ...NEW_SHOP, tableCount: 0 })).json();
       const { rows } = await db.unscoped("SELECT id FROM shop_tables WHERE shop_id = $1", [shop.id]);
       assert.equal(rows.length, 0);
+      assert.equal(shop.tableCount, 0);
+    });
+  });
+
+  test("the table count is counted, and the create answers with the tables it just made", async () => {
+    await reset();
+    await withServer(harness().deps, async (base) => {
+      // The INSERT's RETURNING runs BEFORE the twelve tables exist, so a naive
+      // subquery answers zero on the one response where the number was just typed
+      // by the person reading it. That is the whole reason this assertion is on the
+      // CREATE and not only on the read after it.
+      const shop = await (await post(base, NEW_SHOP)).json();
+      assert.equal(shop.tableCount, 12);
+
+      const read = await (await get(base, `/api/admin/shops/${shop.id}`)).json();
+      assert.equal(read.tableCount, 12);
+      const listed = (await (await get(base, "/api/admin/shops")).json()).shops;
+      assert.equal(listed.find((s) => s.id === shop.id).tableCount, 12);
+
+      // Nothing stores it, so deleting a table changes the answer with no write to
+      // the shop at all.
+      await db.unscoped("DELETE FROM shop_tables WHERE shop_id = $1 AND label = '12'", [shop.id]);
+      assert.equal((await (await get(base, `/api/admin/shops/${shop.id}`)).json()).tableCount, 11);
     });
   });
 
@@ -441,6 +487,34 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
       assert.equal(audits.at(-1).action, "shop.manager_changed");
       assert.equal(audits.at(-1).detail.replacedUserId, null);
     });
+  });
+
+  test("PROMOTING SOMEBODY ALREADY IN THE SHOP", async () => {
+    // The ordinary case, and the one that used to answer 500. A CEO picks the person
+    // who is already working there -- they are chosen BECAUSE they are there -- so
+    // the user_shops row exists before the promotion does. Appointing a stranger
+    // worked and appointing your own best waiter did not, which is backwards.
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await db.unscoped(
+      "INSERT INTO user_shops (company_id, user_id, shop_id) VALUES ($1, $2, $3)",
+      [COMPANY, STAFF_A, shopId]
+    );
+
+    await withServer(ceo().deps, async (base) => {
+      const response = await putManager(base, shopId, { managerUserId: STAFF_A });
+      assert.equal(response.status, 200);
+    });
+
+    // Still exactly one row: the assignment was already right, and re-appointing
+    // must not leave a second copy of it behind either.
+    const assigned = await db.unscoped(
+      "SELECT shop_id FROM user_shops WHERE user_id = $1", [STAFF_A]
+    );
+    assert.deepEqual(assigned.rows.map((r) => r.shop_id), [shopId]);
+    const role = await db.unscoped("SELECT role FROM users WHERE id = $1", [STAFF_A]);
+    assert.equal(role.rows[0].role, "shop_manager");
   });
 
   test("replacing a manager is ONE decision: the shop is never left with two, or none", async () => {

@@ -37,7 +37,19 @@ const COLUMNS = `
   receipt_footer AS "receiptFooter",
   run_by_owner AS "runByOwner",
   status,
-  created_at AS "createdAt"
+  created_at AS "createdAt",
+  -- Counted, never stored, for the same reason the company's counts are: the tables
+  -- ARE the count, and a column beside them is a second copy that is right until
+  -- somebody adds a table without updating it.
+  --
+  -- Keyed on shop_id ALONE, and that is not an omission. A shop id belongs to exactly
+  -- one company, and the row being counted for has already been through the tenant
+  -- predicate, so repeating the tenant column here would add nothing -- while naming
+  -- it inside an INSERT's RETURNING is refused outright. The helper reads the whole
+  -- statement as text, comments included, and cannot tell a subquery from a caller
+  -- trying to pick their own tenant. That is why this paragraph does not spell the
+  -- column out either: it would fail the same check, from a comment.
+  (SELECT count(*) FROM shop_tables t WHERE t.shop_id = shops.id)::int AS "tableCount"
 `;
 
 // ?status is honoured for an administering scope only. A shop_manager or staff
@@ -202,7 +214,11 @@ async function createShop(scope, input) {
   for (let number = 1; number <= input.tableCount; number += 1) {
     await tenantQuery(scope, INSERT_TABLE, [shop.id, String(number), input.createdByUserId]);
   }
-  return shop;
+  // The INSERT's RETURNING ran BEFORE the tables existed, so its count is zero and
+  // would tell the caller their twelve tables were not made. Corrected from the
+  // number that made them rather than by a second read: they are in this
+  // transaction, so nothing else could have changed it.
+  return { ...shop, tableCount: input.tableCount };
 }
 
 async function updateShop(scope, shopId, changes) {
@@ -268,8 +284,13 @@ const UNASSIGN = {
 };
 
 // company_id is injected by the helper, so it is absent here on purpose.
+// ON CONFLICT DO NOTHING, and it is the ordinary case rather than a defensive
+// flourish. The person a CEO promotes to manager is usually the one already working
+// in that shop -- they are chosen BECAUSE they are there -- so the assignment row
+// exists before the promotion does. Without this, appointing your own best waiter
+// answers 500 and appointing a stranger works, which is precisely backwards.
 const ASSIGN = {
-  sql: `INSERT INTO user_shops (user_id, shop_id) VALUES ($2, $3)`,
+  sql: `INSERT INTO user_shops (user_id, shop_id) VALUES ($2, $3) ON CONFLICT DO NOTHING`,
   shopScoped: false
 };
 

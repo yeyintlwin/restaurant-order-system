@@ -34,6 +34,8 @@ function activeUser(overrides = {}) {
     lockedUntil: null,
     failedLoginCount: 0,
     companyStatus: "active",
+    companyName: "Sakura Kitchen",
+    companySlug: "sakura",
     ...overrides
   };
 }
@@ -123,7 +125,13 @@ test("a correct password returns the me-document and a __Host- cookie", async ()
     assert.match(cookie, /; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=28800$/);
 
     const body = await response.json();
-    assert.deepEqual(Object.keys(body).sort(), ["scope", "session", "user"]);
+    // The whole key set, asserted. Widening the me-document is a decision about
+    // what every client is handed on every page load, and this line is what makes
+    // that decision arrive in a diff.
+    assert.deepEqual(Object.keys(body).sort(), ["company", "scope", "session", "user"]);
+    // The company the session ACTS in, named. A CEO has no other way to learn the
+    // name of their own company -- no route hands a tenant user their company row.
+    assert.deepEqual(body.company, { id: COMPANY, name: "Sakura Kitchen", slug: "sakura" });
     assert.deepEqual(body.user, {
       id: USER,
       email: "till@example.test",

@@ -48,7 +48,10 @@ function shopDocument(row) {
     receiptFooter: row.receiptFooter,
     runByOwner: row.runByOwner,
     status: row.status,
-    createdAt: row.createdAt.toISOString()
+    createdAt: row.createdAt.toISOString(),
+    // Summed from the tables, the way a company's counts are summed from its shops.
+    // The console prints it on every branch row and nothing anywhere stores it.
+    tableCount: row.tableCount
   };
 }
 
@@ -221,8 +224,7 @@ route(
         tableCount,
         createdByUserId: req.core.session.userId
       });
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         shopId: created.id,
         actorKind: "user",
         actorUserId: req.core.session.userId,
@@ -312,8 +314,7 @@ route(
         openingHours: has(body, "openingHours") ? body.openingHours.trim() : null,
         receiptFooter: has(body, "receiptFooter") ? body.receiptFooter.trim() : null
       });
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         shopId,
         actorKind: "user",
         actorUserId: req.core.session.userId,
@@ -406,8 +407,7 @@ route(
         runByOwner: body.runByOwner === true,
         outgoing: body.outgoing === "suspend" ? "suspend" : "staff"
       });
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         shopId,
         actorKind: "user",
         actorUserId: req.core.session.userId,
@@ -488,8 +488,7 @@ route(
     const shop = await withTenantScope(req.core.scope, async () => {
       const updated = await deps.shops.updateShop(req.core.scope, shopId, changes);
       if (updated === null) return null;
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         shopId: updated.id,
         actorKind: "user",
         actorUserId: req.core.session.userId,

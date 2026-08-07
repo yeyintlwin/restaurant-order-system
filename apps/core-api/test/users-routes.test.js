@@ -10,7 +10,7 @@ const { createScope } = require("../db/scope");
 const { openRuntimePool, closeAllPools } = require("../db");
 const { cloneTemplate, skipDatabaseTests } = require("../testing/database");
 const { SESSION_COOKIE_NAME } = require("../http/cookies");
-const { mayActOnRole, rankOf, permitsSelfPatch } = require("../lib/authorization");
+const { mayActOnRole, rankOf, permitsSelfPatch, SELF_PATCHABLE_FIELDS } = require("../lib/authorization");
 
 require("../http/routes/auth");
 require("../http/routes/users");
@@ -50,10 +50,20 @@ test("an unknown role THROWS rather than scoring below everything", () => {
   assert.throws(() => mayActOnRole("company_admin", "superuser"), /unknown role/);
 });
 
-test("only displayName may be patched on your own account", () => {
+test("your name, your number and your language are yours; nothing else is", () => {
+  // The list is asserted whole rather than by example. Widening it is a decision
+  // about what a person may do to their own account without anyone's approval, and
+  // this line is what makes that decision arrive in a diff instead of quietly.
+  assert.deepEqual(SELF_PATCHABLE_FIELDS, ["displayName", "phone", "language"]);
+
   assert.equal(permitsSelfPatch(["displayName"]), true);
+  assert.equal(permitsSelfPatch(["phone", "language"]), true);
+  // One permitted field does not carry a forbidden one in with it: EVERY field in
+  // the patch has to be on the list, not just one of them.
   assert.equal(permitsSelfPatch(["displayName", "role"]), false);
   assert.equal(permitsSelfPatch(["status"]), false);
+  // Your sign-in name is how the person above you reaches you. It is not yours.
+  assert.equal(permitsSelfPatch(["email"]), false);
 });
 
 // --- the routes -------------------------------------------------------------
@@ -93,6 +103,18 @@ function harness(scope, userId) {
       },
       scopes: { materialiseScope: async () => scope },
       appendAuditEvent: async (event) => { audits.push(event); return "1"; },
+      // The REAL tenant writer, WRAPPED rather than replaced. A stub that only
+      // pushed onto an array is why a foreign key violation reached a browser: the
+      // pre-tenant writer takes its own connection and cannot see a row created in
+      // the caller's open transaction, and no test here ever wrote a real audit row
+      // to find out. The array keeps every assertion below working; the second line
+      // is what makes them mean something.
+      tenantAudit: {
+        appendTenantAuditEvent: async (scope, event) => {
+          audits.push(event);
+          return require("../repositories/audit").appendTenantAuditEvent(scope, event);
+        }
+      },
       tenantUsers: require("../repositories/users")
     }
   };
@@ -380,6 +402,49 @@ describe("the users routes", { skip: skipDatabaseTests() }, () => {
       assert.equal(clash.status, 409);
       assert.equal((await clash.json()).error.code, "email_unavailable");
       assert.equal((await patch(base, `/api/admin/users/${STAFF}`, {})).status, 400);
+    });
+  });
+
+  test("EVERYBODY CAN READ THEMSELVES, whatever containment says about them", async () => {
+    await reset();
+    await withServer(asManager().deps, async (base) => {
+      // Containment for a manager pins u.role = 'staff' -- correctly, because they
+      // administer staff and not their peers. A manager is not staff, so asking for
+      // their OWN row got the same 404 as asking for a stranger's, and Account
+      // settings could not be drawn at all. Reading yourself is not administration.
+      const self = await get(base, `/api/admin/users/${MANAGER}`);
+      assert.equal(self.status, 200);
+      assert.equal((await self.json()).email, "thura@example.test");
+
+      // The rule is about YOURSELF and nothing else: a peer is still invisible.
+      assert.equal((await get(base, `/api/admin/users/${CEO}`)).status, 404);
+    });
+  });
+
+  test("your name, your number and your language, set by you", async () => {
+    await reset();
+    await withServer(asManager().deps, async (base) => {
+      // §7A.3: the console language is per-person, and everybody below the platform
+      // owner sets their own. A manager who had to ask for it is the version of this
+      // rule that reads as an obstacle.
+      const changed = await patch(base, `/api/admin/users/${MANAGER}`, {
+        displayName: "Thura Z.",
+        phone: "09 42 118 9999",
+        language: "en"
+      });
+      assert.equal(changed.status, 200);
+      const body = await changed.json();
+      assert.equal(body.language, "en");
+      assert.equal(body.phone, "09 42 118 9999");
+
+      // null is a value, not an absence: it means "follow my shop", which is the
+      // default and has to be reachable again after choosing.
+      assert.equal((await (await patch(base, `/api/admin/users/${MANAGER}`, { language: null })).json()).language, null);
+
+      // And the line that has not moved. Your role and your status are somebody
+      // else's decision about you.
+      assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { status: "suspended" })).status, 403);
+      assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { role: "company_admin" })).status, 403);
     });
   });
 });

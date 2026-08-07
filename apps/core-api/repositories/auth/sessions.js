@@ -60,7 +60,18 @@ const RESOLVE_SESSION = `
          u.role,
          u.company_id           AS "companyId",
          u.must_change_password AS "mustChangePassword",
-         acting.status          AS "actingCompanyStatus"
+         acting.status          AS "actingCompanyStatus",
+         -- The company the session is ACTING in, named. The acting join is filled
+         -- only for a platform admin who selected one, so the COALESCE resolves to
+         -- the own join for everybody else and to the selection for them -- which
+         -- is the same rule the scope uses, spelled once.
+         --
+         -- It is here because /me is the only thing a tenant user reads before any
+         -- screen exists, and without it a CEO could not see the name of their own
+         -- company anywhere in the console: there is no route that hands a tenant
+         -- user their company row, and the platform one is not theirs to call.
+         COALESCE(acting.name, own.name) AS "companyName",
+         COALESCE(acting.slug, own.slug) AS "companySlug"
     FROM user_sessions s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN companies own    ON own.id = u.company_id

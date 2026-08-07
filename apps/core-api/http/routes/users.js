@@ -26,6 +26,11 @@ const LANGUAGE_PATTERN = /^[a-z]{2}(-[A-Za-z0-9]{2,8})*$/;
 const ASSIGNABLE_ROLES = ["staff", "shop_manager", "company_admin"];
 const SHOP_ASSIGNABLE_ROLES = ["staff", "shop_manager"];
 const STATUSES = ["active", "suspended"];
+// `all` is not a status a user can be IN. It is the spelling of "do not filter",
+// and it exists because the shops and companies lists already take it -- a console
+// that has to remember which of three lists wants the parameter omitted instead is
+// a console that gets it wrong on one of them.
+const LIST_STATUSES = ["active", "suspended", "all"];
 
 function userDocument(row) {
   return {
@@ -92,11 +97,11 @@ route(
 
     const errors = [];
     if (role !== null && !ASSIGNABLE_ROLES.includes(role)) errors.push({ field: "role", code: "not_in_enum" });
-    if (status !== null && !STATUSES.includes(status)) errors.push({ field: "status", code: "not_in_enum" });
+    if (status !== null && !LIST_STATUSES.includes(status)) errors.push({ field: "status", code: "not_in_enum" });
     if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
 
     const rows = await withTenantScope(req.core.scope, () =>
-      deps.tenantUsers.listUsers(req.core.scope, { role, status })
+      deps.tenantUsers.listUsers(req.core.scope, { role, status: status === "all" ? null : status })
     );
     sendJson(res, 200, { users: rows.map(userDocument) });
   }
@@ -176,8 +181,7 @@ route(
         passwordHash,
         createdByUserId: req.core.session.userId
       });
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         actorKind: "user",
         actorUserId: req.core.session.userId,
         action: "user.created",
@@ -239,10 +243,13 @@ route(
     const fields = ["displayName", "phone", "role", "status", "language", "shopIds"].filter((key) => has(body, key));
     if (fields.length === 0) throw new ApiError(400, "invalid_request");
 
-    // §6.2: "Self-targeting is allowed for displayName only." Anything else about
-    // your own account goes through the account routes, which ask for your current
-    // password -- and a route that let you change your own role would make the
-    // lattice decorative.
+    // Your name, your number and your language are yours; nothing else about your
+    // own account is. §6.2 said displayName ALONE, and §7A.3 widened it: the
+    // console language is a per-person setting, so a manager filing a request to
+    // change what language they read is not a rule, it is an obstacle. What stays
+    // out has not moved -- a route that let you change your own role would make
+    // the lattice decorative, and your email is how the person above you reaches
+    // you. lib/authorization.js holds the list.
     //
     // isSelf also EXEMPTS the row from the lattice below, and it has to: nobody is
     // strictly below themselves, so a CEO renaming themselves would otherwise be
@@ -315,8 +322,7 @@ route(
       if (has(body, "language")) changes.language = body.language;
 
       const updated = await deps.tenantUsers.updateUser(req.core.scope, userId, changes);
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         actorKind: "user",
         actorUserId: req.core.session.userId,
         action: "user.updated",
@@ -359,8 +365,7 @@ route(
       if (!mayActOnRole(req.core.scope.role, before.role)) throw new ApiError(403, "forbidden");
 
       const updated = await deps.tenantUsers.resetUserPassword(req.core.scope, userId, passwordHash);
-      await deps.appendAuditEvent({
-        companyId: req.core.scope.companyId,
+      await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         actorKind: "user",
         actorUserId: req.core.session.userId,
         action: "user.password_reset",

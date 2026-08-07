@@ -76,6 +76,19 @@ const GET_CONTAINED = {
   shopScoped: false
 };
 
+// YOURSELF. Reading your own record is not administration, and containment is the
+// wrong question to ask about it: GET_CONTAINED pins u.role = 'staff' -- correctly,
+// because a manager administers staff and not their peers -- and a manager is not
+// staff, so a manager asking for their own row got the same 404 as one asking for a
+// stranger's. Account settings could not be drawn at all.
+//
+// Still inside the tenant: company_id is the helper's, so this reads one row of one
+// company and the id is the caller's own, taken from the scope rather than the path.
+const GET_SELF = {
+  sql: `SELECT ${COLUMNS} FROM users u WHERE u.company_id = $1 AND u.id = $2`,
+  shopScoped: false
+};
+
 // company_id is injected by the helper. role arrives from the route, which has
 // already proved it is strictly below the caller's.
 const INSERT = {
@@ -143,6 +156,13 @@ async function listUsers(scope, options = {}) {
 }
 
 async function getUser(scope, userId) {
+  // Yourself first, and before either containment rule. Everybody can read their own
+  // record whatever their role is -- it is what Account settings draws -- and neither
+  // rule below would let a manager or a member of staff do it.
+  if (userId === scope.userId) {
+    const { rows } = await tenantQuery(scope, GET_SELF, [userId]);
+    return rows.length === 0 ? null : rows[0];
+  }
   const { rows } = administers(scope)
     ? await tenantQuery(scope, GET_ADMINISTERED, [userId])
     : await tenantQuery(scope, GET_CONTAINED, [userId, scope.shopIds]);

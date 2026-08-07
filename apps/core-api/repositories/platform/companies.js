@@ -29,6 +29,26 @@ const CONFLICTS = Object.freeze({
 // Two LEFT JOINs would multiply: three shops each with twelve tables would report
 // thirty-six shops. Scalar subqueries keep the two counts independent, and at this
 // cardinality that is also the faster plan.
+// The CEO rides along for the same reason the counts do: the Companies screen prints
+// them, and the alternative is the console selecting a scope per row just to read one
+// name. It is the ONE person a platform admin may see inside a company -- they appoint
+// them -- so this is the boundary being honoured rather than crossed.
+//
+// Both subqueries are ORDER BY created_at, id LIMIT 1 rather than bare: nothing stops a
+// company holding two active company_admins during a handover, and an unordered LIMIT 1
+// would let the name and the email come from different people.
+// One subquery per column, all three ordered identically. The repetition is the
+// point: a bare LIMIT 1 in each would let the id, the name and the address come from
+// three different people the moment a handover puts two active CEOs in a company.
+const CEO = (self) => ["id", "display_name", "email"]
+  .map(
+    (column, index) => `
+  (SELECT u.${column} FROM users u
+    WHERE u.company_id = ${self} AND u.role = 'company_admin' AND u.status = 'active'
+    ORDER BY u.created_at, u.id LIMIT 1) AS "${["ceoId", "ceoName", "ceoEmail"][index]}"`
+  )
+  .join(",");
+
 const SELECT_COLUMNS = `
   c.id,
   c.name,
@@ -36,7 +56,8 @@ const SELECT_COLUMNS = `
   c.status,
   c.created_at AS "createdAt",
   (SELECT count(*) FROM shops s WHERE s.company_id = c.id)::int AS "shopCount",
-  (SELECT count(*) FROM shop_tables t WHERE t.company_id = c.id)::int AS "tableCount"
+  (SELECT count(*) FROM shop_tables t WHERE t.company_id = c.id)::int AS "tableCount",
+  ${CEO("c.id")}
 `;
 
 // ?status= active | suspended | all, defaulting to all (spec §6.2). Keyset
@@ -61,7 +82,11 @@ const INSERT = {
     INSERT INTO companies (name, slug, created_by_user_id)
     VALUES ($1, $2, $3)
     RETURNING id, name, slug, status, created_at AS "createdAt",
-              0::int AS "shopCount", 0::int AS "tableCount"
+              0::int AS "shopCount", 0::int AS "tableCount",
+              -- A company one statement old has nobody in it yet. Spelling that out
+              -- as NULL keeps the created document the same shape as every read of
+              -- it, so the console has one row shape rather than two.
+              NULL::uuid AS "ceoId", NULL::text AS "ceoName", NULL::text AS "ceoEmail"
   `,
   conflicts: CONFLICTS
 };
@@ -78,7 +103,8 @@ const UPDATE = {
      WHERE id = $1
     RETURNING id, name, slug, status, created_at AS "createdAt",
               (SELECT count(*) FROM shops s WHERE s.company_id = companies.id)::int AS "shopCount",
-              (SELECT count(*) FROM shop_tables t WHERE t.company_id = companies.id)::int AS "tableCount"
+              (SELECT count(*) FROM shop_tables t WHERE t.company_id = companies.id)::int AS "tableCount",
+              ${CEO("companies.id")}
   `,
   conflicts: CONFLICTS
 };

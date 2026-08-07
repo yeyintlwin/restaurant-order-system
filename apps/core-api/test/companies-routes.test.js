@@ -374,4 +374,59 @@ describe("the platform companies routes", { skip: skipDatabaseTests() }, () => {
       assert.equal(listed[0].tableCount, 2);
     });
   });
+
+  test("the CEO rides along, and a company without one says so rather than omitting it", async () => {
+    await reset();
+    const { deps } = harness();
+    await withServer(deps, async (base) => {
+      const company = await (await post(base, { name: "Sakura Kitchen", slug: "sakura" })).json();
+      // The console draws "No CEO yet" and offers the action that fixes it. That
+      // needs a key that is present and null, not a key that is absent.
+      assert.equal(company.ceo, null);
+
+      const ceo = "aaaaaaaa-0003-4000-8000-000000000051";
+      await db.unscoped(
+        `INSERT INTO users (id, company_id, role, email, display_name, password_hash)
+         VALUES ($1, $2, 'company_admin', 'khin@sakura.mm', 'Khin Myat', $3)`,
+        [ceo, company.id, PLACEHOLDER_HASH]
+      );
+
+      const one = await (await get(base, `/api/platform/companies/${company.id}`)).json();
+      assert.deepEqual(one.ceo, { id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm" });
+      const listed = (await (await get(base, "/api/platform/companies")).json()).companies;
+      assert.deepEqual(listed[0].ceo, { id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm" });
+
+      // A suspended CEO is not a CEO who can sign in, so the row reads as empty and
+      // the console offers to appoint one. Anything else shows a name that cannot act.
+      await db.unscoped("UPDATE users SET status = 'suspended' WHERE id = $1", [ceo]);
+      assert.equal((await (await get(base, `/api/platform/companies/${company.id}`)).json()).ceo, null);
+    });
+  });
+
+  test("two active CEOs cannot hand back one person's name with another's address", async () => {
+    await reset();
+    const { deps } = harness();
+    await withServer(deps, async (base) => {
+      const company = await (await post(base, { name: "Sakura Kitchen", slug: "sakura" })).json();
+      // A handover is two active company_admins for as long as it takes. Both
+      // subqueries order the same way, so they land on the same row -- an unordered
+      // LIMIT 1 in each is how the name and the email come from different people.
+      for (const [n, id, email, name] of [
+        [1, "aaaaaaaa-0003-4000-8000-000000000061", "first@sakura.mm", "First In"],
+        [2, "aaaaaaaa-0003-4000-8000-000000000062", "second@sakura.mm", "Second In"]
+      ]) {
+        await db.unscoped(
+          `INSERT INTO users (id, company_id, role, email, display_name, password_hash, created_at)
+           VALUES ($1, $2, 'company_admin', $3, $4, $5, now() + ($6 || ' seconds')::interval)`,
+          [id, company.id, email, name, PLACEHOLDER_HASH, String(n)]
+        );
+      }
+      const one = await (await get(base, `/api/platform/companies/${company.id}`)).json();
+      assert.deepEqual(one.ceo, {
+        id: "aaaaaaaa-0003-4000-8000-000000000061",
+        displayName: "First In",
+        email: "first@sakura.mm"
+      });
+    });
+  });
 });

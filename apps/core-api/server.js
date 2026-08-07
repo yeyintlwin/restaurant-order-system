@@ -24,6 +24,7 @@ const shopsRepository = require("./repositories/shops");
 const tenantUsersRepository = require("./repositories/users");
 const companiesRepository = require("./repositories/platform/companies");
 const platformAuditRepository = require("./repositories/platform/audit");
+const tenantAuditRepository = require("./repositories/audit");
 const platformAdminsRepository = require("./repositories/platform/admins");
 
 // Route modules register themselves with route() at require time. server.js is the one place
@@ -156,7 +157,11 @@ async function start(options = {}) {
     tenantUsers: options.tenantUsers || tenantUsersRepository,
     companies: options.companies || companiesRepository,
     platformAdmins: options.platformAdmins || platformAdminsRepository,
-    platformAudit: options.platformAudit || platformAuditRepository
+    platformAudit: options.platformAudit || platformAuditRepository,
+    // The THIRD audit writer. deps.appendAuditEvent opens its own connection and
+    // cannot see a row created in the caller's still-open transaction, which is
+    // exactly what every tenant route that audits what it just wrote needs.
+    tenantAudit: options.tenantAudit || tenantAuditRepository
   });
   return listen(app, config.port, config.host);
 }

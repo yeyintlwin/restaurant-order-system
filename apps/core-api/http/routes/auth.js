@@ -51,7 +51,18 @@ function meDocument({ user, scope, session }) {
     session: {
       expiresAt: iso(session.expiresAt),
       absoluteExpiresAt: iso(session.absoluteExpiresAt)
-    }
+    },
+    // The company this session is acting in, NAMED. null for an unscoped platform
+    // admin, who is acting in none of them.
+    //
+    // It is a top-level key rather than a field on `user` because it is not a fact
+    // about the person: the same platform admin has a different one before and after
+    // selecting a company. The console prints it in the rail, where "which company
+    // am I in" is the question being answered.
+    company:
+      scope.companyId == null
+        ? null
+        : { id: scope.companyId, name: user.companyName ?? null, slug: user.companySlug ?? null }
   };
   // Present ONLY for company_admin and scoped platform_admin -- db/scope.js throws
   // if any other role is handed one, so its absence here is the same fact.
@@ -77,7 +88,12 @@ function userFromSession(session) {
     displayName: session.displayName,
     role: session.role,
     companyId: session.companyId,
-    mustChangePassword: session.mustChangePassword
+    mustChangePassword: session.mustChangePassword,
+    // Carried through so meDocument has ONE place to read the company from. The
+    // login path builds its user from the login row and /me from the session row,
+    // and both rows join companies -- but only one of them is called `session`.
+    companyName: session.companyName ?? null,
+    companySlug: session.companySlug ?? null
   };
 }
 
