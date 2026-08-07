@@ -59,14 +59,35 @@ const COLUMNS = `
   -- day-to-day fields for a shop somebody else is running. A derivation that depends
   -- on which hundred rows came back is not a derivation.
   --
-  -- An ID and a COUNT, never a name or an address. A platform admin acting inside a
-  -- company reads this row, and §6 of the console design is built on their never
-  -- seeing a person in it. A uuid names nobody; the console looks the name up in the
-  -- user list it is allowed to hold.
+  -- THE MANAGER IS NAMED, AND REACHABLE. This reverses the earlier rule that a
+  -- platform admin sees no person inside a company, and the reversal is deliberate:
+  -- the platform owner is the one who fits the branch out. They install the screens
+  -- on the tables, print the codes and turn up when a terminal stops pairing -- and
+  -- the person standing in that shop is who they have to ring. A boundary that makes
+  -- them phone the CEO to be given the manager's number is not protecting anybody.
+  --
+  -- It stops at the manager. There is still no statement anywhere that hands a
+  -- platform admin the STAFF of a shop, and §6 holds for everyone else in the
+  -- company: one person per shop, the one whose job touches theirs.
+  --
+  -- All three ordered identically, so a handover with two active managers cannot
+  -- hand back one person's name beside another's number.
   (SELECT u.id FROM users u
      JOIN user_shops us ON us.user_id = u.id
     WHERE us.shop_id = shops.id AND u.role = 'shop_manager' AND u.status = 'active'
     ORDER BY u.created_at, u.id LIMIT 1) AS "managerUserId",
+  (SELECT u.display_name FROM users u
+     JOIN user_shops us ON us.user_id = u.id
+    WHERE us.shop_id = shops.id AND u.role = 'shop_manager' AND u.status = 'active'
+    ORDER BY u.created_at, u.id LIMIT 1) AS "managerName",
+  (SELECT u.phone FROM users u
+     JOIN user_shops us ON us.user_id = u.id
+    WHERE us.shop_id = shops.id AND u.role = 'shop_manager' AND u.status = 'active'
+    ORDER BY u.created_at, u.id LIMIT 1) AS "managerPhone",
+  (SELECT u.email FROM users u
+     JOIN user_shops us ON us.user_id = u.id
+    WHERE us.shop_id = shops.id AND u.role = 'shop_manager' AND u.status = 'active'
+    ORDER BY u.created_at, u.id LIMIT 1) AS "managerEmail",
   -- Active only, because the column is answering "how many people work here" and a
   -- suspended account cannot take an order.
   (SELECT count(*) FROM users u
@@ -242,7 +263,15 @@ async function createShop(scope, input) {
   // transaction, so nothing else could have changed it.
   // Same reason as tableCount: the RETURNING ran before the tables existed. A brand
   // new branch has nobody in it, and those two zeros are facts rather than defaults.
-  return { ...shop, tableCount: input.tableCount, managerUserId: null, staffCount: 0 };
+  return {
+    ...shop,
+    tableCount: input.tableCount,
+    managerUserId: null,
+    managerName: null,
+    managerPhone: null,
+    managerEmail: null,
+    staffCount: 0
+  };
 }
 
 async function updateShop(scope, shopId, changes) {

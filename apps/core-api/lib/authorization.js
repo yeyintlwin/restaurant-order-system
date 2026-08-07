@@ -96,20 +96,41 @@ function mayActOnRole(actorRole, targetRole) {
   return rankOf(actorRole) > rankOf(targetRole);
 }
 
-// The three facts about you that are YOURS: what you are called, how you are
-// reached, and what language you read the console in. §7A.3 makes the last one a
-// per-person setting that everyone below the platform owner sets for themselves, so
-// a list of one would have meant a manager filing a request to change their own
-// interface language.
+// What a person may change about THEMSELVES, and it depends on the role, because a
+// name means different things at different levels.
 //
-// What stays out is the point of the list. `email` is your sign-in name, and a person
-// who can change it can lock the person above them out of reaching them. `role`,
-// `status` and `shopIds` are somebody else's decision about you, and a route that let
-// you patch your own role would make the lattice above decorative.
-const SELF_PATCHABLE_FIELDS = Object.freeze(["displayName", "phone", "language"]);
+// §7A.3 makes the console language a per-person setting, so everybody has that one: a
+// list without it would mean filing a request to change what language you read.
+//
+// A MEMBER OF STAFF HAS ONLY THAT ONE. Their name is how the manager knows who took
+// an order and their phone is how the manager reaches them on a shift -- both are
+// facts the manager entered and relies on. A waiter who renames themselves does not
+// break their own screen, they break the records of the person above them, and that
+// person cannot see that it happened. Everyone from a shop manager up keeps their
+// name and their number, because for them those are their own contact details rather
+// than somebody else's roster.
+//
+// What stays out for EVERYBODY is the rest of the point. `email` is your sign-in name,
+// and a person who can change it can lock the person above them out of reaching them.
+// `role`, `status` and `shopIds` are somebody else's decision about you, and a route
+// that let you patch your own role would make the lattice above decorative.
+const SELF_PATCHABLE_FIELDS = Object.freeze({
+  staff: Object.freeze(["language"]),
+  shop_manager: Object.freeze(["displayName", "phone", "language"]),
+  company_admin: Object.freeze(["displayName", "phone", "language"]),
+  platform_admin: Object.freeze(["displayName", "phone", "language"])
+});
 
-function permitsSelfPatch(fields) {
-  return fields.every((field) => SELF_PATCHABLE_FIELDS.includes(field));
+// rankOf THROWS on a role this file does not know, and that is the behaviour wanted
+// here too: an unrecognised role must not fall through to the longest list.
+function selfPatchableFields(role) {
+  rankOf(role);
+  return SELF_PATCHABLE_FIELDS[role];
+}
+
+function permitsSelfPatch(fields, role) {
+  const allowed = selfPatchableFields(role);
+  return fields.every((field) => allowed.includes(field));
 }
 
 module.exports = {
@@ -119,5 +140,6 @@ module.exports = {
   rankOf,
   mayActOnRole,
   SELF_PATCHABLE_FIELDS,
+  selfPatchableFields,
   permitsSelfPatch
 };

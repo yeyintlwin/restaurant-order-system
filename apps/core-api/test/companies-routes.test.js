@@ -386,15 +386,21 @@ describe("the platform companies routes", { skip: skipDatabaseTests() }, () => {
 
       const ceo = "aaaaaaaa-0003-4000-8000-000000000051";
       await db.unscoped(
-        `INSERT INTO users (id, company_id, role, email, display_name, password_hash)
-         VALUES ($1, $2, 'company_admin', 'khin@sakura.mm', 'Khin Myat', $3)`,
+        `INSERT INTO users (id, company_id, role, email, display_name, phone, password_hash)
+         VALUES ($1, $2, 'company_admin', 'khin@sakura.mm', 'Khin Myat', '09 42 118 9021', $3)`,
         [ceo, company.id, PLACEHOLDER_HASH]
       );
 
       const one = await (await get(base, `/api/platform/companies/${company.id}`)).json();
-      assert.deepEqual(one.ceo, { id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm" });
+      // The number is here because a branch with no manager is the CEO's to run, and
+      // the platform owner has to be able to ring somebody about it.
+      assert.deepEqual(one.ceo, {
+        id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm", phone: "09 42 118 9021"
+      });
       const listed = (await (await get(base, "/api/platform/companies")).json()).companies;
-      assert.deepEqual(listed[0].ceo, { id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm" });
+      assert.deepEqual(listed[0].ceo, {
+        id: ceo, displayName: "Khin Myat", email: "khin@sakura.mm", phone: "09 42 118 9021"
+      });
 
       // A suspended CEO is not a CEO who can sign in, so the row reads as empty and
       // the console offers to appoint one. Anything else shows a name that cannot act.
@@ -425,7 +431,8 @@ describe("the platform companies routes", { skip: skipDatabaseTests() }, () => {
       assert.deepEqual(one.ceo, {
         id: "aaaaaaaa-0003-4000-8000-000000000061",
         displayName: "First In",
-        email: "first@sakura.mm"
+        email: "first@sakura.mm",
+        phone: null
       });
     });
   });

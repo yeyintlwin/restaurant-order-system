@@ -52,9 +52,22 @@ function shopDocument(row) {
     // Summed from the tables, the way a company's counts are summed from its shops.
     // The console prints it on every branch row and nothing anywhere stores it.
     tableCount: row.tableCount,
-    // An id and a count, never a name: a platform admin acting inside a company
-    // reads this document, and they do not see the people in it.
-    managerUserId: row.managerUserId,
+    // THE PERSON WHO RUNS IT, named and reachable. The platform owner fits the
+    // branch out -- screens on the tables, printed codes, a terminal that stops
+    // pairing -- and the manager is who they ring about it. Making them ask the CEO
+    // for a phone number protects nobody.
+    //
+    // It stops here. No statement anywhere hands a platform admin the STAFF of a
+    // shop: one person per shop, the one whose job touches theirs.
+    manager:
+      row.managerUserId === null
+        ? null
+        : {
+            id: row.managerUserId,
+            displayName: row.managerName,
+            phone: row.managerPhone,
+            email: row.managerEmail
+          },
     staffCount: row.staffCount
   };
 }

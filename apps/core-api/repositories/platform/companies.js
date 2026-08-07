@@ -31,21 +31,23 @@ const CONFLICTS = Object.freeze({
 // cardinality that is also the faster plan.
 // The CEO rides along for the same reason the counts do: the Companies screen prints
 // them, and the alternative is the console selecting a scope per row just to read one
-// name. It is the ONE person a platform admin may see inside a company -- they appoint
-// them -- so this is the boundary being honoured rather than crossed.
+// name. They are the person a platform admin appoints, so reading them here is the
+// boundary being honoured rather than crossed.
 //
-// Both subqueries are ORDER BY created_at, id LIMIT 1 rather than bare: nothing stops a
-// company holding two active company_admins during a handover, and an unordered LIMIT 1
-// would let the name and the email come from different people.
-// One subquery per column, all three ordered identically. The repetition is the
-// point: a bare LIMIT 1 in each would let the id, the name and the address come from
+// The PHONE is here because of what a branch with NO MANAGER means. §3.1B: until the
+// CEO appoints one, that shop is theirs to run. So when the platform owner is standing
+// in a branch whose table screen will not pair and nobody manages it, the CEO is who
+// they ring -- and the console prints exactly that, which needs a number to print.
+//
+// One subquery per column, all FOUR ordered identically. The repetition is the point:
+// a bare LIMIT 1 in each would let the name, the address and the number come from
 // three different people the moment a handover puts two active CEOs in a company.
-const CEO = (self) => ["id", "display_name", "email"]
+const CEO = (self) => ["id", "display_name", "email", "phone"]
   .map(
     (column, index) => `
   (SELECT u.${column} FROM users u
     WHERE u.company_id = ${self} AND u.role = 'company_admin' AND u.status = 'active'
-    ORDER BY u.created_at, u.id LIMIT 1) AS "${["ceoId", "ceoName", "ceoEmail"][index]}"`
+    ORDER BY u.created_at, u.id LIMIT 1) AS "${["ceoId", "ceoName", "ceoEmail", "ceoPhone"][index]}"`
   )
   .join(",");
 
@@ -86,7 +88,8 @@ const INSERT = {
               -- A company one statement old has nobody in it yet. Spelling that out
               -- as NULL keeps the created document the same shape as every read of
               -- it, so the console has one row shape rather than two.
-              NULL::uuid AS "ceoId", NULL::text AS "ceoName", NULL::text AS "ceoEmail"
+              NULL::uuid AS "ceoId", NULL::text AS "ceoName",
+              NULL::text AS "ceoEmail", NULL::text AS "ceoPhone"
   `,
   conflicts: CONFLICTS
 };

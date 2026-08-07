@@ -56,7 +56,7 @@ function companyDocument(row) {
     ceo:
       row.ceoId === null
         ? null
-        : { id: row.ceoId, displayName: row.ceoName, email: row.ceoEmail }
+        : { id: row.ceoId, displayName: row.ceoName, email: row.ceoEmail, phone: row.ceoPhone }
   };
 }
 

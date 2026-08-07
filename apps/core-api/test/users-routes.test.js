@@ -10,7 +10,7 @@ const { createScope } = require("../db/scope");
 const { openRuntimePool, closeAllPools } = require("../db");
 const { cloneTemplate, skipDatabaseTests } = require("../testing/database");
 const { SESSION_COOKIE_NAME } = require("../http/cookies");
-const { mayActOnRole, rankOf, permitsSelfPatch, SELF_PATCHABLE_FIELDS } = require("../lib/authorization");
+const { mayActOnRole, rankOf, permitsSelfPatch, selfPatchableFields, SELF_PATCHABLE_FIELDS } = require("../lib/authorization");
 
 require("../http/routes/auth");
 require("../http/routes/users");
@@ -50,20 +50,41 @@ test("an unknown role THROWS rather than scoring below everything", () => {
   assert.throws(() => mayActOnRole("company_admin", "superuser"), /unknown role/);
 });
 
-test("your name, your number and your language are yours; nothing else is", () => {
-  // The list is asserted whole rather than by example. Widening it is a decision
-  // about what a person may do to their own account without anyone's approval, and
-  // this line is what makes that decision arrive in a diff instead of quietly.
-  assert.deepEqual(SELF_PATCHABLE_FIELDS, ["displayName", "phone", "language"]);
+test("A MEMBER OF STAFF MAY SET ONLY THEIR OWN LANGUAGE", () => {
+  // The lists are asserted whole rather than by example. Widening one is a decision
+  // about what somebody may do to their own account with nobody's approval, and
+  // these lines are what make that decision arrive in a diff instead of quietly.
+  assert.deepEqual(selfPatchableFields("staff"), ["language"]);
+  assert.deepEqual(selfPatchableFields("shop_manager"), ["displayName", "phone", "language"]);
+  assert.deepEqual(selfPatchableFields("company_admin"), ["displayName", "phone", "language"]);
+  assert.deepEqual(selfPatchableFields("platform_admin"), ["displayName", "phone", "language"]);
+  assert.deepEqual(Object.keys(SELF_PATCHABLE_FIELDS).sort(), [
+    "company_admin", "platform_admin", "shop_manager", "staff"
+  ]);
 
-  assert.equal(permitsSelfPatch(["displayName"]), true);
-  assert.equal(permitsSelfPatch(["phone", "language"]), true);
+  // A waiter's name is how the manager knows who took an order and their phone is
+  // how the manager reaches them on a shift. Changing either does not break the
+  // waiter's screen, it breaks the roster of the person above them -- who cannot
+  // see that it happened.
+  assert.equal(permitsSelfPatch(["displayName"], "staff"), false);
+  assert.equal(permitsSelfPatch(["phone"], "staff"), false);
+  assert.equal(permitsSelfPatch(["language"], "staff"), true);
+
+  // From a shop manager up, those are your own contact details.
+  assert.equal(permitsSelfPatch(["displayName"], "shop_manager"), true);
+  assert.equal(permitsSelfPatch(["phone", "language"], "company_admin"), true);
+
   // One permitted field does not carry a forbidden one in with it: EVERY field in
   // the patch has to be on the list, not just one of them.
-  assert.equal(permitsSelfPatch(["displayName", "role"]), false);
-  assert.equal(permitsSelfPatch(["status"]), false);
-  // Your sign-in name is how the person above you reaches you. It is not yours.
-  assert.equal(permitsSelfPatch(["email"]), false);
+  assert.equal(permitsSelfPatch(["displayName", "role"], "company_admin"), false);
+  assert.equal(permitsSelfPatch(["language", "phone"], "staff"), false);
+  assert.equal(permitsSelfPatch(["status"], "company_admin"), false);
+  // Your sign-in name is how the person above you reaches you. It is nobody's.
+  assert.equal(permitsSelfPatch(["email"], "platform_admin"), false);
+
+  // An unknown role THROWS rather than falling through to the longest list, which
+  // is the direction that would hand a typo the most permissive answer.
+  assert.throws(() => permitsSelfPatch(["language"], "owner"), /unknown role/);
 });
 
 // --- the routes -------------------------------------------------------------

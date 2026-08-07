@@ -574,11 +574,20 @@ export function mountConsole({ api, me, onSignedOut }) {
 
     let at = row;
     for (const shop of result.data.shops) {
+      // WHO TO RING, first, because that is what the platform owner opened this list
+      // for: they fit the branch out, and when a screen on a table stops pairing
+      // somebody has to answer the phone.
+      //
+      // A branch with no manager is NOT a dead end here. §3.1B: until the CEO
+      // appoints one, that shop is theirs to run -- so the line says nobody manages
+      // it yet AND names the CEO, who is the person actually running it. The same is
+      // true of a shop the owner runs on purpose. Either way there is a name and a
+      // number on the row.
       at = appendTwig(at, {
         name: shop.name,
-        // What the platform owner owns about a branch: what it is and how big it is.
-        // Who runs it is the CEO's, and is deliberately not here.
-        text: [shop.address, `${shop.tableCount} tables`].filter(Boolean).join(" · "),
+        text: [contactFor(shop, company), shop.address, `${shop.tableCount} tables`]
+          .filter(Boolean)
+          .join("  ·  "),
         onOpen: () => openShopDialog(shop, { companyId: company.id })
       });
     }
@@ -593,6 +602,20 @@ export function mountConsole({ api, me, onSignedOut }) {
     if (state.screen !== "companies" || !companyId) return;
     const company = state.companies.find((one) => one.id === companyId);
     if (company) await toggleBranches(company);
+  }
+
+  // "Thura Zaw · 09 ..." when somebody manages it, and otherwise the state it is in
+  // followed by the CEO, who is who to ring instead. A row that said only "No manager
+  // yet" would be telling the platform owner to go and ask somebody.
+  function contactFor(shop, company) {
+    const slot = managerState(shop, managerOf(shop));
+    if (slot.kind === "person") {
+      return [slot.label, shop.manager.phone].filter(Boolean).join(" · ");
+    }
+    const ceo = company.ceo;
+    const standIn = ceo ? [ceo.displayName, ceo.phone].filter(Boolean).join(" · ") : "";
+    if (!standIn) return slot.label;
+    return `${slot.label} — ${standIn}`;
   }
 
   function appendTwig(after, { name, text, onOpen }) {
@@ -689,24 +712,15 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   // ---- Shops --------------------------------------------------------------
 
-  // WHO, from the shop row. Scanning the user list for a manager was a derivation
-  // that depended on which hundred people came back: past the cap a real manager
-  // read as "No manager yet", which raises the amber banner and hands the CEO the
-  // day-to-day fields for a shop somebody else runs.
+  // WHO, from the shop row, name and number included. Scanning the user list for a
+  // manager was a derivation that depended on which hundred people came back: past
+  // the cap a real manager read as "No manager yet", which raises the amber banner
+  // and hands the CEO the day-to-day fields for a shop somebody else runs.
   //
-  // The row carries the id; the NAME still comes from the list, because a name is a
-  // person and the shop document deliberately holds none. When the list does not
-  // have them, the slot is still known to be filled -- which is the fact the screen
-  // is actually about.
+  // Nothing here joins a user list any more, which is what lets the platform owner --
+  // who has no user list at all -- read the same row and see the same person.
   function managerOf(shop) {
-    if (!shop.managerUserId) return null;
-    return (
-      state.users.find((user) => user.id === shop.managerUserId) || {
-        id: shop.managerUserId,
-        displayName: "Manager assigned",
-        email: ""
-      }
-    );
+    return shop.manager || null;
   }
 
   // Counted by the server, for the same reason. The client-side join was right only
@@ -901,17 +915,27 @@ export function mountConsole({ api, me, onSignedOut }) {
         : "Only what you read."
     );
 
-    const editable = state.persona !== "operator";
-    $("a1").disabled = !editable;
-    $("a4").disabled = !editable;
+    // Mirrored from lib/authorization.js, which is where the rule is enforced. This
+    // is the courtesy version of it: the route refuses either way, and a person
+    // should not have to be refused to find out.
+    const own = state.persona !== "operator";
+    // A member of staff has their language and their password, and nothing else.
+    // Their name is how the manager knows who took an order, and their number is how
+    // the manager reaches them on a shift -- both belong to the roster of the person
+    // above them rather than to them.
+    const ownsTheirDetails = own && state.persona !== "staff";
+    $("a1").disabled = !ownsTheirDetails;
+    $("a4").disabled = !ownsTheirDetails;
     // A platform admin has no shop to follow and their route takes no language at
     // all. Left enabled it accepted a choice, sent nothing, and reverted on return.
-    language.disabled = !editable || state.persona === "platform";
+    language.disabled = !own || state.persona === "platform";
     say(
       $("a1-note"),
-      editable
-        ? "How you appear to everyone else."
-        : "Leave the company you are working inside to edit your own account."
+      !own
+        ? "Leave the company you are working inside to edit your own account."
+        : ownsTheirDetails
+          ? "How you appear to everyone else."
+          : "Your name and number are how your manager reaches you. Ask them to change either."
     );
   }
 

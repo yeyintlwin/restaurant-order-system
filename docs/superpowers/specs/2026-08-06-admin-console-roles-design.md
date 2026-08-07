@@ -60,9 +60,25 @@ A person does not see a greyed-out control they are not allowed to use. **The sc
 not exist.**
 
 - The platform owner's console has **no Staff menu at all**. There is no page anywhere in
-  their console that lists a manager or a member of staff.
+  their console that lists the people inside a company.
 - Staff have **nothing but the Dashboard**. No shops, no people, no settings — signing in
   shows them one screen and their own account.
+
+**Revised: the platform owner sees each shop's manager, by name and by number.** The
+earlier rule was that they see no person inside a company at all, and it did not survive
+contact with the job. The platform owner is the one who fits a branch out — screens on the
+tables, printed codes — and when a screen stops pairing, the person standing next to it is
+the manager. A boundary that makes them ring the CEO to be given a phone number protects
+nobody and costs an hour.
+
+So the branch list under a company row names who runs each shop and how to reach them.
+**And when nobody runs it, it names the CEO instead** — §3.1B already says an unmanaged
+shop is the CEO's to run, so the CEO is who to ring, and the line says both: *"No manager
+yet — Su Su Hlaing · 09 42 118 9030"*.
+
+It stops there. There is still no screen, and no statement in the API, that hands a
+platform admin the **staff** of a shop. One person per shop: the one whose job touches
+theirs.
 
 ### 2.2 Everyone lands on a Dashboard
 
@@ -82,10 +98,10 @@ limit:
 - Manager editing a person: *"Only your CEO can make someone a manager or move them to
   another shop."*
 - CEO editing a person: *"Managers are chosen on the Shops screen, not here."*
-- Platform owner editing a company: *"You cannot see or change managers and staff. That is
-  the CEO's job."*
-- Platform owner editing a shop: *"Who manages this shop is the CEO's to choose. You do not
-  see the people inside a company."*
+- Platform owner editing a company: *"You can see who manages each branch, but choosing
+  them is the CEO's job — and their staff are not yours to see."*
+- Platform owner editing a shop: *"You open the branch and set what its country needs. Who
+  runs it is the CEO's to decide."*
 - CEO editing a shop: *"The name, address and number of tables are the platform owner's to
   set. Phone, opening hours and the receipt footer are the manager's."*
 
@@ -365,26 +381,36 @@ Where the number is an editable field rather than a fact — a person's own phon
 sits under the field as *"Call this number"* and follows whatever is typed, appearing when
 there is a number and going away when there is not. The number is never printed twice.
 
-## 4C. Your own name is not yours to edit
+## 4C. A member of staff's name and number are not theirs to edit
 
-Account settings shows your name **read-only**, with a line naming who to ask:
-
-| Signed in as   | Name field | The line says                                    |
-| -------------- | ---------- | ------------------------------------------------ |
-| Platform owner | Editable   | *Nobody above you to ask, so this one is yours.* |
-| CEO            | Read-only  | *Ask the platform owner to change this.*         |
-| Manager        | Read-only  | *Ask your CEO to change this.*                   |
-| Staff          | Read-only  | *Ask your manager to change this.*               |
+| Signed in as   | Name and phone | The line says                                            |
+| -------------- | -------------- | -------------------------------------------------------- |
+| Platform owner | Editable       | *How you appear to everyone else.*                        |
+| CEO            | Editable       | *How you appear to everyone else.*                        |
+| Manager        | Editable       | *How you appear to everyone else.*                        |
+| Staff          | Read-only      | *Your name and number are how your manager reaches you. Ask them to change either.* |
 
 Naming someone is the job of the person who answers for them. Left open, a name becomes a
 nickname — and the person who has to recognise it on a rota, an order or a receipt is not
-its owner.
+its owner. A waiter who renames themselves does not break their own screen; they break the
+records of the person above them, who cannot see that it happened. The phone goes with the
+name for the same reason: it is how the manager reaches them mid-shift, and it was the
+manager who wrote it down.
 
-Everything else on that screen stays the person's own: their phone, their password, their
-sessions. Only the name, and only because other people read it.
+**Narrowed from every level to staff alone.** This first read *"your own name is not yours
+to edit"* and made it read-only for the CEO and the manager too, each with a line naming who
+to ask. That was over-applied. A branch manager's name and number are their own contact
+details — they are the person answering the phone, not an entry on somebody's rota — and
+making them file a request to correct a typo in their own number is friction with no reader
+behind it. **This is a change of plan, decided deliberately, and the fuller rule is still
+here in case it is wanted back.**
 
-The platform owner is the exception for the same reason they are the exception in §9.1 —
-there is nobody above them to ask.
+Everything else on that screen stays the person's own at every level: their language, their
+password, their sessions. Only staff lose the two, and only because other people read them.
+
+The enforcement is `SELF_PATCHABLE_FIELDS` in `lib/authorization.js`, keyed by role, and the
+console mirrors it by disabling the boxes — a courtesy, since the route refuses either way
+and nobody should have to be refused to find out.
 
 ## 4D. URL names
 

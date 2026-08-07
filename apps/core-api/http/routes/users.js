@@ -257,20 +257,22 @@ route(
     const fields = ["displayName", "phone", "role", "status", "language", "shopIds"].filter((key) => has(body, key));
     if (fields.length === 0) throw new ApiError(400, "invalid_request");
 
-    // Your name, your number and your language are yours; nothing else about your
-    // own account is. §6.2 said displayName ALONE, and §7A.3 widened it: the
-    // console language is a per-person setting, so a manager filing a request to
-    // change what language they read is not a rule, it is an obstacle. What stays
-    // out has not moved -- a route that let you change your own role would make
-    // the lattice decorative, and your email is how the person above you reaches
-    // you. lib/authorization.js holds the list.
+    // What is yours about your own account depends on WHO YOU ARE, and
+    // lib/authorization.js holds the list. Everybody sets their own console
+    // language (§7A.3). From a shop manager up, your name and number are your own
+    // contact details and yours to fix.
+    //
+    // A member of staff has only the language. Their name is how the manager knows
+    // who took an order, and their phone is how the manager reaches them on a
+    // shift; a waiter who changes either does not break their own screen, they
+    // break the roster of the person above them, who cannot see it happened.
     //
     // isSelf also EXEMPTS the row from the lattice below, and it has to: nobody is
     // strictly below themselves, so a CEO renaming themselves would otherwise be
     // refused by the rule that stops them minting a peer. Two different questions
     // that happen to compare the same two roles.
     const isSelf = userId === req.core.session.userId;
-    if (isSelf && !permitsSelfPatch(fields)) {
+    if (isSelf && !permitsSelfPatch(fields, req.core.scope.role)) {
       throw new ApiError(403, "self_modification_forbidden");
     }
 

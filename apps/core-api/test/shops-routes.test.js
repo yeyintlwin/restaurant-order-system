@@ -437,9 +437,9 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
 
   async function seedStaff() {
     await db.unscoped(
-      `INSERT INTO users (id, company_id, role, email, display_name, password_hash) VALUES
-         ($1, $3, 'staff', 'thura@example.test', 'Thura Zaw', $4),
-         ($2, $3, 'staff', 'kokonaing@example.test', 'Ko Ko Naing', $4)`,
+      `INSERT INTO users (id, company_id, role, email, display_name, phone, password_hash) VALUES
+         ($1, $3, 'staff', 'thura@example.test', 'Thura Zaw', '09 42 118 9070', $4),
+         ($2, $3, 'staff', 'kokonaing@example.test', 'Ko Ko Naing', '09 42 118 9071', $4)`,
       [STAFF_A, STAFF_B, COMPANY, PLACEHOLDER_HASH]
     );
   }
@@ -455,6 +455,55 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
     await withServer(harness().deps, async (base) => { id = (await (await post(base, NEW_SHOP)).json()).id; });
     return id;
   }
+
+  test("THE SHOP ROW NAMES ITS MANAGER, and the operator reads it", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+
+    // Before anybody is appointed. null rather than an omitted key: the console
+    // draws "No manager yet" and falls back to naming the CEO, and a key that
+    // vanishes is a state it would have to infer.
+    await withServer(harness().deps, async (base) => {
+      const empty = await (await get(base, `/api/admin/shops/${shopId}`)).json();
+      assert.equal(empty.manager, null);
+      assert.equal(empty.staffCount, 0);
+    });
+
+    await withServer(ceo().deps, async (base) => {
+      await putManager(base, shopId, { managerUserId: STAFF_A });
+    });
+
+    // The OPERATOR reads it -- a platform admin acting inside the company. This
+    // reverses the earlier rule that they see no person inside one, and the reason
+    // is the job: they fit the branch out, and when a table screen stops pairing the
+    // manager is who they ring. Making them ask the CEO for a number protects nobody.
+    await withServer(harness().deps, async (base) => {
+      const shop = await (await get(base, `/api/admin/shops/${shopId}`)).json();
+      assert.deepEqual(shop.manager, {
+        id: STAFF_A,
+        displayName: "Thura Zaw",
+        phone: "09 42 118 9070",
+        email: "thura@example.test"
+      });
+
+      // It stops at the manager. Ko Ko Naing is staff at this company and appears
+      // nowhere on this document -- there is no shape here that carries them.
+      assert.doesNotMatch(JSON.stringify(shop), /Ko Ko Naing|kokonaing/);
+
+      // The list says the same thing, so no screen has to join a user list to draw
+      // a shop -- which is the join that broke past a hundred people.
+      const listed = (await (await get(base, "/api/admin/shops")).json()).shops;
+      assert.equal(listed.find((one) => one.id === shopId).manager.displayName, "Thura Zaw");
+    });
+
+    // Suspending them empties it: the row answers "who can be rung", and somebody
+    // who cannot sign in is not that person.
+    await db.unscoped("UPDATE users SET status = 'suspended' WHERE id = $1", [STAFF_A]);
+    await withServer(harness().deps, async (base) => {
+      assert.equal((await (await get(base, `/api/admin/shops/${shopId}`)).json()).manager, null);
+    });
+  });
 
   test("the operator may open a branch and may NOT staff it", async () => {
     await reset();
