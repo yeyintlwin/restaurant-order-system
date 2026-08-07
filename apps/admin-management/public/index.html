@@ -81,9 +81,14 @@
                branch is not theirs, so this screen has no primary action — dropping data-action
                is the whole mechanism, the same way Dashboard and Settings have none. -->
           <a href="#" data-go="shops" data-for="operator company" data-title="Shops">Shops</a>
-          <a href="#" data-go="users" data-for="operator company" data-title="Users" data-action="Add user" data-opens="person">Users</a>
-          <!-- A manager's reach ends at their own staff, so the menu says so. -->
-          <a href="#" data-go="users" data-for="manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
+          <!-- STAFF, not Users. Nobody who reads this screen is a technical person, and
+               "user" is a word about software rather than about the people who work in a
+               restaurant. A CEO says "my staff" and means every one of them, managers
+               included; a manager says it and means the people in their shop. Same word,
+               different reach, and each of them only ever sees their own.
+               That is also why there is ONE link here and not two: once the two said the
+               same thing, the second was a copy waiting to drift from the first. -->
+          <a href="#" data-go="users" data-for="operator company manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
           <a href="#" data-go="settings" data-for="platform operator company manager" data-title="Settings">Settings</a>
         </nav>
 

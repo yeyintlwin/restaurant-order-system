@@ -77,6 +77,43 @@ test("the console draws by persona, and the document hides on the same five", ()
   assert.match(html, /id="v-companies" data-for="platform"/);
 });
 
+test("NOBODY BELOW THE PLATFORM OWNER IS SHOWN THE WORD \"user\"", () => {
+  // Everybody who reads these screens runs a restaurant. "User" is a word about
+  // software, and the people it would be describing are a CEO, a branch manager and
+  // a waiter. They say "staff", so the console says staff.
+  //
+  // Comments are exempt -- they are for whoever edits this file next, and one of them
+  // is the paragraph explaining this rule.
+  const html = read("index.html").replace(/<!--[\s\S]*?-->/g, "");
+  const visible = html
+    .match(/>([^<]+)</g)
+    .map((chunk) => chunk.slice(1, -1).trim())
+    .filter(Boolean)
+    .concat([...html.matchAll(/data-(?:title|action)="([^"]+)"/g)].map((match) => match[1]));
+
+  for (const text of visible) {
+    assert.doesNotMatch(text, /\buser\b/i, `the screen says: ${text}`);
+  }
+
+  // The console writes text too, and the same rule applies to every string in it.
+  const js = read("console.js").replace(/^\s*\/\/.*$/gm, "");
+  for (const [, literal] of js.matchAll(/"([^"\\]*)"/g)) {
+    // Property and function names are not read by anybody -- `user.role` names a
+    // field of a record, and renaming the API is a different job with no reader.
+    if (/^[a-zA-Z][a-zA-Z0-9]*$/.test(literal)) continue;
+    assert.doesNotMatch(literal, /\buser\b/i, `the console writes: ${literal}`);
+  }
+});
+
+test("one Staff link, not one per persona", () => {
+  // Two links saying the same thing is a copy waiting to drift from its original.
+  const html = read("index.html");
+  const links = [...html.matchAll(/<a[^>]*data-go="users"[^>]*>/g)];
+  assert.equal(links.length, 1);
+  assert.match(links[0][0], /data-for="operator company manager"/);
+  assert.match(links[0][0], /data-title="Staff"/);
+});
+
 test("nothing that cannot work is left on the screen", () => {
   const html = read("index.html");
   // The mockup's logo upload has no endpoint behind it. A control that shows a

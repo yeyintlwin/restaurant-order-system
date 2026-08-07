@@ -208,11 +208,9 @@ export function mountConsole({ api, me, onSignedOut }) {
     if (screen === "shops" && state.persona === "operator") {
       return { label: "Add branch", opens: "shop" };
     }
-    if (screen === "users") {
-      return state.persona === "manager"
-        ? { label: "Add staff", opens: "staff" }
-        : { label: "Add user", opens: "person" };
-    }
+    // STAFF for everybody below the platform owner. What differs between a CEO and a
+    // manager is WHO the list holds, not what the people in it are called.
+    if (screen === "users") return { label: "Add staff", opens: "staff" };
     return null;
   }
 
@@ -1360,11 +1358,15 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("sh-addr").value = opening ? "" : shop.address || "";
 
     // §8A: what the branch IS -- its name, its address, its URL -- belongs to the
-    // platform owner, because a rename reaches inside the company. A CEO reads these
-    // and cannot type into them. Leaving them editable and dropping the values on
-    // save is the worse version of the same rule: the screen agrees, and the record
-    // does not.
-    for (const id of ["sh-name", "sh-slug", "sh-addr"]) $(id).disabled = !owner;
+    // platform owner, because a rename reaches inside the company.
+    //
+    // HIDDEN from a CEO, not greyed out. A disabled box is still a box they have to
+    // read past, and one of them is labelled "URL name" -- a phrase about web
+    // addresses shown to somebody running a restaurant. What the branch is called and
+    // where it is are FACTS to them, and the facts panel above already says so.
+    for (const id of ["sh-name-field", "sh-slug-field", "sh-addr-field"]) {
+      $(id).hidden = !owner;
+    }
 
     // §4A.1: tables are set when the branch is opened and are the size of the room.
     // Changing the count later is not a rename, so the field only exists here.
@@ -1397,6 +1399,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     facts.hidden = opening || owner;
     if (!facts.hidden) {
       for (const [key, value] of [
+        ["Address", shop.address || ""],
         ["Time zone", shop.timeZone],
         ["Currency", labelFor(CURRENCIES, shop.currency)],
         ["Language", labelFor(LANGUAGES, shop.language)],
@@ -1647,11 +1650,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     const adding = user === null;
     const asManager = state.persona === "manager";
 
-    $("staff-h").textContent = adding
-      ? asManager
-        ? "Add staff"
-        : "Add user"
-      : user.displayName;
+    $("staff-h").textContent = adding ? "Add staff" : user.displayName;
     $("staff-save").textContent = adding ? "Add" : "Save";
     $("staff-sub").textContent = asManager ? (activeShop() || {}).name || "" : "";
 
@@ -1685,7 +1684,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("staff-save").disabled = noBranches;
 
     $("st-temp-field").hidden = true;
-    // say() sets hidden = !text, so nothing ever put this back. A refused "Add user"
+    // say() sets hidden = !text, so nothing ever put this back. A refused "Add staff"
     // left its red line under the phone number of every person opened afterwards.
     say($("st-phone-warn"), "");
     // The reset handler rewrites this line, and a dialog is reused. Without putting
@@ -1708,7 +1707,7 @@ export function mountConsole({ api, me, onSignedOut }) {
           ? "Which shops this manager runs is set on the Shops screen, one at a time. They can run more than one."
           : !adding && user.role === "company_admin"
             ? "The owner is company-wide and belongs to no single branch."
-            : "A person you add here signs in with the password you read out to them.";
+            : "Anyone you add here signs in with the password you read out to them.";
     openModal(staffDialog);
   }
 
@@ -1739,7 +1738,7 @@ export function mountConsole({ api, me, onSignedOut }) {
         }
         showFirstPassword($("st-temp"), $("st-temp-field"), result.data.initialPassword);
         finish("staff-dialog", {
-          heading: state.persona === "manager" ? "Staff added" : "User added",
+          heading: "Staff added",
           message: "Read this password out. It is not shown again."
         });
         await refresh("users");

@@ -516,7 +516,9 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
   /* Line two, all of it: what the row is, where it is, and — only when it is not the
      ordinary case — what is wrong with it. One line, so nothing grows a card. */
   td.m-key,td.m-key2,td.m-state{display:inline;font-size:13px;line-height:1.5;color:var(--muted)}
-  td.m-key2::before,td.m-state::before{content:"· "}
+  /* A space on BOTH sides. With the leading one missing every card read "Staff· Insein",
+     which looks like a typo rather than a separator. */
+  td.m-key2::before,td.m-state::before{content:" · "}
   td.m-state{color:#9c5c17}
   td.m-state.ok{display:none}                  /* Active is the normal case; say nothing */
   /* Except in a list whose only other column IS the status — a manager's staff. There it

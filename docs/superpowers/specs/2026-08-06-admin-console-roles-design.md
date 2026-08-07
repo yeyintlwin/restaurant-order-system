@@ -59,7 +59,7 @@ it.** Neither can do the other's half, and the shop dialog is literally cut alon
 A person does not see a greyed-out control they are not allowed to use. **The screen does
 not exist.**
 
-- The platform owner's console has **no Users menu at all**. There is no page anywhere in
+- The platform owner's console has **no Staff menu at all**. There is no page anywhere in
   their console that lists a manager or a member of staff.
 - Staff have **nothing but the Dashboard**. No shops, no people, no settings — signing in
   shows them one screen and their own account.
@@ -130,7 +130,7 @@ The same sentence doing the opposite job. Before it explained a refusal; now it 
 CEO needs to know before deciding, and the deciding is theirs.
 
 **The shops are the slots, not a field on the person.** A manager's shops are read back from
-the shop rows that name them — the Users list says *"Bogyoke and Insein"* because those two
+the shop rows that name them — the Staff list says *"Bogyoke and Insein"* because those two
 slots hold that name, not because anything was written on the manager. A handover therefore
 cannot leave a stale second copy behind.
 
@@ -162,12 +162,12 @@ Switching repaints everything shop-shaped at once: the staff list, the shop sett
 the language default in Account settings — which follows the shop you are in, so a manager
 of a Yangon branch and a Bangkok one sees the right default on each.
 
-The manager's staff list is **read off the CEO's own Users table**, filtered to the selected
+The manager's staff list is **read off the CEO's own Staff table**, filtered to the selected
 shop. A second hand-written copy would be one switch away from disagreeing with the list it
 came from — the same bargain the shop tree already makes (§6.2).
 
 Freeing someone remains the same two levers: replace them on a shop (§3.1), or suspend them
-from the Users screen (§3.2).
+from the Staff screen (§3.2).
 
 ### 3.1 Replacing a manager is one decision, not two
 
@@ -199,7 +199,7 @@ The middle one is the whole point of this section. Before it existed, a one-pers
 an amber warning **for ever** about work that was never coming — and a warning that is
 always on is a warning nobody reads, including the one time it matters.
 
-**No second account is invented.** The CEO does not appear in their own Users list wearing
+**No second account is invented.** The CEO does not appear in their own Staff list wearing
 two hats, and cannot suspend themselves. The shop simply records that its owner runs it.
 Considered and rejected: letting the CEO appoint themselves as manager. One account with two
 roles muddies every sentence in §2 about reaching one level down, and buys nothing the third
@@ -246,7 +246,7 @@ The notice is **cleared, not merely hidden**, when there is nothing left to say.
 element still holding last week's sentence is a trap for anything that reads text rather
 than looking at pixels — a test, a screen reader, or the next person to work on it.
 
-Suspending a manager from the Users screen empties the shop's slot in the same action.
+Suspending a manager from the Staff screen empties the shop's slot in the same action.
 A person who can no longer sign in must not still be listed as running a shop.
 
 ## 4. Nobody is deleted
@@ -643,9 +643,9 @@ to.
 A shop with no manager keeps the same geometry — the staff descend from the words *No
 manager*, which is exactly right. An empty shop says *Nobody here yet.*
 
-The tree is read off the CEO's own Users table rather than kept as a second copy, so it can
+The tree is read off the CEO's own Staff table rather than kept as a second copy, so it can
 never disagree with the list it came from. Each person opens their own sheet, the same one
-the Users list opens.
+the Staff list opens.
 
 **A branch row opens its own sheet** — address, manager, manager's phone, tables. The row
 itself is the control and carries a `›`, not a button spelling out what pressing it does;
@@ -688,13 +688,29 @@ second copy to drift.
 
 ## 7. Screen vocabulary
 
-The same screen is named for the person reading it. A manager's people page is titled
-**Staff** with an **Add staff** button, because staff is all they can add. A CEO's is
-titled **Users** with **Add user**, because they add managers too. The label states the
-limit before the person tries to cross it.
+**Everybody below the platform owner reads the word Staff.** The screen is titled **Staff**
+with an **Add staff** button whether a CEO or a manager is looking at it.
+
+An earlier draft named the CEO's version **Users**, on the argument that they add managers
+too and the label should state the limit. That was wrong for a reason the label could not
+fix: *user* is a word about software, and nobody who reads this screen is a technical
+person. They are running a restaurant. A CEO says "my staff" and means every one of them,
+managers included; a manager says it and means the people in their shop. Same word,
+different reach — and each of them only ever sees their own list, so the word never has to
+carry the distinction the *content* already makes.
+
+That also collapsed two navigation links into one. While the two said different things they
+were two links; the moment they said the same thing, the second was a copy waiting to drift
+from the first.
 
 Each navigation link carries its own heading and its own primary action, so a screen and
 its button never drift apart.
+
+**The same rule applies to every other word on these screens.** A CEO opening a branch used
+to be shown its **URL name** — greyed out, because setting it is the platform owner's, but
+still there to be read past. It is gone now, with the branch's name and address, into the
+facts panel at the top of the sheet: what the branch IS is a fact to them, and *URL name* is
+a phrase about web addresses shown to somebody who wanted to know who runs the shop.
 
 **A screen with nothing to add has no button.** The CEO's Shops screen keeps its heading and
 loses its action entirely — not greyed out, absent — which is the same mechanism Dashboard
@@ -893,11 +909,11 @@ scope. Renaming used to be the CEO's own action inside their own company, so a s
 was a bug. It is now done by someone who **cannot see any of the people it would strand**.
 
 Left alone, renaming Bogyoke would empty its staff tree, break the promise in §3.2 that
-suspending a manager clears the shop's slot, and leave the CEO's Users list naming a branch
+suspending a manager clears the shop's slot, and leave the CEO's Staff list naming a branch
 that no longer exists — with nothing on the platform owner's screen to show for it.
 
 **So the rename fans out to every holder of the string, in the same action.** Verified in
-the browser: after a rename, all three people at that shop follow it, the Users list, the
+the browser: after a rename, all three people at that shop follow it, the Staff list, the
 Shop picker and the staff tree all move with them.
 
 For the real service this is the argument for a shop id. A name is a label, not a key, and
@@ -948,7 +964,7 @@ allows the arrangement a CEO actually makes when a branch opens, and an index wo
 it at the database, where the console could not explain why.
 
 What does need care is the read: a manager's shops are the slots that name them, so the
-Users list and every "which shops does this person run" question is a query over shops, not
+Staff list and every "which shops does this person run" question is a query over shops, not
 a column on the user. Storing it twice is how the two disagree.
 
 **Suspending a manager must clear every slot they hold, in the same transaction.** One
