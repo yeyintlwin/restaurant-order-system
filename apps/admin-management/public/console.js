@@ -446,9 +446,15 @@ export function mountConsole({ api, me, onSignedOut }) {
   function paintCompanies() {
     const body = $("co-rows");
     body.textContent = "";
+    expandedCompanyId = null;
     for (const company of state.companies) {
       const row = document.createElement("tr");
-      row.append(whoCell(company.name, company.slug));
+      row.dataset.companyId = company.id;
+      // §4A.1: a branch is added from INSIDE the company it belongs to, and the
+      // company row is where it starts -- a shop cannot exist without one. The row
+      // opens into its branches, and the last thing hanging off the trunk is the way
+      // to add to it.
+      row.append(discloseCell(company));
       row.append(
         company.ceo
           ? twoLine(company.ceo.displayName, company.ceo.email, "CEO")
@@ -464,12 +470,19 @@ export function mountConsole({ api, me, onSignedOut }) {
       );
       row.append(
         actionsCell([
-          // §4A.1: a branch is added from inside the company it belongs to. Opening
-          // the company is what makes every branch-shaped action reachable.
+          // "Open" hands the whole company over -- the operator persona, with its
+          // Shops and Users screens. Opening one branch does not need that, which is
+          // why the row expands as well as offering this.
           ["Open", () => enterCompany(company)],
           ["Edit", () => openCompanyDialog(company)]
         ])
       );
+      // A click anywhere that is not one of those buttons opens the branches. The
+      // buttons stop the event themselves, so the row does not have to know them.
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("button")) return;
+        toggleBranches(company);
+      });
       body.append(row);
     }
     if (state.companies.length === 0) {
@@ -481,6 +494,136 @@ export function mountConsole({ api, me, onSignedOut }) {
       row.append(td);
       body.append(row);
     }
+  }
+
+  // The company cell, with the disclosure triangle in front of it. A real <button>,
+  // not a styled span: the branches -- and the only route to creating a shop -- have
+  // to be reachable from a keyboard.
+  function discloseCell(company) {
+    const td = whoCell(company.name, company.slug);
+    const disc = document.createElement("button");
+    disc.type = "button";
+    disc.className = "disc";
+    disc.setAttribute("aria-expanded", "false");
+    disc.setAttribute("aria-label", `Branches of ${company.name}`);
+    disc.addEventListener("click", () => toggleBranches(company));
+    td.querySelector(".who").prepend(disc);
+    return td;
+  }
+
+  // ---- a company's branches, opened from its row --------------------------
+
+  let expandedCompanyId = null;
+
+  function collapseBranches() {
+    for (const sub of all("#co-rows tr.sub")) sub.remove();
+    for (const open of all("#co-rows tr.open")) {
+      open.classList.remove("open");
+      const disc = open.querySelector(".disc");
+      if (disc) disc.setAttribute("aria-expanded", "false");
+    }
+    expandedCompanyId = null;
+  }
+
+  // The platform owner is above every company and inside none of them, so reading one
+  // company's shops means borrowing its scope for the read. That is why this happens
+  // on a deliberate click rather than for every row at once: it is a request per
+  // company, not a column the list could have carried.
+  async function toggleBranches(company) {
+    const wasOpen = expandedCompanyId === company.id;
+    collapseBranches();
+    if (wasOpen) return;
+
+    const row = all("#co-rows tr").find((tr) => tr.dataset.companyId === company.id);
+    if (!row) return;
+    row.classList.add("open");
+    const disc = row.querySelector(".disc");
+    if (disc) disc.setAttribute("aria-expanded", "true");
+    expandedCompanyId = company.id;
+
+    const result = await insideCompany(company.id, () => send(() => api.listShops({ status: "all" })));
+    // The row may have been collapsed, or the whole screen replaced, while the two
+    // scope calls were in flight. Painting into it now would leave branches under a
+    // row that is closed, or under the wrong company.
+    if (expandedCompanyId !== company.id) return;
+    if (!result || result.state !== "ok") {
+      appendTwig(row, { text: describeFailure(result || { state: "unreachable" }) });
+      appendAddBranch(row.nextElementSibling || row, company);
+      return;
+    }
+
+    let at = row;
+    for (const shop of result.data.shops) {
+      at = appendTwig(at, {
+        name: shop.name,
+        // What the platform owner owns about a branch: what it is and how big it is.
+        // Who runs it is the CEO's, and is deliberately not here.
+        text: [shop.address, `${shop.tableCount} tables`].filter(Boolean).join(" · "),
+        onOpen: () => openShopDialog(shop, { companyId: company.id })
+      });
+    }
+    if (result.data.shops.length === 0) at = appendTwig(at, { text: "No branches yet." });
+    appendAddBranch(at, company);
+  }
+
+  // paintCompanies() rebuilds every row, so a tree that was open before a write is
+  // gone after it. Putting it back is the difference between "my branch was added"
+  // and "the screen jumped and I have to find my company again".
+  async function reopenBranches(companyId) {
+    if (state.screen !== "companies" || !companyId) return;
+    const company = state.companies.find((one) => one.id === companyId);
+    if (company) await toggleBranches(company);
+  }
+
+  function appendTwig(after, { name, text, onOpen }) {
+    const tr = document.createElement("tr");
+    tr.className = "sub";
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    const twig = document.createElement("div");
+    twig.className = "twig";
+
+    const label = document.createElement("span");
+    label.className = "twig-name";
+    label.textContent = name || "";
+    const meta = document.createElement("span");
+    meta.className = "twig-meta";
+    meta.textContent = text || "";
+    twig.append(label, meta);
+
+    if (onOpen) {
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "twig-go";
+      go.setAttribute("aria-label", `Edit ${name}`);
+      twig.append(go);
+      twig.addEventListener("click", onOpen);
+    }
+
+    td.append(twig);
+    tr.append(td);
+    after.after(tr);
+    return tr;
+  }
+
+  // The last thing hanging off the trunk is the way to add to it, which also gives a
+  // company with no branches at all one line -- and it is the line that fixes the
+  // emptiness.
+  function appendAddBranch(after, company) {
+    const tr = appendTwig(after, { name: "Add branch", text: "" });
+    tr.className = "sub twig-last";
+    const twig = tr.querySelector(".twig");
+    twig.classList.add("add");
+    const plus = document.createElement("span");
+    plus.className = "twig-plus";
+    twig.prepend(plus);
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "twig-go";
+    go.setAttribute("aria-label", `Add a branch to ${company.name}`);
+    twig.append(go);
+    twig.addEventListener("click", () => openShopDialog(null, { companyId: company.id }));
+    return tr;
   }
 
   // Selecting a company turns the platform owner into the operator -- the persona
@@ -852,6 +995,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     // has a CEO. Appointing collects the three person fields; an existing CEO is
     // named, with the two things that can be done to them from out here.
     coReplacing = false;
+    unfinish("co-dialog");
     paintCeoBlock();
     $("co-pname").value = "";
     $("co-pemail").value = "";
@@ -902,6 +1046,7 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   $("co-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (closedInstead("co-dialog")) return;
     const button = $("co-save");
     button.disabled = true;
     try {
@@ -931,7 +1076,10 @@ export function mountConsole({ api, me, onSignedOut }) {
           await refresh("companies");
           if (ceo.done) {
             showFirstPassword($("co-ppw"), $("co-pw-field"), ceo.password);
-            $("co-sub").textContent = "Read this password out. It is not shown again.";
+            finish("co-dialog", {
+              heading: "CEO appointed",
+              message: "Read this password out. It is not shown again."
+            });
             return;
           }
           if (ceo.failed) return;
@@ -957,7 +1105,10 @@ export function mountConsole({ api, me, onSignedOut }) {
       await refresh("companies");
       if (ceo.done) {
         showFirstPassword($("co-ppw"), $("co-pw-field"), ceo.password);
-        $("co-sub").textContent = "Read this password out. It is not shown again.";
+        finish("co-dialog", {
+          heading: "Company created",
+          message: "Read this password out. It is not shown again."
+        });
         return;
       }
       // The company IS created either way -- the dialog reopens on it rather than on
@@ -1024,11 +1175,102 @@ export function mountConsole({ api, me, onSignedOut }) {
     field.hidden = false;
   }
 
+  // ---- a dialog that has finished ----------------------------------------
+  //
+  // A dialog holding a first password is in a state the mockup never had to draw:
+  // the work is DONE, the password will never be shown again, and the form beneath
+  // it is describing something that already exists.
+  //
+  // Leaving it as a form was a real bug and it read as a broken screen. The heading
+  // still said "Add company" over a company that had just been added; pressing it
+  // again tried to add a second one with the same URL name and got a 409 for its
+  // trouble; and the only way out was Cancel, which reads as "undo" -- exactly the
+  // wrong word next to a person's account that was just created.
+  //
+  // So it stops being a form. Its fields go inert, Cancel goes away because there is
+  // nothing left to cancel, and the one remaining button says Done and closes.
+  const FINISHED = Object.freeze({
+    "co-dialog": { heading: "co-h", sub: "co-sub", cancel: "co-cancel", submit: "co-save", password: "co-pw-field" },
+    "staff-dialog": { heading: "staff-h", sub: "staff-sub", cancel: "staff-cancel", submit: "staff-save", password: "st-temp-field" }
+  });
+
+  // Every block a dialog is built from. Hiding by shape rather than by id, so a field
+  // added to the markup later cannot be the one that stays behind.
+  const BLOCKS = ".field, .group, .choice, .limit, .facts";
+
+  function finish(dialogId, { heading, message }) {
+    const parts = FINISHED[dialogId];
+    const dialog = $(dialogId);
+    const password = $(parts.password);
+    dialog.dataset.finished = "true";
+    $(parts.heading).textContent = heading;
+    $(parts.sub).textContent = message;
+    $(parts.cancel).hidden = true;
+    $(parts.submit).textContent = "Done";
+
+    // EVERYTHING THE PERSON IS NO LONGER EDITING GOES AWAY. Leaving eight inert
+    // fields above the one line that matters is what pushed the password and the way
+    // out below the fold -- the dialog scrolled, and the only visible thing was a
+    // form describing a company that already existed.
+    for (const block of all(BLOCKS, dialog)) {
+      if (block === password || block.contains(password)) continue;
+      block.hidden = true;
+    }
+    // readonly is left alone: a disabled input cannot be selected, and a password
+    // that cannot be selected cannot be copied. The whole point of the field is that
+    // somebody reads it off the screen.
+    for (const field of all("input, select, textarea", dialog)) {
+      if (!field.readOnly) field.disabled = true;
+    }
+    // Every other control does something to a record the person has finished with.
+    // Reset password on a brand-new account is the clearest one: it would throw away
+    // the password still on screen beside it.
+    for (const button of all("button.ghost", dialog)) button.hidden = true;
+    $(parts.submit).focus();
+  }
+
+  // Called by both open functions, because a dialog is reused and the state above
+  // would otherwise persist into the next thing it is opened for. It puts everything
+  // BACK; the open function then hides what that particular record does not need.
+  function unfinish(dialogId) {
+    const parts = FINISHED[dialogId];
+    const dialog = $(dialogId);
+    delete dialog.dataset.finished;
+    $(parts.cancel).hidden = false;
+    for (const block of all(BLOCKS, dialog)) block.hidden = false;
+    for (const field of all("input, select, textarea", dialog)) {
+      if (!field.readOnly) field.disabled = false;
+    }
+    for (const button of all("button.ghost", dialog)) button.hidden = false;
+  }
+
+  // True when the button that used to submit now only closes. Checked at the top of
+  // both submit handlers, so the finished state cannot be re-submitted by Enter
+  // either -- a keyboard is how the duplicate would have been created.
+  function closedInstead(dialogId) {
+    if ($(dialogId).dataset.finished !== "true") return false;
+    closeModal($(dialogId));
+    return true;
+  }
+
   // ---- the shop dialog ----------------------------------------------------
 
   const shopDialog = $("shop-dialog");
+
+  // Which company the open branch belongs to. For a CEO or an operator that is the
+  // one they are standing in; for the platform owner it is whichever row they opened
+  // the branch from, and there is no session answer to fall back on.
+  function shopDialogCompany() {
+    const id = shopDialog.dataset.companyId;
+    if (state.me.company && state.me.company.id === id) return state.me.company;
+    return state.companies.find((company) => company.id === id) || null;
+  }
   const shSlug = wireSlug($("sh-name"), $("sh-slug"), $("sh-slug-url"), $("sh-slug-warn"), () => {
-    return `app/${state.me.company ? state.me.company.slug : "company"}/`;
+    // The company the BRANCH belongs to, not the one the session is in. A platform
+    // owner opening a branch from a company row is in no company at all, and the
+    // preview would have read "app/company/bogyoke".
+    const company = shopDialogCompany();
+    return `app/${company ? company.slug : "company"}/`;
   });
   let shEditing = null;
 
@@ -1210,6 +1452,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     closeModal(shopDialog);
     confirm($(state.screen === "companies" ? "co-done" : "shop-done"), "Branch opened.");
     await refresh(state.screen);
+    await reopenBranches(companyId);
   }
 
   async function saveBranch() {
@@ -1220,21 +1463,28 @@ export function mountConsole({ api, me, onSignedOut }) {
         say($("sh-slug-warn"), problem);
         return;
       }
-      const result = await send(() =>
-        api.updateShop(shEditing.id, {
-          name: $("sh-name").value.trim(),
-          slug: $("sh-slug").value.trim(),
-          address: $("sh-addr").value.trim() || null
-        })
-      );
+      const changes = {
+        name: $("sh-name").value.trim(),
+        slug: $("sh-slug").value.trim(),
+        address: $("sh-addr").value.trim() || null
+      };
+      // Same split as opening one: an operator already stands in the company, and a
+      // platform owner reaches into it for this one write and comes back.
+      const write = () => send(() => api.updateShop(shEditing.id, changes));
+      const result =
+        state.persona === "operator"
+          ? await write()
+          : await insideCompany(shopDialog.dataset.companyId, write);
       if (!result) return;
       if (result.state !== "ok") {
         say($("sh-slug-warn"), describeFailure(result));
         return;
       }
       closeModal(shopDialog);
-      confirm($("shop-done"), "Saved.");
+      confirm($(state.screen === "companies" ? "co-done" : "shop-done"), "Saved.");
+      const reopen = shopDialog.dataset.companyId;
       await refresh(state.screen);
+      await reopenBranches(reopen);
       return;
     }
 
@@ -1283,6 +1533,7 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   function openPersonDialog(user) {
     stEditing = user;
+    unfinish("staff-dialog");
     const adding = user === null;
     const asManager = state.persona === "manager";
 
@@ -1312,6 +1563,11 @@ export function mountConsole({ api, me, onSignedOut }) {
     }
 
     $("st-temp-field").hidden = true;
+    // The reset handler rewrites this line, and a dialog is reused. Without putting
+    // it back, every person opened afterwards is told to read out a password that is
+    // not on the screen.
+    $("st-reset-hint").textContent =
+      "For when they have forgotten it. You will get a new one to read out.";
     $("st-access").hidden = adding;
     if (!adding) {
       for (const radio of all('input[name="access"]', staffDialog)) {
@@ -1329,6 +1585,7 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   $("staff-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (closedInstead("staff-dialog")) return;
     const button = $("staff-save");
     button.disabled = true;
     try {
@@ -1350,7 +1607,10 @@ export function mountConsole({ api, me, onSignedOut }) {
           return;
         }
         showFirstPassword($("st-temp"), $("st-temp-field"), result.data.initialPassword);
-        $("staff-sub").textContent = "Read this password out. It is not shown again.";
+        finish("staff-dialog", {
+          heading: state.persona === "manager" ? "Staff added" : "User added",
+          message: "Read this password out. It is not shown again."
+        });
         await refresh("users");
         return;
       }
