@@ -17,8 +17,28 @@
 //   - A SCOPED platform admin materialises role 'platform_admin' at rank 3 and IS in
 //     three of the lists -- and deliberately not in `platform`, whose entire meaning
 //     is "has not chosen a company".
+// A FIFTH alias, added by the admin-console work, and it is the only one that
+// NARROWS rather than widens. Every other alias here answers "who is senior
+// enough"; this one answers "who is the operator" -- and the company's own admin
+// is deliberately not in it.
+//
+// The console design moved opening a branch from the CEO to the platform owner:
+// fitting one out is tables, e-paper screens and printed QR codes, and a CEO had
+// no way to do any of it. So the shop RECORD is the operator's and the manager
+// slot on it is the CEO's, and `companyAdmin` cannot express that -- it admits
+// both, which is exactly the distinction the change is about.
+//
+// It is the mirror of `platform`: same person, opposite scope state. `platform`
+// means "has not chosen a company"; this means "has chosen one, and is acting
+// inside it". Together they cover a platform admin's whole world, and neither
+// admits a tenant role.
+//
+// Adding an alias to make a route REACHABLE would be the wrong repair, and this is
+// not that: it makes a route reachable by strictly fewer people than the existing
+// alias would have.
 const TENANT_ALIAS_MEMBERS = Object.freeze({
   platform: Object.freeze([]),
+  platformScoped: Object.freeze(["platform_admin"]),
   companyAdmin: Object.freeze(["company_admin", "platform_admin"]),
   manager: Object.freeze(["shop_manager", "company_admin", "platform_admin"]),
   anyUser: Object.freeze(["staff", "shop_manager", "company_admin", "platform_admin"])

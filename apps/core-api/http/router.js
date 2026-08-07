@@ -17,9 +17,12 @@ const { sessionTokensPresented, clientAddressOf, authenticateUser } = require(".
 
 const AUTH_MODES = Object.freeze(["user", "terminal", "public"]);
 const METHODS = Object.freeze(["GET", "POST", "PUT", "PATCH", "DELETE"]);
-// Spec §5.4. A scoped platform_admin materialises role 'platform_admin' (rank 3), so the rank
-// lattice does the work and no fifth alias is needed.
-const ROLE_ALIASES = Object.freeze(["platform", "companyAdmin", "manager", "anyUser"]);
+// Spec §5.4, plus the fifth the admin-console work needed. The original comment here read
+// "the rank lattice does the work and no fifth alias is needed", and that was true while
+// every route wanted "this rank or above". `platformScoped` is not that shape: it admits a
+// platform admin acting inside a company and REFUSES that company's own admin, who outranks
+// nobody but is not the operator. See lib/authorization.js for why the console needs it.
+const ROLE_ALIASES = Object.freeze(["platform", "platformScoped", "companyAdmin", "manager", "anyUser"]);
 // Spec §6.3.5: buckets keyed on a principal cannot exist before credential resolution.
 const PRINCIPAL_LIMIT_KEYS = Object.freeze(["user", "terminal"]);
 const AUDIT_ACTION_SHAPE = /^[a-z_]+\.[a-z_]+$/;

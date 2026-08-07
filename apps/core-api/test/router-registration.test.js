@@ -82,8 +82,14 @@ function entry(method, path, options) {
   return { key: `${method} ${path}`, method, path, options };
 }
 
-test("the four role aliases of spec 5.4 are the whole vocabulary", () => {
-  assert.deepEqual([...ROLE_ALIASES].sort(), ["anyUser", "companyAdmin", "manager", "platform"]);
+test("the five role aliases are the whole vocabulary", () => {
+  // Four in spec 5.4, plus platformScoped. Widened in the same commit as the alias,
+  // which is the entire purpose of an equality assertion here -- an alias appearing
+  // without this line moving is an alias nobody decided to add.
+  assert.deepEqual(
+    [...ROLE_ALIASES].sort(),
+    ["anyUser", "companyAdmin", "manager", "platform", "platformScoped"]
+  );
 });
 
 test("validateRouteTable accepts the live table", () => {

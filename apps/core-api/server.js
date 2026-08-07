@@ -20,6 +20,7 @@ const { createRateLimiter } = require("./lib/rate-limit");
 const sessionsRepository = require("./repositories/auth/sessions");
 const scopesRepository = require("./repositories/auth/scope-materialize");
 const usersRepository = require("./repositories/auth/users");
+const shopsRepository = require("./repositories/shops");
 const companiesRepository = require("./repositories/platform/companies");
 const platformAuditRepository = require("./repositories/platform/audit");
 
@@ -30,6 +31,7 @@ require("./http/routes/health");
 require("./http/routes/table-displays");
 require("./http/routes/auth");
 require("./http/routes/companies");
+require("./http/routes/shops");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -144,6 +146,7 @@ async function start(options = {}) {
     scopes: options.scopes || scopesRepository,
     // Whole MODULE objects, not loose functions: every handler reads them as
     // deps.companies.listCompanies(...), matching users/sessions/scopes above.
+    shops: options.shops || shopsRepository,
     companies: options.companies || companiesRepository,
     platformAudit: options.platformAudit || platformAuditRepository
   });

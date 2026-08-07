@@ -9,10 +9,11 @@ const { ROLE_ALIASES } = require("../http/router");
 const platform = { kind: "platform", userId: "u", sessionId: "s" };
 const tenant = (role) => ({ kind: "tenant", role, userId: "u", sessionId: "s", companyId: "c", shopIds: [] });
 
-test("the alias NAMES and the alias MEMBERSHIPS are the same four", () => {
+test("the alias NAMES and the alias MEMBERSHIPS are the same five", () => {
   // Two files hold two halves of one fact: router.js rejects an unknown alias at
-  // registration, lib/authorization.js decides admission. A fifth added to one and
-  // not the other is a route that boots and admits nobody.
+  // registration, lib/authorization.js decides admission. One added to one and not
+  // the other is a route that boots and admits nobody -- which is exactly what this
+  // caught while platformScoped was half-landed.
   assert.deepEqual(Object.keys(TENANT_ALIAS_MEMBERS).sort(), [...ROLE_ALIASES].sort());
 });
 
@@ -24,6 +25,9 @@ test("an UNSCOPED platform admin is admitted by `platform` and by nothing else",
   assert.equal(permits(platform, ["companyAdmin"]), false);
   assert.equal(permits(platform, ["manager"]), false);
   assert.equal(permits(platform, ["anyUser"]), false);
+  // And not by the alias that is otherwise theirs alone: platformScoped means
+  // "has chosen a company", which is the one thing this actor has not done.
+  assert.equal(permits(platform, ["platformScoped"]), false);
 });
 
 test("a SCOPED platform admin is admitted everywhere EXCEPT `platform`", () => {
@@ -36,12 +40,23 @@ test("a SCOPED platform admin is admitted everywhere EXCEPT `platform`", () => {
   assert.equal(permits(scoped, ["companyAdmin"]), true);
   assert.equal(permits(scoped, ["manager"]), true);
   assert.equal(permits(scoped, ["anyUser"]), true);
+  assert.equal(permits(scoped, ["platformScoped"]), true);
+});
+
+test("platformScoped admits the operator inside a company and REFUSES that company own admin", () => {
+  // The whole reason the alias exists. companyAdmin admits both of these, and the
+  // console design turns on telling them apart: the shop RECORD is the operator is,
+  // the manager slot on it is the CEO is.
+  assert.equal(permits(tenant("platform_admin"), ["platformScoped"]), true);
+  assert.equal(permits(tenant("company_admin"), ["platformScoped"]), false);
+  assert.equal(permits(tenant("shop_manager"), ["platformScoped"]), false);
+  assert.equal(permits(tenant("staff"), ["platformScoped"]), false);
 });
 
 test("the other three roles match spec 5.4's table exactly", () => {
   assert.deepEqual(
     ["company_admin", "shop_manager", "staff"].map((role) =>
-      ["platform", "companyAdmin", "manager", "anyUser"].filter((alias) => permits(tenant(role), [alias]))
+      ["platform", "platformScoped", "companyAdmin", "manager", "anyUser"].filter((alias) => permits(tenant(role), [alias]))
     ),
     [
       ["companyAdmin", "manager", "anyUser"],

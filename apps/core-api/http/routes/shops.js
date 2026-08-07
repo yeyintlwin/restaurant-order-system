@@ -1,0 +1,329 @@
+"use strict";
+
+// Spec §6.2's shops block, reshaped by the admin-console design.
+//
+// The reshaping is the whole point of this file, and it is one sentence: the shop
+// RECORD belongs to the platform owner, and the CEO owns the people in it. So
+// POST and PATCH declare `platformScoped` -- a platform admin acting inside a
+// company, and NOT that company's own admin -- while reading stays open to
+// everybody who works there.
+//
+// §6.2 wrote POST and PATCH as `companyAdmin`. That alias admits both the operator
+// and the CEO, which is precisely the distinction the console change turns on, so
+// this is a DEPARTURE and it is deliberate. The console design's §2 has the
+// argument: fitting out a branch is tables, e-paper screens and printed QR codes,
+// and a CEO opening one had no way to do any of it.
+
+const { route } = require("../router");
+const { readJsonBody } = require("../body");
+const { sendJson } = require("../respond");
+const { ApiError } = require("../../db/errors");
+const { withTenantScope } = require("../../db");
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The DDL's expression, character for character (0003_admin_console.sql). Three
+// copies of this rule exist -- the CHECK, this line and the console's validator --
+// and they are only correct while they are identical.
+const SLUG_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+const LANGUAGE_PATTERN = /^[a-z]{2}(-[A-Za-z0-9]{2,8})*$/;
+const STATUSES = ["active", "suspended"];
+const LIST_STATUSES = ["active", "suspended", "all"];
+// §4A.2's cap, and the console offers the same number. A branch with more than
+// this many tables is a data-entry accident, and creating them is not free.
+const TABLES_MAX = 200;
+
+function shopDocument(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    address: row.address,
+    timeZone: row.timeZone,
+    businessDayRolloverHour: row.businessDayRolloverHour,
+    currency: row.currency,
+    language: row.language,
+    phone: row.phone,
+    openingHours: row.openingHours,
+    receiptFooter: row.receiptFooter,
+    runByOwner: row.runByOwner,
+    status: row.status,
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+function has(body, key) {
+  return Object.prototype.hasOwnProperty.call(body, key);
+}
+
+// One validator per field, each pushing into a shared array so every failure is
+// reported at once (spec §6.3.5 step 11). Returning null on failure is safe: the
+// caller throws before any null reaches a repository.
+function text(body, field, errors, { required, max, pattern, trim = true }) {
+  if (!has(body, field)) {
+    if (required) errors.push({ field, code: "required" });
+    return null;
+  }
+  const raw = body[field];
+  if (typeof raw !== "string") {
+    errors.push({ field, code: "type" });
+    return null;
+  }
+  const value = trim ? raw.trim() : raw;
+  if (value.length === 0) {
+    errors.push({ field, code: "too_short" });
+    return null;
+  }
+  if (max !== undefined && value.length > max) {
+    errors.push({ field, code: "too_long" });
+    return null;
+  }
+  if (pattern !== undefined && !pattern.test(value)) {
+    errors.push({ field, code: "pattern" });
+    return null;
+  }
+  return value;
+}
+
+function integer(body, field, errors, { required, min, max }) {
+  if (!has(body, field)) {
+    if (required) errors.push({ field, code: "required" });
+    return null;
+  }
+  const value = body[field];
+  if (!Number.isInteger(value)) {
+    errors.push({ field, code: "type" });
+    return null;
+  }
+  if (value < min || value > max) {
+    errors.push({ field, code: "out_of_range" });
+    return null;
+  }
+  return value;
+}
+
+function enumerated(body, field, errors, allowed) {
+  if (!has(body, field)) return null;
+  if (typeof body[field] !== "string" || !allowed.includes(body[field])) {
+    errors.push({ field, code: "not_in_enum" });
+    return null;
+  }
+  return body[field];
+}
+
+// A time zone is validated by asking the platform, not by a list this file would
+// have to keep up to date. Intl throws RangeError on an unknown zone, which is the
+// only reliable check available and the one the repository comment promises.
+function timeZone(body, field, errors, { required }) {
+  const value = text(body, field, errors, { required, max: 64 });
+  if (value === null) return null;
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: value });
+  } catch (error) {
+    errors.push({ field, code: "invalid_time_zone" });
+    return null;
+  }
+  return value;
+}
+
+function shopIdFrom(req) {
+  // 404, never 422: a malformed path segment cannot name a resource, and a typed
+  // refusal would confirm that a real one exists at a real id (§6.3.3).
+  if (!UUID_PATTERN.test(req.params.shopId)) throw new ApiError(404, "not_found");
+  return req.params.shopId;
+}
+
+route(
+  "GET",
+  "/api/admin/shops",
+  { auth: "user", roles: ["anyUser"], sample: {} },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const url = new URL(req.originalUrl, "http://placeholder");
+    const status = url.searchParams.get("status");
+
+    if (status !== null && !LIST_STATUSES.includes(status)) {
+      throw new ApiError(422, "validation_failed", [{ field: "status", code: "not_in_enum" }]);
+    }
+
+    const rows = await withTenantScope(req.core.scope, () =>
+      deps.shops.listShops(req.core.scope, {
+        status: status === null || status === "all" ? null : status
+      })
+    );
+    sendJson(res, 200, { shops: rows.map(shopDocument) });
+  }
+);
+
+route(
+  "POST",
+  "/api/admin/shops",
+  {
+    auth: "user",
+    // The departure. See the header: `companyAdmin` would admit the CEO, and
+    // opening a branch is not theirs any more.
+    roles: ["platformScoped"],
+    body: {
+      name: "string",
+      slug: "string",
+      address: "string?",
+      timeZone: "string",
+      businessDayRolloverHour: "integer",
+      currency: "string",
+      language: "string",
+      tableCount: "integer"
+    },
+    audit: "shop.created",
+    sample: {
+      body: {
+        name: "Bogyoke",
+        slug: "bogyoke",
+        timeZone: "Asia/Yangon",
+        businessDayRolloverHour: 6,
+        currency: "MMK",
+        language: "my",
+        tableCount: 12
+      }
+    }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const body = await readJsonBody(req);
+    const errors = [];
+
+    const name = text(body, "name", errors, { required: true, max: 120 });
+    // Never trimmed: a slug with a space in it is wrong, not nearly right, and
+    // repairing it means the address the caller was shown is not the one stored.
+    const slug = text(body, "slug", errors, { required: true, max: 24, pattern: SLUG_PATTERN, trim: false });
+    if (slug !== null && slug.length < 2) errors.push({ field: "slug", code: "too_short" });
+    const address = has(body, "address") ? text(body, "address", errors, { required: false, max: 200 }) : null;
+    const zone = timeZone(body, "timeZone", errors, { required: true });
+    const rollover = integer(body, "businessDayRolloverHour", errors, { required: true, min: 0, max: 23 });
+    const currency = text(body, "currency", errors, { required: true, max: 3, pattern: CURRENCY_PATTERN });
+    const language = text(body, "language", errors, { required: true, max: 35, pattern: LANGUAGE_PATTERN });
+    // §4A.2: the number CREATES the tables, so zero is legal and means "none yet".
+    const tableCount = integer(body, "tableCount", errors, { required: true, min: 0, max: TABLES_MAX });
+
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    // The shop, its tables and the audit row in ONE transaction. A branch whose
+    // table count created no tables would be a lie told by the number somebody
+    // typed, and an audit row for a rolled-back shop would be worse.
+    const shop = await withTenantScope(req.core.scope, async () => {
+      const created = await deps.shops.createShop(req.core.scope, {
+        name,
+        slug,
+        address,
+        timeZone: zone,
+        businessDayRolloverHour: rollover,
+        currency,
+        language,
+        tableCount,
+        createdByUserId: req.core.session.userId
+      });
+      await deps.appendAuditEvent({
+        companyId: req.core.scope.companyId,
+        shopId: created.id,
+        actorKind: "user",
+        actorUserId: req.core.session.userId,
+        action: "shop.created",
+        outcome: "success",
+        targetKind: "shop",
+        targetId: created.id,
+        sourceIp: req.core.clientIp,
+        detail: { name: created.name, slug: created.slug, timeZone: created.timeZone, tableCount }
+      });
+      return created;
+    });
+
+    sendJson(res, 201, shopDocument(shop), { Location: `/api/admin/shops/${shop.id}` });
+  }
+);
+
+route(
+  "GET",
+  "/api/admin/shops/:shopId",
+  { auth: "user", roles: ["anyUser"], params: { shopId: "uuid" }, sample: {} },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const shopId = shopIdFrom(req);
+    const shop = await withTenantScope(req.core.scope, () => deps.shops.getShop(req.core.scope, shopId));
+    // "Exists but not yours" and "does not exist" are one answer, produced by the
+    // same zero rows -- the scope's shop ids are in the predicate, so there is no
+    // second read that could tell them apart even if somebody wanted to.
+    if (shop === null) throw new ApiError(404, "not_found");
+    sendJson(res, 200, shopDocument(shop));
+  }
+);
+
+route(
+  "PATCH",
+  "/api/admin/shops/:shopId",
+  {
+    auth: "user",
+    roles: ["platformScoped"],
+    params: { shopId: "uuid" },
+    body: {
+      name: "string?",
+      slug: "string?",
+      address: "string?",
+      timeZone: "string?",
+      businessDayRolloverHour: "integer?",
+      currency: "string?",
+      language: "string?",
+      status: "string?"
+    },
+    audit: "shop.updated",
+    sample: { params: { shopId: "00000000-0000-4000-8000-000000000000" }, body: { name: "Bogyoke" } }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const shopId = shopIdFrom(req);
+    const body = await readJsonBody(req);
+    const errors = [];
+
+    const changes = {
+      name: has(body, "name") ? text(body, "name", errors, { required: false, max: 120 }) : null,
+      slug: has(body, "slug")
+        ? text(body, "slug", errors, { required: false, max: 24, pattern: SLUG_PATTERN, trim: false })
+        : null,
+      address: has(body, "address") ? text(body, "address", errors, { required: false, max: 200 }) : null,
+      timeZone: has(body, "timeZone") ? timeZone(body, "timeZone", errors, { required: false }) : null,
+      businessDayRolloverHour: has(body, "businessDayRolloverHour")
+        ? integer(body, "businessDayRolloverHour", errors, { required: false, min: 0, max: 23 })
+        : null,
+      currency: has(body, "currency")
+        ? text(body, "currency", errors, { required: false, max: 3, pattern: CURRENCY_PATTERN })
+        : null,
+      language: has(body, "language")
+        ? text(body, "language", errors, { required: false, max: 35, pattern: LANGUAGE_PATTERN })
+        : null,
+      status: enumerated(body, "status", errors, STATUSES)
+    };
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+    if (Object.values(changes).every((value) => value === null)) {
+      throw new ApiError(400, "invalid_request");
+    }
+
+    const shop = await withTenantScope(req.core.scope, async () => {
+      const updated = await deps.shops.updateShop(req.core.scope, shopId, changes);
+      if (updated === null) return null;
+      await deps.appendAuditEvent({
+        companyId: req.core.scope.companyId,
+        shopId: updated.id,
+        actorKind: "user",
+        actorUserId: req.core.session.userId,
+        action: "shop.updated",
+        outcome: "success",
+        targetKind: "shop",
+        targetId: updated.id,
+        sourceIp: req.core.clientIp,
+        detail: { name: updated.name, slug: updated.slug, status: updated.status }
+      });
+      return updated;
+    });
+
+    if (shop === null) throw new ApiError(404, "not_found");
+    sendJson(res, 200, shopDocument(shop));
+  }
+);

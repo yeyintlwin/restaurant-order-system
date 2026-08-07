@@ -71,6 +71,12 @@ const AUDIT_ACTIONS = Object.freeze({
   // 'failure' is declared because 6.2 lists 404 not_found and 409 company_suspended
   // on this route, and a platform admin probing company ids is worth a row.
   "scope.selected": entry(["user"], ["success", "failure"], "company", []),
+  // The console design moved opening a branch to the platform owner, so this is
+  // written by an actor whose scope carries auditCrossTenant -- a platform admin
+  // inside somebody else's company. company_id is the company the branch belongs
+  // to, which is what makes "everything done inside this company" a query.
+  "shop.created": entry(["user"], ["success"], "shop", ["name", "slug", "timeZone", "tableCount"]),
+  "shop.updated": entry(["user"], ["success"], "shop", ["name", "slug", "status"]),
   // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc
   // requires actor_user_id NOT NULL for 'user' and actor_terminal_id NOT NULL for
   // 'terminal'; POST /api/terminal/table-displays/:tableNumber authenticates a CONFIGURED
