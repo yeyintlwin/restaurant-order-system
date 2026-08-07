@@ -96,19 +96,20 @@ function mayActOnRole(actorRole, targetRole) {
   return rankOf(actorRole) > rankOf(targetRole);
 }
 
-// What a person may change about THEMSELVES, and it depends on the role, because a
-// name means different things at different levels.
+// WHO YOU ARE IS NOT YOURS TO EDIT. Your name, your address and your number are how
+// the person above you finds you, calls you and recognises you on a rota, an order and
+// a receipt -- so they are that person's to correct, and §4C says so at every level.
 //
-// §7A.3 makes the console language a per-person setting, so everybody has that one: a
-// list without it would mean filing a request to change what language you read.
+// Changing them yourself does not break your own screen. It breaks the records of
+// somebody who cannot see that it happened, which is the whole reason the rule is not
+// "be careful".
 //
-// A MEMBER OF STAFF HAS ONLY THAT ONE. Their name is how the manager knows who took
-// an order and their phone is how the manager reaches them on a shift -- both are
-// facts the manager entered and relies on. A waiter who renames themselves does not
-// break their own screen, they break the records of the person above them, and that
-// person cannot see that it happened. Everyone from a shop manager up keeps their
-// name and their number, because for them those are their own contact details rather
-// than somebody else's roster.
+// THE PLATFORM ADMIN IS THE ONE EXCEPTION, and for the one reason: there is nobody
+// above them to ask. Same argument as §9.1's about the last active administrator.
+//
+// §7A.3's console language stays everybody's, at every level. It is the one field on
+// that screen that nobody else reads, and a list without it would mean filing a
+// request to change what language you look at.
 //
 // What stays out for EVERYBODY is the rest of the point. `email` is your sign-in name,
 // and a person who can change it can lock the person above them out of reaching them.
@@ -116,8 +117,8 @@ function mayActOnRole(actorRole, targetRole) {
 // that let you patch your own role would make the lattice above decorative.
 const SELF_PATCHABLE_FIELDS = Object.freeze({
   staff: Object.freeze(["language"]),
-  shop_manager: Object.freeze(["displayName", "phone", "language"]),
-  company_admin: Object.freeze(["displayName", "phone", "language"]),
+  shop_manager: Object.freeze(["language"]),
+  company_admin: Object.freeze(["language"]),
   platform_admin: Object.freeze(["displayName", "phone", "language"])
 });
 

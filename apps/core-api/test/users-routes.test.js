@@ -50,34 +50,38 @@ test("an unknown role THROWS rather than scoring below everything", () => {
   assert.throws(() => mayActOnRole("company_admin", "superuser"), /unknown role/);
 });
 
-test("A MEMBER OF STAFF MAY SET ONLY THEIR OWN LANGUAGE", () => {
-  // The lists are asserted whole rather than by example. Widening one is a decision
-  // about what somebody may do to their own account with nobody's approval, and
-  // these lines are what make that decision arrive in a diff instead of quietly.
+test("NOBODY EDITS THEIR OWN NAME OR NUMBER, except the one person with nobody above them", () => {
+  // §4C. Your name and your number are how the person above you finds you, calls you
+  // and recognises you on a rota, an order and a receipt. Changing them yourself does
+  // not break your own screen -- it breaks the records of somebody who cannot see
+  // that it happened, which is why this is a rule and not advice.
   assert.deepEqual(selfPatchableFields("staff"), ["language"]);
-  assert.deepEqual(selfPatchableFields("shop_manager"), ["displayName", "phone", "language"]);
-  assert.deepEqual(selfPatchableFields("company_admin"), ["displayName", "phone", "language"]);
+  assert.deepEqual(selfPatchableFields("shop_manager"), ["language"]);
+  assert.deepEqual(selfPatchableFields("company_admin"), ["language"]);
+
+  // THE EXCEPTION, and the only reason for it: there is nobody above them to ask.
+  // Same argument §9.1 makes about the last active administrator.
   assert.deepEqual(selfPatchableFields("platform_admin"), ["displayName", "phone", "language"]);
+
+  // The lists are asserted whole rather than by example. Widening one is a decision
+  // about what somebody may do to their own record with nobody's approval, and these
+  // lines are what make that decision arrive in a diff instead of quietly.
   assert.deepEqual(Object.keys(SELF_PATCHABLE_FIELDS).sort(), [
     "company_admin", "platform_admin", "shop_manager", "staff"
   ]);
 
-  // A waiter's name is how the manager knows who took an order and their phone is
-  // how the manager reaches them on a shift. Changing either does not break the
-  // waiter's screen, it breaks the roster of the person above them -- who cannot
-  // see that it happened.
-  assert.equal(permitsSelfPatch(["displayName"], "staff"), false);
-  assert.equal(permitsSelfPatch(["phone"], "staff"), false);
-  assert.equal(permitsSelfPatch(["language"], "staff"), true);
-
-  // From a shop manager up, those are your own contact details.
-  assert.equal(permitsSelfPatch(["displayName"], "shop_manager"), true);
-  assert.equal(permitsSelfPatch(["phone", "language"], "company_admin"), true);
+  for (const role of ["staff", "shop_manager", "company_admin"]) {
+    assert.equal(permitsSelfPatch(["displayName"], role), false, role + " renamed themselves");
+    assert.equal(permitsSelfPatch(["phone"], role), false, role + " changed their own number");
+    // The one field on that screen nobody else reads (§7A.3). Everybody keeps it.
+    assert.equal(permitsSelfPatch(["language"], role), true);
+  }
+  assert.equal(permitsSelfPatch(["displayName", "phone"], "platform_admin"), true);
 
   // One permitted field does not carry a forbidden one in with it: EVERY field in
   // the patch has to be on the list, not just one of them.
-  assert.equal(permitsSelfPatch(["displayName", "role"], "company_admin"), false);
-  assert.equal(permitsSelfPatch(["language", "phone"], "staff"), false);
+  assert.equal(permitsSelfPatch(["language", "phone"], "shop_manager"), false);
+  assert.equal(permitsSelfPatch(["displayName", "role"], "platform_admin"), false);
   assert.equal(permitsSelfPatch(["status"], "company_admin"), false);
   // Your sign-in name is how the person above you reaches you. It is nobody's.
   assert.equal(permitsSelfPatch(["email"], "platform_admin"), false);
@@ -362,17 +366,26 @@ describe("the users routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
-  test("you may rename yourself and nothing else", async () => {
+  test("your own record is the one you may do least to", async () => {
     await reset();
     await withServer(asCeo().deps, async (base) => {
+      // §4C, and it reaches the CEO too. Their name is what the platform owner reads
+      // on the Companies screen and what a receipt is signed with, so correcting it
+      // is the job of the person above them.
       const renamed = await patch(base, `/api/admin/users/${CEO}`, { displayName: "Khin Myat Oo" });
-      assert.equal(renamed.status, 200);
+      assert.equal(renamed.status, 403);
+      assert.equal((await renamed.json()).error.code, "self_modification_forbidden");
+      assert.equal((await patch(base, `/api/admin/users/${CEO}`, { phone: "09 00 000 0000" })).status, 403);
 
-      // A route that let you change your own role would make the lattice
-      // decorative.
-      const promoted = await patch(base, `/api/admin/users/${CEO}`, { status: "suspended" });
-      assert.equal(promoted.status, 403);
-      assert.equal((await promoted.json()).error.code, "self_modification_forbidden");
+      // The one field on that screen nobody else reads (§7A.3).
+      assert.equal((await patch(base, `/api/admin/users/${CEO}`, { language: "en" })).status, 200);
+
+      // A route that let you change your own role or status would make the lattice
+      // decorative, and resetting your own password would skip the question the
+      // account route asks.
+      const suspended = await patch(base, `/api/admin/users/${CEO}`, { status: "suspended" });
+      assert.equal(suspended.status, 403);
+      assert.equal((await suspended.json()).error.code, "self_modification_forbidden");
       assert.equal((await post(base, `/api/admin/users/${CEO}/password-reset`)).status, 403);
     });
   });
@@ -497,30 +510,56 @@ describe("the users routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
-  test("your name, your number and your language, set by you", async () => {
+  test("a manager sets their own language and nothing else about themselves", async () => {
     await reset();
     await withServer(asManager().deps, async (base) => {
-      // §7A.3: the console language is per-person, and everybody below the platform
-      // owner sets their own. A manager who had to ask for it is the version of this
-      // rule that reads as an obstacle.
-      const changed = await patch(base, `/api/admin/users/${MANAGER}`, {
-        displayName: "Thura Z.",
-        phone: "09 42 118 9999",
-        language: "en"
-      });
-      assert.equal(changed.status, 200);
-      const body = await changed.json();
-      assert.equal(body.language, "en");
-      assert.equal(body.phone, "09 42 118 9999");
+      // §7A.3: the console language is per-person at every level. It is the one field
+      // on that screen nobody else reads, and a manager who had to file a request to
+      // change what language they look at is the version of §4C that reads as an
+      // obstacle rather than as a rule.
+      const language = await patch(base, `/api/admin/users/${MANAGER}`, { language: "en" });
+      assert.equal(language.status, 200);
+      assert.equal((await language.json()).language, "en");
 
       // null is a value, not an absence: it means "follow my shop", which is the
       // default and has to be reachable again after choosing.
       assert.equal((await (await patch(base, `/api/admin/users/${MANAGER}`, { language: null })).json()).language, null);
 
+      // Their name and their number are the CEO's to correct. A manager who renames
+      // themselves does not break their own screen -- they break what the CEO reads
+      // on the Shops screen and in Contacts, and the CEO cannot see it happened.
+      assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { displayName: "Thura Z." })).status, 403);
+      assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { phone: "09 42 118 9999" })).status, 403);
+      // One permitted field does not carry a forbidden one in with it.
+      assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { language: "en", phone: "09 1" })).status, 403);
+
       // And the line that has not moved. Your role and your status are somebody
       // else's decision about you.
       assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { status: "suspended" })).status, 403);
       assert.equal((await patch(base, `/api/admin/users/${MANAGER}`, { role: "company_admin" })).status, 403);
+    });
+  });
+
+  test("but the person ABOVE them can, which is the other half of the rule", async () => {
+    await reset();
+    await withServer(asCeo().deps, async (base) => {
+      // A rule that only forbids would leave a typo in a manager's number with
+      // nobody able to fix it. The CEO is who to ask, and the CEO can.
+      const fixed = await patch(base, `/api/admin/users/${MANAGER}`, {
+        displayName: "Thura Zaw Oo",
+        phone: "09 42 118 9999"
+      });
+      assert.equal(fixed.status, 200);
+      const body = await fixed.json();
+      assert.equal(body.displayName, "Thura Zaw Oo");
+      assert.equal(body.phone, "09 42 118 9999");
+    });
+
+    // ...and a manager can do the same for their own staff, one level further down.
+    await withServer(asManager().deps, async (base) => {
+      const fixed = await patch(base, `/api/admin/users/${STAFF}`, { phone: "09 42 118 9998" });
+      assert.equal(fixed.status, 200);
+      assert.equal((await fixed.json()).phone, "09 42 118 9998");
     });
   });
 });

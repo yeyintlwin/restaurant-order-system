@@ -439,36 +439,55 @@ Where the number is an editable field rather than a fact — a person's own phon
 sits under the field as *"Call this number"* and follows whatever is typed, appearing when
 there is a number and going away when there is not. The number is never printed twice.
 
-## 4C. A member of staff's name and number are not theirs to edit
+## 4C. Who you are is not yours to edit
 
-| Signed in as   | Name and phone | The line says                                            |
-| -------------- | -------------- | -------------------------------------------------------- |
-| Platform owner | Editable       | *How you appear to everyone else.*                        |
-| CEO            | Editable       | *How you appear to everyone else.*                        |
-| Manager        | Editable       | *How you appear to everyone else.*                        |
-| Staff          | Read-only      | *Your name and number are how your manager reaches you. Ask them to change either.* |
+Your **name** and your **number** are how the person above you finds you, calls you, and
+recognises you on a rota, an order and a receipt. So they belong to that person, and
+Account settings shows them read-only with a line naming who to ask.
 
-Naming someone is the job of the person who answers for them. Left open, a name becomes a
-nickname — and the person who has to recognise it on a rota, an order or a receipt is not
-its owner. A waiter who renames themselves does not break their own screen; they break the
-records of the person above them, who cannot see that it happened. The phone goes with the
-name for the same reason: it is how the manager reaches them mid-shift, and it was the
-manager who wrote it down.
+| Signed in as   | Name and phone | The line says                                                    |
+| -------------- | -------------- | ---------------------------------------------------------------- |
+| Platform owner | Editable       | *Nobody above you to ask, so this one is yours.*                  |
+| CEO            | Read-only      | *…how the platform owner finds you. Ask them to change either.*   |
+| Manager        | Read-only      | *…how your owner finds you. Ask them to change either.*           |
+| Staff          | Read-only      | *…how your manager finds you. Ask them to change either.*         |
 
-**Narrowed from every level to staff alone.** This first read *"your own name is not yours
-to edit"* and made it read-only for the CEO and the manager too, each with a line naming who
-to ask. That was over-applied. A branch manager's name and number are their own contact
-details — they are the person answering the phone, not an entry on somebody's rota — and
-making them file a request to correct a typo in their own number is friction with no reader
-behind it. **This is a change of plan, decided deliberately, and the fuller rule is still
-here in case it is wanted back.**
+Changing them yourself does not break your own screen. **It breaks the records of
+somebody who cannot see that it happened** — which is why this is a rule rather than
+advice. A manager who renames themselves changes what the CEO reads on the Shops screen
+and in Contacts, and nothing tells the CEO it moved.
 
-Everything else on that screen stays the person's own at every level: their language, their
-password, their sessions. Only staff lose the two, and only because other people read them.
+**The platform owner is the one exception, for the one reason:** there is nobody above
+them to ask. That is the same argument §9.1 makes about the last active administrator,
+and it is the only place in this document where "because there is no one else" is
+allowed to settle anything.
 
-The enforcement is `SELF_PATCHABLE_FIELDS` in `lib/authorization.js`, keyed by role, and the
-console mirrors it by disabling the boxes — a courtesy, since the route refuses either way
-and nobody should have to be refused to find out.
+**And the rule has a second half, without which it would just be an obstacle.** The
+person above you *can* fix it, so a typo in a number always has somewhere to go:
+
+| Editing        | May correct the name and number of |
+| -------------- | ---------------------------------- |
+| Platform owner | Their own, and each company's CEO   |
+| CEO            | Managers and staff                  |
+| Manager        | Their own shops' staff              |
+| Staff          | Nobody                              |
+
+That table is the rank lattice, which was already enforced for every other field. §4C
+simply stops making an exception of the two that describe a person.
+
+**Everybody keeps their own language and their own password, at every level.** §7A.3's
+language is the one field on that screen nobody else reads, and a manager who had to
+file a request to change what language they look at is this rule wearing the wrong face.
+
+**Narrowed, then restored.** For one revision this applied to staff alone, on the
+argument that a branch manager's name and number are their own contact details rather
+than an entry on somebody's roster. The argument does not survive the question *who
+notices when it changes* — the answer at every level below the platform owner is
+"somebody else, and not straight away". The narrow version is gone; this is the rule.
+
+The enforcement is `SELF_PATCHABLE_FIELDS` in `lib/authorization.js`, keyed by role, and
+the console mirrors it by disabling the boxes — a courtesy, since the route refuses
+either way and nobody should have to be refused to find out.
 
 ## 4D. URL names
 

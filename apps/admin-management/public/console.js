@@ -975,24 +975,30 @@ export function mountConsole({ api, me, onSignedOut }) {
     // is the courtesy version of it: the route refuses either way, and a person
     // should not have to be refused to find out.
     const own = state.persona !== "operator";
-    // A member of staff has their language and their password, and nothing else.
-    // Their name is how the manager knows who took an order, and their number is how
-    // the manager reaches them on a shift -- both belong to the roster of the person
-    // above them rather than to them.
-    const ownsTheirDetails = own && state.persona !== "staff";
+    // §4C: WHO YOU ARE IS NOT YOURS TO EDIT. Your name and your number are how the
+    // person above you finds you, calls you and recognises you on a rota, an order
+    // and a receipt. The platform owner is the one exception, for the one reason --
+    // there is nobody above them to ask.
+    const ownsTheirDetails = state.persona === "platform";
     $("a1").disabled = !ownsTheirDetails;
     $("a4").disabled = !ownsTheirDetails;
-    // A platform admin has no shop to follow and their route takes no language at
+    // A platform admin has no shop to follow and their own route takes no language at
     // all. Left enabled it accepted a choice, sent nothing, and reverted on return.
     language.disabled = !own || state.persona === "platform";
-    say(
-      $("a1-note"),
-      !own
-        ? "Leave the company you are working inside to edit your own account."
-        : ownsTheirDetails
-          ? "How you appear to everyone else."
-          : "Your name and number are how your manager reaches you. Ask them to change either."
-    );
+    say($("a1-note"), ownNote(own, ownsTheirDetails));
+  }
+
+  // Who to ask, by name of the job rather than of the person -- a CEO reading "ask
+  // your CEO" would be looking for themselves.
+  function ownNote(own, ownsTheirDetails) {
+    if (!own) return "Leave the company you are working inside to edit your own account.";
+    if (ownsTheirDetails) return "Nobody above you to ask, so this one is yours.";
+    const asker = {
+      company: "the platform owner",
+      manager: "your owner",
+      staff: "your manager"
+    }[state.persona];
+    return `Your name and number are how ${asker} finds you. Ask them to change either.`;
   }
 
   // Saved on change rather than behind a Save button: each of these is one field,
