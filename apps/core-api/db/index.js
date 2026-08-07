@@ -266,19 +266,43 @@ async function tenantQuery(scope, descriptor, params = []) {
 // the data, while one that can WRITE widely is a way to edit another company's
 // rows with no company_id in sight.
 const PLATFORM_WRITABLE_TABLES = Object.freeze(["companies", "users", "audit_events"]);
-const WRITE_TARGET = /^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-z_][a-z0-9_]*)/i;
+
+// EVERY write target in the statement, not just the leading verb's.
+//
+// The first version of this read only the first word, and a data-modifying CTE
+// walked straight past it: `WITH d AS (DELETE FROM shop_tables RETURNING id)
+// SELECT * FROM d` is a SELECT to statementKind() and a DELETE to Postgres. So is
+// `WITH x AS (SELECT 1) UPDATE shops SET ...`. Three shapes, all of them writes to
+// tenant tables through the one hatch that is allowed to ignore company_id.
+//
+// Scanning globally rather than anchoring at the start is what closes it, and it
+// costs nothing: a statement with no write verb in it produces no matches.
+//
+// `public.` and double quotes are tolerated because refusing them was a false
+// NEGATIVE in the first version -- INSERT INTO "companies" is an ordinary way to
+// write an ordinary statement, and a guard that refuses legitimate SQL teaches
+// people to route around it.
+const WRITE_TARGET = /\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/gi;
+const WRITE_VERB = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i;
 
 function assertPlatformStatement(sql) {
-  const kind = statementKind(sql);
-  if (!["INSERT", "UPDATE", "DELETE"].includes(kind)) return;
-  const match = sql.match(WRITE_TARGET);
-  if (match === null) {
-    throw new Error(`platformQuery: cannot identify the table this ${kind} writes to`);
+  if (!WRITE_VERB.test(sql)) return;
+
+  WRITE_TARGET.lastIndex = 0;
+  const targets = [];
+  for (let m = WRITE_TARGET.exec(sql); m !== null; m = WRITE_TARGET.exec(sql)) {
+    targets.push({ verb: m[1].toUpperCase().replace(/\s+/g, " "), table: m[2].toLowerCase() });
   }
-  const table = match[2].toLowerCase();
-  if (!PLATFORM_WRITABLE_TABLES.includes(table)) {
+  // A write verb is present but no target parsed out of it. Fail CLOSED: an
+  // unparseable write is not waved through on the grounds that the regex did not
+  // understand it.
+  if (targets.length === 0) {
+    throw new Error("platformQuery: cannot identify the table this statement writes to");
+  }
+  for (const { verb, table } of targets) {
+    if (PLATFORM_WRITABLE_TABLES.includes(table)) continue;
     throw new Error(
-      `platformQuery: ${kind} into "${table}" is not a platform-owned table ` +
+      `platformQuery: ${verb} "${table}" is not a platform-owned table ` +
       `(${PLATFORM_WRITABLE_TABLES.join(", ")}); select the company and use the tenant repository`
     );
   }

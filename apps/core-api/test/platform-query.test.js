@@ -86,16 +86,38 @@ test("assertPlatformStatement allows writes to the three platform-owned tables",
     "INSERT INTO companies (name, slug) VALUES ($1, $2)",
     "UPDATE companies SET status = $1 WHERE id = $2",
     "UPDATE users SET status = $1 WHERE id = $2",
-    "INSERT INTO audit_events (action) VALUES ($1)"
+    "INSERT INTO audit_events (action) VALUES ($1)",
+    // Schema-qualified and quoted are ordinary ways to write an ordinary
+    // statement. The first version of the guard refused both, and a guard that
+    // refuses legitimate SQL teaches people to route around it.
+    "INSERT INTO public.companies (name) VALUES ($1)",
+    'INSERT INTO "companies" (name) VALUES ($1)'
   ]) {
     assert.doesNotThrow(() => assertPlatformStatement(sql), sql);
+  }
+});
+
+test("assertPlatformStatement refuses a write hidden in a common table expression", () => {
+  // The hole the first version had, and the reason the scan is global rather than
+  // anchored at the start. Every one of these is a SELECT to a guard that reads
+  // only the leading verb, and a write to a tenant table to Postgres -- through the
+  // one hatch that is allowed to ignore company_id.
+  for (const sql of [
+    "WITH x AS (SELECT 1) UPDATE shops SET name = $1",
+    "WITH d AS (DELETE FROM shop_tables RETURNING id) SELECT * FROM d",
+    "WITH n AS (INSERT INTO user_shops (user_id) VALUES ($1) RETURNING 1) SELECT * FROM n",
+    // A legal platform write in the outer statement does not license a tenant
+    // write in the CTE: EVERY target is checked, not just the first one found.
+    "WITH d AS (DELETE FROM terminals RETURNING id) INSERT INTO companies (name) SELECT id FROM d"
+  ]) {
+    assert.throws(() => assertPlatformStatement(sql), /not a platform-owned table/, sql);
   }
 });
 
 test("assertPlatformStatement refuses a write whose table it cannot identify", () => {
   // Fail closed. An unparseable write is not waved through on the grounds that the
   // regex did not understand it.
-  assert.throws(() => assertPlatformStatement("UPDATE /* sneaky */ shops SET x = 1"), /cannot identify the table/);
+  assert.throws(() => assertPlatformStatement("UPDATE /* sneaky */ SET x = 1"), /cannot identify the table/);
 });
 
 // --- the transaction seam ---------------------------------------------------

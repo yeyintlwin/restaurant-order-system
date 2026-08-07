@@ -181,11 +181,16 @@ test("the walker scanned every source file, with POSIX separators", () => {
   // thirty-five. MEASURED, not estimated: the floor was set to an absurd number,
   // the reported count read back, and then mutation-tested at N + 1 to confirm it
   // can go red. Raise this floor in each later plan as repositories/ and
-  // http/routes/ fill in. The platform seam adds repositories/platform/query.js
-  // and the walker reports thirty-four. MEASURED, not estimated -- the count was
-  // read back from the walker itself, not guessed from the diff.
+  // http/routes/ fill in. 0003_admin_console.sql and the platform seam bring the
+  // walker to thirty-seven.
+  //
+  // MEASURED, and the first measurement was WRONG: counted by hand it came to
+  // thirty-four, because walk() takes /\.(?:js|sql)$/ and the three migrations are
+  // source files here too. A floor set from a guess is a floor that never catches
+  // anything, which is the exact vacuity this assertion exists to prevent -- so it
+  // was read back off the walker itself.
   assert.ok(
-    SOURCE_FILES.length >= 34,
+    SOURCE_FILES.length >= 37,
     `scanned only ${SOURCE_FILES.length} files: ${SOURCE_FILES.join(", ")}`
   );
 
