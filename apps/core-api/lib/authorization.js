@@ -62,4 +62,56 @@ function permits(scope, roles) {
   return roles.some((alias) => TENANT_ALIAS_MEMBERS[alias].includes(scope.role));
 }
 
-module.exports = { TENANT_ALIAS_MEMBERS, permits };
+// ---------------------------------------------------------------------------
+// The rank lattice
+// ---------------------------------------------------------------------------
+// Spec §5.4: "An actor may only create or modify a user STRICTLY BELOW its own
+// role. Left to prose, the consequence is a shop_manager POSTing
+// { role: 'company_admin' }: every constraint is satisfied, the response carries
+// the one-time password, and they own the company."
+//
+// Strictly below, not below-or-equal, and the difference is the whole rule. A
+// company_admin creating another company_admin is how one account quietly becomes
+// two, and neither can be told from the other afterwards. The ONE sanctioned
+// exception in the whole service is POST /api/platform/admins, which §6.2 names
+// out loud and justifies: the bootstrap CLI is monotonic, so a platform with one
+// administrator would otherwise have no second recovery path.
+const RANKS = Object.freeze({ staff: 0, shop_manager: 1, company_admin: 2, platform_admin: 3 });
+
+function rankOf(role) {
+  if (!Object.prototype.hasOwnProperty.call(RANKS, role)) {
+    // A throw, not a -1. An unknown role scoring below everything would make every
+    // comparison below answer "yes, you may" -- the failure direction that hands a
+    // typo the keys.
+    throw new Error(`rankOf(): unknown role ${JSON.stringify(role ?? null)}`);
+  }
+  return RANKS[role];
+}
+
+// Applies to CREATE and to MODIFY, and to the role a modification would leave
+// behind. A promotion is checked twice on purpose: rank must be strictly below
+// BEFORE and AFTER, or a company_admin promotes somebody to company_admin by
+// editing a staff row they were allowed to touch.
+function mayActOnRole(actorRole, targetRole) {
+  return rankOf(actorRole) > rankOf(targetRole);
+}
+
+// §6.2: "Self-targeting is allowed for displayName only." Everything else about
+// your own account goes through the account routes, which require your current
+// password -- and a route that let you change your own role would make the lattice
+// above decorative.
+const SELF_PATCHABLE_FIELDS = Object.freeze(["displayName"]);
+
+function permitsSelfPatch(fields) {
+  return fields.every((field) => SELF_PATCHABLE_FIELDS.includes(field));
+}
+
+module.exports = {
+  TENANT_ALIAS_MEMBERS,
+  permits,
+  RANKS,
+  rankOf,
+  mayActOnRole,
+  SELF_PATCHABLE_FIELDS,
+  permitsSelfPatch
+};

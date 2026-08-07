@@ -139,9 +139,34 @@ async function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(actual, expected);
 }
 
+// Console design §5.1: "Two words and four digits: readable out loud across a
+// noisy kitchen, short enough to write on a pad, and long enough to survive until
+// first sign-in."
+//
+// This system has no mail server, so there is no reset link to send -- the person
+// doing the reset READS THE PASSWORD OUT. That is the whole constraint, and it is
+// why this is a word list rather than random base64: "Ginger-Pepper-4812" survives
+// being spoken across a kitchen and "xK9$mQ2p" does not.
+//
+// crypto.randomInt, never Math.random. The value is a credential for as long as it
+// takes somebody to sign in, and the words are public -- so the entropy is all in
+// the choosing, and a predictable generator would make the whole list guessable
+// from one observed password.
+const PASSWORD_WORDS = Object.freeze([
+  "Mango", "Ginger", "Basil", "Pepper", "Lotus", "Cashew", "Sesame", "Tamarind",
+  "Cinnamon", "Coconut", "Papaya", "Jasmine", "Lemon", "Clove", "Saffron", "Walnut"
+]);
+
+function generateInitialPassword() {
+  const word = () => PASSWORD_WORDS[crypto.randomInt(PASSWORD_WORDS.length)];
+  return `${word()}-${word()}-${crypto.randomInt(1000, 10000)}`;
+}
+
 module.exports = {
   hashPassword,
   verifyPassword,
+  generateInitialPassword,
+  PASSWORD_WORDS,
   PasswordPolicyError,
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,

@@ -1,0 +1,205 @@
+"use strict";
+
+// The people inside one company. TENANT-scoped, so every statement goes through
+// the ordinary choke point and cannot reach another company's rows.
+//
+// NOT repositories/auth/users.js. That one is pre-tenant -- it answers "who is
+// signing in" before any company exists, which is why it is on C4's allowlist.
+// This one only ever runs for somebody who is already inside a company, and holds
+// no connection of its own.
+
+const { tenantQuery } = require("../db");
+
+const CONFLICTS = Object.freeze({ users_email_key: "email_unavailable" });
+
+// shopIds is aggregated in SQL rather than assembled in JavaScript, and the
+// COALESCE is the whole reason: array_agg over zero rows returns NULL, and a NULL
+// arriving where a caller expects a list is how "assigned to nothing" becomes
+// "assigned to everything" one careless line later.
+const COLUMNS = `
+  u.id,
+  u.email,
+  u.display_name AS "displayName",
+  u.phone,
+  u.role,
+  u.status,
+  u.language,
+  u.must_change_password AS "mustChangePassword",
+  u.last_login_at AS "lastLoginAt",
+  u.created_at AS "createdAt",
+  COALESCE(
+    (SELECT array_agg(us.shop_id ORDER BY us.shop_id) FROM user_shops us WHERE us.user_id = u.id),
+    '{}'
+  ) AS "shopIds"
+`;
+
+// Containment for a shop_manager is an EXISTS semi-join and never an INNER JOIN.
+// Spec §6.2 says why in one line: a JOIN duplicates a user assigned to two of the
+// caller's shops and then silently truncates the page at LIMIT. It also pins
+// u.role = 'staff', because a manager administers staff and not their peers.
+const LIST_ADMINISTERED = {
+  sql: `
+    SELECT ${COLUMNS} FROM users u
+     WHERE u.company_id = $1
+       AND ($2::text IS NULL OR u.role = $2)
+       AND ($3::text IS NULL OR u.status = $3)
+     ORDER BY u.display_name, u.id
+     LIMIT $4
+  `,
+  shopScoped: false
+};
+
+const LIST_CONTAINED = {
+  sql: `
+    SELECT ${COLUMNS} FROM users u
+     WHERE u.company_id = $1
+       AND u.role = 'staff'
+       AND EXISTS (SELECT 1 FROM user_shops us WHERE us.user_id = u.id AND us.shop_id = ANY($2::uuid[]))
+       AND ($3::text IS NULL OR u.status = $3)
+     ORDER BY u.display_name, u.id
+     LIMIT $4
+  `,
+  shopScoped: false
+};
+
+const GET_ADMINISTERED = {
+  sql: `SELECT ${COLUMNS} FROM users u WHERE u.company_id = $1 AND u.id = $2`,
+  shopScoped: false
+};
+
+const GET_CONTAINED = {
+  sql: `
+    SELECT ${COLUMNS} FROM users u
+     WHERE u.company_id = $1 AND u.id = $2 AND u.role = 'staff'
+       AND EXISTS (SELECT 1 FROM user_shops us WHERE us.user_id = u.id AND us.shop_id = ANY($3::uuid[]))
+  `,
+  shopScoped: false
+};
+
+// company_id is injected by the helper. role arrives from the route, which has
+// already proved it is strictly below the caller's.
+const INSERT = {
+  sql: `
+    INSERT INTO users (role, email, display_name, phone, language, password_hash,
+                       must_change_password, created_by_user_id)
+    VALUES ($2, lower(btrim($3)), $4, $5, $6, $7, true, $8)
+    RETURNING id
+  `,
+  shopScoped: false,
+  conflicts: CONFLICTS
+};
+
+const ASSIGN = {
+  sql: `INSERT INTO user_shops (user_id, shop_id) VALUES ($2, $3)`,
+  shopScoped: false
+};
+
+const UNASSIGN_ALL = {
+  sql: `DELETE FROM user_shops WHERE company_id = $1 AND user_id = $2`,
+  shopScoped: false
+};
+
+// email is absent on purpose: it is the sign-in name, and changing it is a
+// different, separately audited operation. So is the password.
+const UPDATE = {
+  sql: `
+    UPDATE users
+       SET display_name = COALESCE($3, display_name),
+           phone        = COALESCE($4, phone),
+           role         = COALESCE($5, role),
+           status       = COALESCE($6, status),
+           language     = CASE WHEN $7::boolean THEN $8 ELSE language END,
+           sessions_valid_from = CASE WHEN $6 = 'suspended' THEN now() ELSE sessions_valid_from END
+     WHERE company_id = $1 AND id = $2
+    RETURNING id
+  `,
+  shopScoped: false
+};
+
+const RESET_PASSWORD = {
+  sql: `
+    UPDATE users
+       SET password_hash        = $3,
+           must_change_password = true,
+           failed_login_count   = 0,
+           locked_until         = NULL,
+           sessions_valid_from  = now()
+     WHERE company_id = $1 AND id = $2
+    RETURNING id
+  `,
+  shopScoped: false
+};
+
+function administers(scope) {
+  return scope.administeredShopIds !== undefined;
+}
+
+async function listUsers(scope, options = {}) {
+  const { role = null, status = null, limit = 100 } = options;
+  const { rows } = administers(scope)
+    ? await tenantQuery(scope, LIST_ADMINISTERED, [role, status, limit])
+    : await tenantQuery(scope, LIST_CONTAINED, [scope.shopIds, status, limit]);
+  return rows;
+}
+
+async function getUser(scope, userId) {
+  const { rows } = administers(scope)
+    ? await tenantQuery(scope, GET_ADMINISTERED, [userId])
+    : await tenantQuery(scope, GET_CONTAINED, [userId, scope.shopIds]);
+  return rows.length === 0 ? null : rows[0];
+}
+
+// Creates the row AND its assignments, inside the caller's transaction. A staff
+// member with no assignment reaches nothing and is invisible to every
+// shop_manager -- so a half-written create is a person nobody can find or fix.
+async function createUser(scope, input) {
+  const { rows } = await tenantQuery(scope, INSERT, [
+    input.role,
+    input.email,
+    input.displayName,
+    input.phone ?? null,
+    input.language ?? null,
+    input.passwordHash,
+    input.createdByUserId
+  ]);
+  const id = rows[0].id;
+  for (const shopId of input.shopIds || []) {
+    await tenantQuery(scope, ASSIGN, [id, shopId]);
+  }
+  return getUser(scope, id);
+}
+
+// `language` is passed as a PAIR -- a present flag and a value -- because null is
+// a meaningful language ("follow my shop") and COALESCE cannot tell it from
+// "absent". Every other field can, so every other field uses COALESCE.
+async function updateUser(scope, userId, changes) {
+  const { rows } = await tenantQuery(scope, UPDATE, [
+    userId,
+    changes.displayName ?? null,
+    changes.phone ?? null,
+    changes.role ?? null,
+    changes.status ?? null,
+    Object.prototype.hasOwnProperty.call(changes, "language"),
+    changes.language ?? null
+  ]);
+  if (rows.length === 0) return null;
+  if (Array.isArray(changes.shopIds)) {
+    // Full-set replacement, which is why §6.2 keeps it companyAdmin-only: combined
+    // with a shop_manager's partial visibility it is a silent-data-loss shape.
+    await tenantQuery(scope, UNASSIGN_ALL, [userId]);
+    for (const shopId of changes.shopIds) {
+      await tenantQuery(scope, ASSIGN, [userId, shopId]);
+    }
+  }
+  return getUser(scope, userId);
+}
+
+async function resetUserPassword(scope, userId, passwordHash) {
+  if (typeof passwordHash !== "string" || !passwordHash.startsWith("scrypt$")) {
+    throw new Error("resetUserPassword requires a PHC string from lib/password.js");
+  }
+  const { rows } = await tenantQuery(scope, RESET_PASSWORD, [userId, passwordHash]);
+  return rows.length === 0 ? null : getUser(scope, userId);
+}
+
+module.exports = { listUsers, getUser, createUser, updateUser, resetUserPassword };

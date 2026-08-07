@@ -93,7 +93,12 @@ const AUDIT_ACTIONS = Object.freeze({
   // thing keeping a live table credential out of a 365-day retention window is this list
   // being short on purpose.
   "table_display.updated": entry(["system"], ["success", "failure"], "table_display", ["status"]),
-  "user.password_change_abuse": entry(["user"], ["failure"], "user", ["consecutiveFailures"])
+  // The CEO and the manager both write these; the lattice in lib/authorization.js
+  // is what decides which of them may, and it is checked before the row is made.
+  "user.created": entry(["user"], ["success"], "user", ["email", "role"]),
+  "user.password_change_abuse": entry(["user"], ["failure"], "user", ["consecutiveFailures"]),
+  "user.password_reset": entry(["user"], ["success"], "user", []),
+  "user.updated": entry(["user"], ["success"], "user", ["role", "status"])
 });
 
 function assertAuditEvent(event) {

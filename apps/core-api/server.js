@@ -21,6 +21,7 @@ const sessionsRepository = require("./repositories/auth/sessions");
 const scopesRepository = require("./repositories/auth/scope-materialize");
 const usersRepository = require("./repositories/auth/users");
 const shopsRepository = require("./repositories/shops");
+const tenantUsersRepository = require("./repositories/users");
 const companiesRepository = require("./repositories/platform/companies");
 const platformAuditRepository = require("./repositories/platform/audit");
 
@@ -32,6 +33,7 @@ require("./http/routes/table-displays");
 require("./http/routes/auth");
 require("./http/routes/companies");
 require("./http/routes/shops");
+require("./http/routes/users");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -147,6 +149,9 @@ async function start(options = {}) {
     // Whole MODULE objects, not loose functions: every handler reads them as
     // deps.companies.listCompanies(...), matching users/sessions/scopes above.
     shops: options.shops || shopsRepository,
+    // NOT deps.users: that name is taken by the PRE-TENANT repository the login
+    // path uses, and the two answer different questions about the word "user".
+    tenantUsers: options.tenantUsers || tenantUsersRepository,
     companies: options.companies || companiesRepository,
     platformAudit: options.platformAudit || platformAuditRepository
   });
