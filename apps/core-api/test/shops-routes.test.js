@@ -384,6 +384,187 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
+  // --- the manager slot: the CEO's one job on a shop ------------------------
+
+  const STAFF_A = "aaaaaaaa-0003-4000-8000-000000000021";
+  const STAFF_B = "aaaaaaaa-0003-4000-8000-000000000022";
+
+  async function seedStaff() {
+    await db.unscoped(
+      `INSERT INTO users (id, company_id, role, email, display_name, password_hash) VALUES
+         ($1, $3, 'staff', 'thura@example.test', 'Thura Zaw', $4),
+         ($2, $3, 'staff', 'kokonaing@example.test', 'Ko Ko Naing', $4)`,
+      [STAFF_A, STAFF_B, COMPANY, PLACEHOLDER_HASH]
+    );
+  }
+
+  function ceo() {
+    return harness({ scope: CEO_SCOPE, userId: CEO, role: "company_admin" });
+  }
+  const putManager = (base, id, body) =>
+    fetch(`${base}/api/admin/shops/${id}/manager`, { method: "PUT", headers: POST_HEADERS, body: JSON.stringify(body) });
+
+  async function openShop() {
+    let id;
+    await withServer(harness().deps, async (base) => { id = (await (await post(base, NEW_SHOP)).json()).id; });
+    return id;
+  }
+
+  test("the operator may open a branch and may NOT staff it", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(harness().deps, async (base) => {
+      const refused = await putManager(base, shopId, { managerUserId: STAFF_A });
+      // The other half of the split. §6 is built on the platform owner never
+      // seeing a person inside a company, and a route taking a user id is exactly
+      // where that would leak.
+      assert.equal(refused.status, 403);
+      assert.equal((await refused.json()).error.code, "forbidden");
+    });
+  });
+
+  test("appointing a manager promotes them and assigns the shop, in one write", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    const { deps, audits } = ceo();
+    await withServer(deps, async (base) => {
+      const response = await putManager(base, shopId, { managerUserId: STAFF_A });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).runByOwner, false);
+
+      const role = await db.unscoped("SELECT role FROM users WHERE id = $1", [STAFF_A]);
+      assert.equal(role.rows[0].role, "shop_manager");
+      const assigned = await db.unscoped("SELECT shop_id FROM user_shops WHERE user_id = $1", [STAFF_A]);
+      assert.deepEqual(assigned.rows.map((r) => r.shop_id), [shopId]);
+      assert.equal(audits.at(-1).action, "shop.manager_changed");
+      assert.equal(audits.at(-1).detail.replacedUserId, null);
+    });
+  });
+
+  test("replacing a manager is ONE decision: the shop is never left with two, or none", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    const { deps, audits } = ceo();
+    await withServer(deps, async (base) => {
+      await putManager(base, shopId, { managerUserId: STAFF_A });
+      await putManager(base, shopId, { managerUserId: STAFF_B, outgoing: "staff" });
+
+      // §3.1: split into "demote the old one" then "promote the new one" and the
+      // shop spends the gap with two managers or none. One transaction, so there
+      // is no gap: exactly one assignment row survives.
+      const rows = await db.unscoped(
+        `SELECT u.id, u.role, u.status FROM user_shops us JOIN users u ON u.id = us.user_id
+          WHERE us.shop_id = $1 AND u.role = 'shop_manager'`,
+        [shopId]
+      );
+      assert.deepEqual(rows.rows.map((r) => r.id), [STAFF_B]);
+
+      // The outgoing manager kept their account and their history, demoted.
+      const old = await db.unscoped("SELECT role, status FROM users WHERE id = $1", [STAFF_A]);
+      assert.equal(old.rows[0].role, "staff");
+      assert.equal(old.rows[0].status, "active");
+      assert.equal(audits.at(-1).detail.replacedUserId, STAFF_A);
+    });
+  });
+
+  test("the other half of the handover suspends them instead, and kills their sessions", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(ceo().deps, async (base) => {
+      await putManager(base, shopId, { managerUserId: STAFF_A });
+      const before = await db.unscoped("SELECT sessions_valid_from FROM users WHERE id = $1", [STAFF_A]);
+      await putManager(base, shopId, { managerUserId: STAFF_B, outgoing: "suspend" });
+
+      const old = await db.unscoped("SELECT status, sessions_valid_from FROM users WHERE id = $1", [STAFF_A]);
+      assert.equal(old.rows[0].status, "suspended");
+      // Without the bump they go on working on the session they already hold,
+      // which is the entire point of suspending them.
+      assert.ok(old.rows[0].sessions_valid_from > before.rows[0].sessions_valid_from);
+    });
+  });
+
+  test("the three answers are distinct, and owner-run is one of them", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(ceo().deps, async (base) => {
+      // Nobody yet.
+      let shop = await (await putManager(base, shopId, { managerUserId: null })).json();
+      assert.equal(shop.runByOwner, false);
+
+      // The owner runs it -- a DECISION, not a gap.
+      shop = await (await putManager(base, shopId, { managerUserId: null, runByOwner: true })).json();
+      assert.equal(shop.runByOwner, true);
+
+      // A person, and taking the shop off the owner in the same write.
+      shop = await (await putManager(base, shopId, { managerUserId: STAFF_A })).json();
+      assert.equal(shop.runByOwner, false, "a shop is owner-run or it has a manager, never both");
+
+      // ...and back to nobody clears the assignment.
+      shop = await (await putManager(base, shopId, { managerUserId: null })).json();
+      const rows = await db.unscoped("SELECT user_id FROM user_shops WHERE shop_id = $1", [shopId]);
+      assert.deepEqual(rows.rows, []);
+    });
+  });
+
+  test("owner-run and a manager at once is refused rather than resolved", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(ceo().deps, async (base) => {
+      const response = await putManager(base, shopId, { managerUserId: STAFF_A, runByOwner: true });
+      assert.equal(response.status, 422);
+      // The invariant 0003 could not write as a CHECK, because the manager lives
+      // in another table.
+      assert.deepEqual((await response.json()).error.errors, [{ field: "runByOwner", code: "immutable" }]);
+    });
+  });
+
+  test("one person may run two shops, which is what the console now allows", async () => {
+    await reset();
+    await seedStaff();
+    const first = await openShop();
+    let second;
+    await withServer(harness().deps, async (base) => {
+      second = (await (await post(base, { ...NEW_SHOP, name: "Hledan", slug: "hledan" })).json()).id;
+    });
+    await withServer(ceo().deps, async (base) => {
+      assert.equal((await putManager(base, first, { managerUserId: STAFF_A })).status, 200);
+      assert.equal((await putManager(base, second, { managerUserId: STAFF_A })).status, 200);
+      const rows = await db.unscoped(
+        "SELECT shop_id FROM user_shops WHERE user_id = $1 ORDER BY shop_id", [STAFF_A]
+      );
+      assert.equal(rows.rows.length, 2, "the assignment is a row per shop, so two is simply two rows");
+    });
+  });
+
+  test("an absent key, a stranger and a suspended candidate are each refused on their own terms", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(ceo().deps, async (base) => {
+      // {} is a mistake; {"managerUserId": null} empties the slot. Two requests.
+      const missing = await putManager(base, shopId, {});
+      assert.equal(missing.status, 422);
+      assert.deepEqual((await missing.json()).error.errors, [{ field: "managerUserId", code: "required" }]);
+
+      // Somebody else's user and nobody at all are one answer.
+      const stranger = await putManager(base, shopId, { managerUserId: "00000000-0000-4000-8000-000000000000" });
+      assert.equal(stranger.status, 404);
+
+      await db.unscoped("UPDATE users SET status = 'suspended' WHERE id = $1", [STAFF_B]);
+      const suspended = await putManager(base, shopId, { managerUserId: STAFF_B });
+      // Appointing them would leave the shop run by an account that cannot sign
+      // in -- §3.2's rule, arrived at from the other direction.
+      assert.equal(suspended.status, 409);
+      assert.equal((await suspended.json()).error.code, "role_not_shop_assignable");
+    });
+  });
+
   test("?status is honoured for an administering scope", async () => {
     await reset();
     await withServer(harness().deps, async (base) => {

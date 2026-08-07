@@ -257,6 +257,109 @@ route(
 );
 
 route(
+  "PUT",
+  "/api/admin/shops/:shopId/manager",
+  {
+    auth: "user",
+    // companyAdmin is the narrowest existing alias that contains the CEO. It also
+    // contains a platform admin acting inside the company, and the handler refuses
+    // that below -- see there for why this is a handler check and not a sixth alias.
+    roles: ["companyAdmin"],
+    params: { shopId: "uuid" },
+    body: { managerUserId: "uuid|null", runByOwner: "boolean?", outgoing: "string?" },
+    audit: "shop.manager_changed",
+    sample: {
+      params: { shopId: "00000000-0000-4000-8000-000000000000" },
+      body: { managerUserId: null, runByOwner: true }
+    }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const shopId = shopIdFrom(req);
+
+    // The platform owner may open a branch and may not staff it. §6 of the console
+    // design is built on their never seeing a person inside a company, and a route
+    // that takes a user id would be the one place that leaked -- "is this id one of
+    // yours?" answered by the difference between 404 and 200.
+    //
+    // A handler check rather than a sixth role alias: this is the only route in the
+    // service that wants "company_admin and not the operator", and the codebase
+    // already answers a one-route role question this way (POST /api/admin/scope
+    // tests session.role in its handler for the mirror-image reason).
+    if (req.core.scope.role === "platform_admin") throw new ApiError(403, "forbidden");
+
+    const body = await readJsonBody(req);
+    const errors = [];
+
+    // REQUIRED and explicitly NULLABLE. {} and {"managerUserId": null} are two
+    // different requests: one is a mistake, the other empties the slot.
+    if (!has(body, "managerUserId")) {
+      errors.push({ field: "managerUserId", code: "required" });
+    } else if (body.managerUserId !== null && !UUID_PATTERN.test(String(body.managerUserId))) {
+      errors.push({ field: "managerUserId", code: "invalid_uuid" });
+    }
+    if (has(body, "runByOwner") && typeof body.runByOwner !== "boolean") {
+      errors.push({ field: "runByOwner", code: "type" });
+    }
+    if (has(body, "outgoing") && !["staff", "suspend"].includes(body.outgoing)) {
+      errors.push({ field: "outgoing", code: "not_in_enum" });
+    }
+    // The invariant 0003 could not write as a CHECK, refused here rather than
+    // silently resolved: a shop is owner-run or it has a manager, never both.
+    if (body.managerUserId != null && body.runByOwner === true) {
+      errors.push({ field: "runByOwner", code: "immutable" });
+    }
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    const result = await withTenantScope(req.core.scope, async () => {
+      const shop = await deps.shops.getShop(req.core.scope, shopId);
+      if (shop === null) return { shop: null };
+
+      if (body.managerUserId !== null) {
+        // Read before write, so "no such person" and "somebody else's person" are
+        // one 404 rather than a foreign-key violation arriving as a 500.
+        const member = await deps.shops.findCompanyMember(req.core.scope, body.managerUserId);
+        if (member === null) return { shop: null };
+        if (member.status !== "active") return { shop: null, refusal: "suspended_candidate" };
+      }
+
+      const outgoing = await deps.shops.getShopManager(req.core.scope, shopId);
+      const updated = await deps.shops.setShopManager(req.core.scope, shopId, {
+        managerUserId: body.managerUserId,
+        runByOwner: body.runByOwner === true,
+        outgoing: body.outgoing === "suspend" ? "suspend" : "staff"
+      });
+      await deps.appendAuditEvent({
+        companyId: req.core.scope.companyId,
+        shopId,
+        actorKind: "user",
+        actorUserId: req.core.session.userId,
+        action: "shop.manager_changed",
+        outcome: "success",
+        targetKind: "shop",
+        targetId: shopId,
+        sourceIp: req.core.clientIp,
+        detail: {
+          managerUserId: body.managerUserId,
+          runByOwner: updated.runByOwner,
+          replacedUserId: outgoing === null ? null : outgoing.id
+        }
+      });
+      return { shop: updated };
+    });
+
+    if (result.refusal === "suspended_candidate") {
+      // A suspended person cannot sign in, so appointing them would leave the shop
+      // being run by an account that cannot reach it -- the same failure §3.2's
+      // suspension rule exists to prevent, arrived at from the other direction.
+      throw new ApiError(409, "role_not_shop_assignable");
+    }
+    if (result.shop === null) throw new ApiError(404, "not_found");
+    sendJson(res, 200, shopDocument(result.shop));
+  }
+);
+
+route(
   "PATCH",
   "/api/admin/shops/:shopId",
   {

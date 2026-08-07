@@ -76,6 +76,9 @@ const AUDIT_ACTIONS = Object.freeze({
   // inside somebody else's company. company_id is the company the branch belongs
   // to, which is what makes "everything done inside this company" a query.
   "shop.created": entry(["user"], ["success"], "shop", ["name", "slug", "timeZone", "tableCount"]),
+  // The CEO's one job on a shop. detail names the three states this route can
+  // leave behind -- a person, the owner, or nobody -- and who was displaced.
+  "shop.manager_changed": entry(["user"], ["success"], "shop", ["managerUserId", "runByOwner", "replacedUserId"]),
   "shop.updated": entry(["user"], ["success"], "shop", ["name", "slug", "status"]),
   // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc
   // requires actor_user_id NOT NULL for 'user' and actor_terminal_id NOT NULL for

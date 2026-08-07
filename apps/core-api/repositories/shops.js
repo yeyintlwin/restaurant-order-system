@@ -230,4 +230,127 @@ async function updateShopDayToDay(scope, shopId, changes) {
   return rows.length === 0 ? null : rows[0];
 }
 
-module.exports = { listShops, getShop, createShop, updateShop, updateShopDayToDay };
+// ---------------------------------------------------------------------------
+// The manager slot
+// ---------------------------------------------------------------------------
+// A shop's manager is NOT a column. It is the user_shops row whose user carries
+// role 'shop_manager' -- which is what lets one person hold two shops (two rows)
+// without anything being stored twice, and what makes "which shops does this
+// person run" a query rather than a field that can go stale.
+//
+// "One manager per shop" is therefore not a database constraint and cannot be:
+// user_shops has no role column, and users.role is a property of the person, not
+// of the assignment. It is an invariant of setShopManager below -- the old
+// assignment is removed in the same transaction as the new one, so the shop is
+// never left holding two.
+
+const FIND_MANAGER = {
+  sql: `
+    SELECT u.id, u.display_name AS "displayName", u.email, u.status
+      FROM user_shops us
+      JOIN users u ON u.id = us.user_id AND u.company_id = us.company_id
+     WHERE us.company_id = $1 AND us.shop_id = $2 AND u.role = 'shop_manager'
+  `,
+  shopScoped: false
+};
+
+// The candidate must already be a member of this company. Reading them first is
+// what turns "no such user" and "somebody else's user" into one 404 instead of a
+// foreign-key violation surfacing as a 500.
+const FIND_MEMBER = {
+  sql: `SELECT id, display_name AS "displayName", role, status FROM users WHERE company_id = $1 AND id = $2`,
+  shopScoped: false
+};
+
+const UNASSIGN = {
+  sql: `DELETE FROM user_shops WHERE company_id = $1 AND shop_id = $2 AND user_id = $3`,
+  shopScoped: false
+};
+
+// company_id is injected by the helper, so it is absent here on purpose.
+const ASSIGN = {
+  sql: `INSERT INTO user_shops (user_id, shop_id) VALUES ($2, $3)`,
+  shopScoped: false
+};
+
+const SET_ROLE = {
+  sql: `UPDATE users SET role = $3 WHERE company_id = $1 AND id = $2 RETURNING id`,
+  shopScoped: false
+};
+
+// sessions_valid_from is bumped with the suspension, or the person keeps working
+// on the session they already hold -- which is the whole point of suspending them.
+const SUSPEND = {
+  sql: `
+    UPDATE users SET status = 'suspended', sessions_valid_from = now()
+     WHERE company_id = $1 AND id = $2 RETURNING id
+  `,
+  shopScoped: false
+};
+
+const SET_RUN_BY_OWNER = {
+  sql: `UPDATE shops SET run_by_owner = $3 WHERE company_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+  shopScoped: false
+};
+
+async function getShopManager(scope, shopId) {
+  const { rows } = await tenantQuery(scope, FIND_MANAGER, [shopId]);
+  return rows.length === 0 ? null : rows[0];
+}
+
+async function findCompanyMember(scope, userId) {
+  const { rows } = await tenantQuery(scope, FIND_MEMBER, [userId]);
+  return rows.length === 0 ? null : rows[0];
+}
+
+/* The one write that changes who runs a shop, and it is one write on purpose.
+ *
+ * §3.1 of the console design: "Split into 'demote the old one' then 'promote the
+ * new one', the shop spends the gap with two managers or none." Everything below
+ * happens inside the caller's transaction, so there is no gap to spend.
+ *
+ * `outgoing` decides what happens to the person being replaced -- "staff" keeps
+ * them at the shop, "suspend" takes their access away. It is ignored when nobody
+ * is being replaced.
+ *
+ * Returns the shop row, so the caller never has to re-read it.
+ */
+async function setShopManager(scope, shopId, { managerUserId, runByOwner, outgoing }) {
+  const current = await getShopManager(scope, shopId);
+
+  if (current !== null && current.id !== managerUserId) {
+    await tenantQuery(scope, UNASSIGN, [shopId, current.id]);
+    if (outgoing === "suspend") {
+      await tenantQuery(scope, SUSPEND, [current.id]);
+    } else {
+      // Demoted rather than removed: they still work here, and every order they
+      // ever took still points at this account.
+      await tenantQuery(scope, SET_ROLE, [current.id, "staff"]);
+    }
+  }
+
+  if (managerUserId !== null && (current === null || current.id !== managerUserId)) {
+    await tenantQuery(scope, SET_ROLE, [managerUserId, "shop_manager"]);
+    await tenantQuery(scope, ASSIGN, [managerUserId, shopId]);
+  }
+
+  // A shop is owner-run or it has a manager, never both. The migration could not
+  // express that -- the manager lives in another table -- so it is enforced here,
+  // where both halves are visible in one transaction.
+  const { rows } = await tenantQuery(scope, SET_RUN_BY_OWNER, [
+    shopId,
+    managerUserId === null ? runByOwner === true : false
+  ]);
+  return rows.length === 0 ? null : rows[0];
+}
+
+module.exports = {
+  listShops,
+  getShop,
+  createShop,
+  updateShop,
+  updateShopDayToDay,
+  getShopManager,
+  findCompanyMember,
+  setShopManager
+};
