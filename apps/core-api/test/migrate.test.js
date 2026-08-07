@@ -101,7 +101,13 @@ async function withSession(database, run) {
 // --- the migration set on disk ---------------------------------------------
 
 test("0001_init.sql is installed verbatim from the design appendix", () => {
-  assert.deepEqual(fs.readdirSync(MIGRATIONS_DIR).sort(), ["0001_init.sql", "0002_identity.sql"]);
+  // Widened in the same commit as the file it counts, which is the whole point of
+  // an equality assertion here: a migration that appears without anyone updating
+  // this line is a migration nobody meant to add.
+  assert.deepEqual(
+    fs.readdirSync(MIGRATIONS_DIR).sort(),
+    ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
+  );
   const text = fs.readFileSync(path.join(MIGRATIONS_DIR, "0001_init.sql"), "utf8");
 
   assert.equal(text.includes("```"), false, "the markdown fence was copied with the SQL");
@@ -185,6 +191,86 @@ test("0002_identity.sql adds the identity schema and locks the ledger", () => {
   // -- an assertion on the raw text would forbid ever writing that explanation.
   // No string literal in this file contains `--`, so the naive strip is exact.
   assert.doesNotMatch(text.replace(/--.*$/gm, ""), /company_id/);
+});
+
+test("0003_admin_console.sql adds the console's columns and constrains them safely", () => {
+  const text = fs.readFileSync(path.join(MIGRATIONS_DIR, "0003_admin_console.sql"), "utf8");
+  const sql = text.replace(/--.*$/gm, "");
+
+  assert.equal(text.includes("\r\n"), false, "0003_admin_console.sql must be stored with LF endings");
+
+  // Same reason as 0002, three times over: this file takes ACCESS EXCLUSIVE on
+  // companies, shops AND users -- every table an authenticated request reads --
+  // and holds all three across two backfills.
+  assert.match(text, /SET LOCAL lock_timeout/);
+  assert.match(text, /SET LOCAL statement_timeout/);
+
+  // Every column the console's design needs, asserted by name. A column silently
+  // dropped from this file would otherwise surface as a 42703 in a route written
+  // weeks later, in a different plan, by somebody reading the design and assuming.
+  for (const [table, column] of [
+    ["companies", "slug"],
+    ["shops", "slug"], ["shops", "address"], ["shops", "currency"], ["shops", "language"],
+    ["shops", "phone"], ["shops", "opening_hours"], ["shops", "receipt_footer"],
+    ["shops", "run_by_owner"],
+    ["users", "phone"], ["users", "language"]
+  ]) {
+    assert.match(
+      sql,
+      new RegExp(`ALTER TABLE ${table}\\s+ADD COLUMN ${column}\\b`),
+      `${table}.${column} is missing`
+    );
+  }
+
+  // The order is the safety property, not a style preference. Each NOT NULL
+  // column is added nullable, backfilled, and only then constrained -- so the
+  // whole file rolls back if a backfill cannot produce a legal value, instead of
+  // failing halfway with three columns added and none populated.
+  for (const column of ["slug", "currency", "language"]) {
+    const added = sql.search(new RegExp(`ADD COLUMN ${column}\\b`));
+    const constrained = sql.search(new RegExp(`ALTER COLUMN ${column}\\s+SET NOT NULL`));
+    assert.ok(added >= 0 && constrained > added,
+      `${column} is constrained before it is added and backfilled`);
+  }
+  assert.ok(
+    sql.search(/UPDATE shops SET currency/) < sql.search(/ALTER COLUMN currency\s+SET NOT NULL/),
+    "currency is set NOT NULL before it is backfilled"
+  );
+  assert.ok(
+    sql.search(/UPDATE companies AS c/) < sql.search(/companies ALTER COLUMN slug\s+SET NOT NULL/),
+    "companies.slug is set NOT NULL before it is backfilled"
+  );
+
+  // One expression forbidding a leading digit, a trailing hyphen, a doubled
+  // hyphen and anything outside [a-z0-9-]. Asserted exactly, because the precise
+  // spelling IS the rule -- and because the console validates against the same
+  // shape, so the two must not be allowed to drift apart quietly.
+  const shape = /\^\[a-z\]\[a-z0-9\]\*\(-\[a-z0-9\]\+\)\*\$/;
+  assert.match(sql, new RegExp(`CONSTRAINT companies_slug_shape[\\s\\S]*?${shape.source}`));
+  assert.match(sql, new RegExp(`CONSTRAINT shops_slug_shape[\\s\\S]*?${shape.source}`));
+
+  // Global for a company, per-company for a shop -- the nesting that makes a
+  // clash impossible rather than merely unlikely.
+  assert.match(sql, /CREATE UNIQUE INDEX companies_slug_key ON companies \(slug\)/);
+  assert.match(sql, /CREATE UNIQUE INDEX shops_company_slug_key ON shops \(company_id, slug\)/);
+
+  // NOT partial on status, unlike the two name indexes beside them. A name is
+  // released when its owner is suspended so the words can be reused; an address
+  // must not be, because the links that point at it outlive the suspension.
+  const slugIndexes = sql.match(/CREATE UNIQUE INDEX \w*slug\w*[\s\S]*?;/g) || [];
+  assert.equal(slugIndexes.length, 2);
+  for (const index of slugIndexes) assert.doesNotMatch(index, /WHERE/);
+
+  // currency and language are backfilled, never DEFAULTed. The next branch may
+  // be in Bangkok, so the API must state both for every shop it opens.
+  assert.doesNotMatch(sql, /ADD COLUMN currency[^;]*DEFAULT/);
+  assert.doesNotMatch(sql, /ADD COLUMN language[^;]*DEFAULT/);
+
+  // users.phone stays nullable on purpose: rows already exist, the production
+  // platform administrator among them, and inventing a number for somebody is
+  // worse than recording that we do not have one.
+  assert.doesNotMatch(sql, /ALTER TABLE users ALTER COLUMN phone\s+SET NOT NULL/);
+  assert.doesNotMatch(sql, /ALTER TABLE users ALTER COLUMN language\s+SET NOT NULL/);
 });
 
 // --- filenames and checksums (no database) ---------------------------------
@@ -355,7 +441,7 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
     await withSession(database, async (session) => {
       const log = collectLog();
       const first = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
-      assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql"]);
+      assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]);
       assert.deepEqual(first.skipped, []);
 
       // ORDER BY is load-bearing now that there is more than one row: the
@@ -364,10 +450,10 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
       const ledger = await database.unscoped(
         "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations ORDER BY filename"
       );
-      assert.equal(ledger.rowCount, 2);
+      assert.equal(ledger.rowCount, 3);
       assert.deepEqual(
         ledger.rows.map((row) => row.filename),
-        ["0001_init.sql", "0002_identity.sql"]
+        ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
       );
       assert.equal(ledger.rows[0].checksum.length, 32);
       assert.ok(ledger.rows[0].duration_ms >= 0);
@@ -375,7 +461,7 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
 
       const second = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
       assert.deepEqual(second.applied, []);
-      assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql"]);
+      assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]);
       const reread = await database.unscoped(
         "SELECT applied_at FROM schema_migrations WHERE filename = '0001_init.sql'"
       );
@@ -391,6 +477,79 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
   });
 });
 
+// The half of 0003 that a fresh apply never exercises. Production already holds
+// companies and shops, so the slug backfill runs against real names -- and a
+// backfill that cannot produce a legal value takes the whole deploy down. Every
+// awkward shape a name can have is seeded here first, ON TOP of 0001 and 0002
+// only, and then 0003 is applied to them.
+test("0003 backfills a legal slug for every existing row", { skip: skipDatabaseTests() }, async () => {
+  await withDatabase("migrate_backfill", async (database) => {
+    const before = makeMigrationsDirectory({
+      "0001_init.sql": fs.readFileSync(path.join(MIGRATIONS_DIR, "0001_init.sql"), "utf8"),
+      "0002_identity.sql": fs.readFileSync(path.join(MIGRATIONS_DIR, "0002_identity.sql"), "utf8")
+    });
+    await withSession(database, async (session) => {
+      await runMigrations(session, { directory: before, log: collectLog() });
+    });
+
+    // Burmese folds to nothing at all; "!!!" folds to nothing either; the two
+    // Sakuras fold to ONE slug and must not both keep it; the long one must be
+    // cut to 24 without leaving a trailing hyphen.
+    await database.unscoped(`INSERT INTO companies (name) VALUES
+      ('Sakura Kitchen'), ('Sakura   Kitchen'), ('Shwe Café'),
+      ('မြန်မာ စားသောက်ဆိုင်'), ('!!!'),
+      ('A Very Long Company Name That Exceeds The Cap Easily')`);
+    const { rows: companies } = await database.unscoped("SELECT id, name FROM companies ORDER BY name");
+    // Distinct NAMES that fold to one slug -- shops_company_name_active_key would
+    // refuse two rows actually called the same thing.
+    await database.unscoped(
+      `INSERT INTO shops (company_id, name, time_zone, business_day_rollover_hour)
+       VALUES ($1, 'Bogyoke!', 'Asia/Yangon', 6), ($1, 'Bogyoke?', 'Asia/Yangon', 6)`,
+      [companies[0].id]
+    );
+
+    await withSession(database, async (session) => {
+      const result = await runMigrations(session, { directory: MIGRATIONS_DIR, log: collectLog() });
+      assert.deepEqual(result.applied, ["0003_admin_console.sql"]);
+    });
+
+    // The CHECK is in the database, so a bad slug would have failed the apply
+    // above. This asserts the shape independently anyway: it is the same rule the
+    // console validates against, and the two drifting apart is the failure this
+    // notices.
+    const shape = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+    const { rows: slugs } = await database.unscoped(
+      "SELECT slug FROM companies UNION ALL SELECT slug FROM shops"
+    );
+    assert.equal(slugs.length, 8);
+    for (const { slug } of slugs) {
+      assert.match(slug, shape, `"${slug}" is not a legal slug`);
+      assert.ok(slug.length >= 2 && slug.length <= 24, `"${slug}" is ${slug.length} characters`);
+    }
+
+    // The two folds that have a right answer rather than merely a legal one.
+    const bySlug = new Map(
+      (await database.unscoped("SELECT name, slug FROM companies")).rows.map((r) => [r.name, r.slug])
+    );
+    assert.equal(bySlug.get("Shwe Café"), "shwe-cafe", "the accent was not folded");
+    assert.equal(
+      bySlug.get("A Very Long Company Name That Exceeds The Cap Easily"),
+      "a-very-long-company-name",
+      "the cap landed on a hyphen or in the wrong place"
+    );
+    // One of the two Sakuras keeps the readable slug and the other does not.
+    // Which one is not specified -- only that they differ.
+    assert.notEqual(bySlug.get("Sakura Kitchen"), bySlug.get("Sakura   Kitchen"));
+
+    // Existing shops are Myanmar shops. Stated once here, and never as a column
+    // DEFAULT: the next branch may be in Bangkok.
+    const { rows: shops } = await database.unscoped(
+      "SELECT DISTINCT currency, language, run_by_owner FROM shops"
+    );
+    assert.deepEqual(shops, [{ currency: "MMK", language: "en", run_by_owner: false }]);
+  });
+});
+
 test("sends each file as ONE string, so dollar-quoted bodies survive", { skip: skipDatabaseTests() }, async () => {
   await withDatabase("migrate_nosplit", async (database) => {
     await withSession(database, async (session) => {
@@ -403,7 +562,7 @@ test("sends each file as ONE string, so dollar-quoted bodies survive", { skip: s
     assert.equal(routine.rowCount, 1, "set_updated_at is missing: the file was split on ';'");
 
     const id = "aaaaaaaa-0000-4000-8000-000000000001";
-    await database.unscoped("INSERT INTO companies (id, name) VALUES ($1, 'Split Regression')", [id]);
+    await database.unscoped("INSERT INTO companies (id, name, slug) VALUES ($1, 'Split Regression', 'split-regression')", [id]);
     const before = await database.unscoped("SELECT updated_at FROM companies WHERE id = $1", [id]);
     await new Promise((resolve) => setTimeout(resolve, 5));
     await database.unscoped("UPDATE companies SET name = 'Split Regression 2' WHERE id = $1", [id]);
@@ -612,7 +771,7 @@ test("node db/migrate.js applies the migration set and exits 0", { skip: skipDat
     const ledger = await database.unscoped("SELECT filename FROM schema_migrations ORDER BY filename");
     assert.deepEqual(
       ledger.rows.map((row) => row.filename),
-      ["0001_init.sql", "0002_identity.sql"]
+      ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
     );
     const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
     assert.equal(probe.rows[0].present, "companies");

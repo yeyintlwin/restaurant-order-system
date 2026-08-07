@@ -192,10 +192,12 @@ async function seedTwoTenant(db) {
   const now = Date.now();
   const pAdmin = IDS.userPlatformAdmin;
 
+  // slug is NOT NULL from 0003 and unique across the PLATFORM, not per status --
+  // company-c keeps its address while suspended, which is what that index is for.
   await insert(db, "companies", [
-    { id: IDS.companyA, name: "Company A", status: "active" },
-    { id: IDS.companyB, name: "Company B", status: "active" },
-    { id: IDS.companyC, name: "Company C", status: "suspended" }
+    { id: IDS.companyA, name: "Company A", slug: "company-a", status: "active" },
+    { id: IDS.companyB, name: "Company B", slug: "company-b", status: "active" },
+    { id: IDS.companyC, name: "Company C", slug: "company-c", status: "suspended" }
   ]);
 
   await insert(db, "users", [
@@ -213,18 +215,28 @@ async function seedTwoTenant(db) {
 
   await db.unscoped("UPDATE companies SET created_by_user_id = $1", [pAdmin]);
 
+  // slug is unique per COMPANY from 0003, and "shop-1" appearing under both A and
+  // B is what proves that: a flat namespace would refuse the second one.
+  // currency and language are NOT NULL with no default -- A runs in Tokyo on yen,
+  // A3 in Yangon on kyat, and one company holding both is the whole reason those
+  // columns are on the shop rather than on the company.
   await insert(db, "shops", [
-    { id: IDS.shopA1, company_id: IDS.companyA, name: "Shop A1", time_zone: "Asia/Tokyo",
-      business_day_rollover_hour: 6, status: "active", created_by_user_id: pAdmin },
-    { id: IDS.shopA2, company_id: IDS.companyA, name: "Shop A2", time_zone: "Asia/Tokyo",
-      business_day_rollover_hour: 6, status: "active", created_by_user_id: pAdmin },
+    { id: IDS.shopA1, company_id: IDS.companyA, name: "Shop A1", slug: "shop-1",
+      time_zone: "Asia/Tokyo", business_day_rollover_hour: 6, currency: "JPY", language: "ja",
+      status: "active", created_by_user_id: pAdmin },
+    { id: IDS.shopA2, company_id: IDS.companyA, name: "Shop A2", slug: "shop-2",
+      time_zone: "Asia/Tokyo", business_day_rollover_hour: 6, currency: "JPY", language: "ja",
+      status: "active", created_by_user_id: pAdmin },
     // Suspended, and still carrying an assignment, a terminal and a live token.
-    { id: IDS.shopA3, company_id: IDS.companyA, name: "Shop A3", time_zone: "Asia/Yangon",
-      business_day_rollover_hour: 4, status: "suspended", created_by_user_id: pAdmin },
-    { id: IDS.shopB1, company_id: IDS.companyB, name: "Shop B1", time_zone: "Asia/Tokyo",
-      business_day_rollover_hour: 6, status: "active", created_by_user_id: pAdmin },
-    { id: IDS.shopC1, company_id: IDS.companyC, name: "Shop C1", time_zone: "Asia/Tokyo",
-      business_day_rollover_hour: 6, status: "active", created_by_user_id: pAdmin }
+    { id: IDS.shopA3, company_id: IDS.companyA, name: "Shop A3", slug: "shop-3",
+      time_zone: "Asia/Yangon", business_day_rollover_hour: 4, currency: "MMK", language: "my",
+      status: "suspended", created_by_user_id: pAdmin },
+    { id: IDS.shopB1, company_id: IDS.companyB, name: "Shop B1", slug: "shop-1",
+      time_zone: "Asia/Tokyo", business_day_rollover_hour: 6, currency: "JPY", language: "ja",
+      status: "active", created_by_user_id: pAdmin },
+    { id: IDS.shopC1, company_id: IDS.companyC, name: "Shop C1", slug: "shop-1",
+      time_zone: "Asia/Tokyo", business_day_rollover_hour: 6, currency: "JPY", language: "ja",
+      status: "active", created_by_user_id: pAdmin }
   ]);
 
   // All labelled '1': shop_tables_shop_label_active_key is per-shop, and this is

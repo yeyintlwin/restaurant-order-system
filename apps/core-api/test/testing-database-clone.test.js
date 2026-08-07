@@ -71,7 +71,14 @@ describe("cloned test database", { skip: skipDatabaseTests() }, () => {
     assert.equal(fn.rows.length, 1);
 
     await db.resetFixtures();
-    await db.unscoped("INSERT INTO companies (id, name) VALUES ($1, $2)", [COMPANY_ID, "Trigger Probe"]);
+    // slug is NOT NULL from 0003. A literal, not something derived from $1: using
+    // one parameter as both a uuid and a text made Postgres refuse to deduce a
+    // single type for it (42P08), which is a confusing way to fail a test about
+    // triggers.
+    await db.unscoped(
+      "INSERT INTO companies (id, name, slug) VALUES ($1, $2, 'trigger-probe')",
+      [COMPANY_ID, "Trigger Probe"]
+    );
     await db.unscoped("UPDATE companies SET name = $2 WHERE id = $1", [COMPANY_ID, "Trigger Probe 2"]);
 
     // Compared inside Postgres, at microsecond resolution: two JS Dates one
@@ -85,7 +92,10 @@ describe("cloned test database", { skip: skipDatabaseTests() }, () => {
 
   test("resetFixtures empties the eleven tenant tables and leaves the ledger alone", async () => {
     await db.resetFixtures();
-    await db.unscoped("INSERT INTO companies (id, name) VALUES ($1, $2)", [COMPANY_ID, "To Be Truncated"]);
+    await db.unscoped(
+      "INSERT INTO companies (id, name, slug) VALUES ($1, $2, 'to-be-truncated')",
+      [COMPANY_ID, "To Be Truncated"]
+    );
 
     await db.resetFixtures();
 

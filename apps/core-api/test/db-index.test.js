@@ -376,13 +376,14 @@ describe("the choke point against a real database", { skip: skipDatabaseTests() 
 
     // Seeded here rather than from testing/fixtures/two-tenant.js: this suite
     // needs only two companies and cares about nothing else the fixture builds.
-    await db.unscoped("INSERT INTO companies (id, name) VALUES ($1, 'Company A'), ($2, 'Company B')", [
+    await db.unscoped("INSERT INTO companies (id, name, slug) VALUES ($1, 'Company A', 'company-a'), ($2, 'Company B', 'company-b')", [
       COMPANY_A,
       COMPANY_B
     ]);
     await db.unscoped(
-      `INSERT INTO shops (id, company_id, name, time_zone, business_day_rollover_hour)
-       VALUES ($1, $3, 'A1', 'Asia/Tokyo', 6), ($2, $4, 'B1', 'Asia/Tokyo', 6)`,
+      `INSERT INTO shops (id, company_id, name, slug, time_zone, business_day_rollover_hour, currency, language)
+       VALUES ($1, $3, 'A1', 'a1', 'Asia/Tokyo', 6, 'JPY', 'ja'),
+              ($2, $4, 'B1', 'b1', 'Asia/Tokyo', 6, 'JPY', 'ja')`,
       [SHOP_A1, SHOP_B1, COMPANY_A, COMPANY_B]
     );
     await db.unscoped(

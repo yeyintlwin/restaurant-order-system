@@ -61,7 +61,18 @@ Without it the database suites **throw** rather than skip, by design. The single
 **Plan 2 was split into four, and two of them are done.** 2a and 2b are complete
 (above). What is left:
 
-- **Plan 2c — Tenant and platform CRUD.** Not written. `/api/platform/companies`
+- **Plan 2c — Tenant and platform CRUD.** Not written, but **its migration has
+  landed ahead of it**: `0003_admin_console.sql` adds the columns the admin
+  console's design needs — `companies.slug`, and on `shops` slug, address,
+  currency, language, phone, opening_hours, receipt_footer and run_by_owner, plus
+  `users.phone` and a nullable `users.language`. Shipped alone on purpose, the way
+  2a shipped `0002`: **no route reads any of it yet**, so the schema reached
+  production and was proved there before anything depended on it. The design is
+  [docs/superpowers/specs/2026-08-06-admin-console-roles-design.md](docs/superpowers/specs/2026-08-06-admin-console-roles-design.md);
+  its §8B lists what the API still owes it, and the largest item is a role that
+  admits a **scoped platform admin but not the company's own admin** — which no
+  alias in §5.4 can currently express.
+  The rest of 2c: `/api/platform/companies`
   and `/api/platform/admins`, `/api/admin/users` and `/api/admin/shops`. It also
   inherits three things Plan 2b deliberately left: the **second half of §6.3.5
   step 10** (per-resource authorization — 2b landed only the static role gate),
