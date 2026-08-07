@@ -247,16 +247,38 @@ describe("the users routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
-  test("a person who reaches nothing is refused before they exist", async () => {
+  test("SOMEBODY CAN BE HIRED BEFORE THERE IS ANYWHERE TO PUT THEM", async () => {
     await reset();
     await withServer(asCeo().deps, async (base) => {
-      const orphan = await post(base, "/api/admin/users", { ...NEW_STAFF, shopIds: [] });
-      assert.equal(orphan.status, 422);
-      // A zero-assignment staff row reaches nothing AND is invisible to every
-      // shop_manager: a person who exists, cannot work, and cannot be found by
-      // the only people who would notice.
-      assert.deepEqual((await orphan.json()).error.errors, [{ field: "shopIds", code: "too_short" }]);
+      // REVERSED. This used to be a 422: a person assigned to no shop reaches
+      // nothing and is invisible to every manager, so the row was refused. Both
+      // halves are still true and neither is a reason to refuse it. A company whose
+      // first branch has not been opened yet still hires people, and a waiter moving
+      // between branches is unplaced for the hour in between. Refusing it does not
+      // prevent the situation -- it stops the situation being written down, which is
+      // the mistake §3.0 already corrected about a manager holding two shops.
+      const empty = await post(base, "/api/admin/users", { ...NEW_STAFF, shopIds: [] });
+      assert.equal(empty.status, 201);
+      assert.deepEqual((await empty.json()).shopIds, []);
 
+      // Absent means the same thing as empty. A console that has no branches to
+      // offer sends no key at all, and should not have to know the difference.
+      const absent = await post(base, "/api/admin/users", {
+        email: "second@example.test", displayName: "Second", phone: "09 42 118 9099", role: "staff"
+      });
+      assert.equal(absent.status, 201);
+      const created = await absent.json();
+      assert.deepEqual(created.shopIds, []);
+
+      // ...and they can be placed afterwards, which is the whole point of allowing
+      // the row: the assignment is a later decision, not a precondition.
+      const placed = await patch(base, `/api/admin/users/${created.id}`, { shopIds: [SHOP_A] });
+      assert.equal(placed.status, 200);
+      assert.deepEqual((await placed.json()).shopIds, [SHOP_A]);
+
+      // What is still required has not moved. A person needs a name, an address, a
+      // number and a role -- the shop was the only one of the five that was a guess
+      // about how the company is organised rather than about the person.
       const missing = await post(base, "/api/admin/users", {});
       assert.deepEqual((await missing.json()).error.errors, [
         { field: "email", code: "required" },
@@ -264,6 +286,39 @@ describe("the users routes", { skip: skipDatabaseTests() }, () => {
         { field: "phone", code: "required" },
         { field: "role", code: "required" }
       ]);
+
+      // And a company_admin still may hold none, which is the opposite refusal and
+      // is unchanged: company-wide means company-wide.
+      const ceoWithShop = await post(base, "/api/admin/users", {
+        email: "third@example.test", displayName: "Third", phone: "09 42 118 9098",
+        role: "company_admin", shopIds: [SHOP_A]
+      });
+      assert.equal(ceoWithShop.status, 422);
+      assert.deepEqual((await ceoWithShop.json()).error.errors, [
+        { field: "shopIds", code: "not_in_enum" }
+      ]);
+    });
+  });
+
+  test("an unplaced person is the CEO's alone until somebody places them", async () => {
+    await reset();
+    let id;
+    await withServer(asCeo().deps, async (base) => {
+      const created = await (await post(base, "/api/admin/users", { ...NEW_STAFF, shopIds: [] })).json();
+      id = created.id;
+      // The CEO sees them: they are in the company, and until they are placed the
+      // CEO is the only person they belong to.
+      const listed = (await (await get(base, "/api/admin/users")).json()).users;
+      assert.ok(listed.some((one) => one.id === id));
+    });
+
+    await withServer(asManager().deps, async (base) => {
+      // No manager does. Containment is "staff at MY shops" and they are at none --
+      // which is the honest answer, not a gap: nobody has been made responsible for
+      // them yet.
+      const listed = (await (await get(base, "/api/admin/users")).json()).users;
+      assert.ok(!listed.some((one) => one.id === id));
+      assert.equal((await get(base, `/api/admin/users/${id}`)).status, 404);
     });
   });
 

@@ -1758,10 +1758,11 @@ export function mountConsole({ api, me, onSignedOut }) {
       if (held.length > 0) $("st-shop").value = held[0];
     }
 
-    // Somebody has to belong to a branch, and a company with none cannot be given
-    // one. Saying so beats a 422 about a control that was visibly empty.
-    const noBranches = offerShop && adding && state.shops.length === 0;
-    $("staff-save").disabled = noBranches;
+    // A company with no branches yet can still hire. The picker has nothing to show,
+    // so it is not shown -- and the limit line below says the placing comes later
+    // rather than leaving an empty control to be puzzled over.
+    const noBranches = offerShop && state.shops.length === 0;
+    if (noBranches) shopField.hidden = true;
 
     $("st-temp-field").hidden = true;
     // say() sets hidden = !text, so nothing ever put this back. A refused "Add staff"
@@ -1782,7 +1783,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("st-limit").textContent = asManager
       ? "Only your CEO can make someone a manager or move them to another shop."
       : noBranches
-        ? "No branches yet. Everybody belongs to a branch, so the platform owner opens one first."
+        ? "No branches yet, so this person is not placed at one. Move them into a branch as soon as there is one."
         : !adding && user.role === "shop_manager"
           ? "Which shops this manager runs is set on the Shops screen, one at a time. They can run more than one."
           : !adding && user.role === "company_admin"
@@ -1802,15 +1803,17 @@ export function mountConsole({ api, me, onSignedOut }) {
       const asManager = state.persona === "manager";
       if (stEditing === null) {
         const shop = asManager ? activeShop() : { id: $("st-shop").value };
-        const result = await send(() =>
-          api.createUser({
-            email: $("st-email").value.trim(),
-            displayName: $("st-name").value.trim(),
-            phone: $("st-phone").value.trim(),
-            role: "staff",
-            shopIds: shop ? [shop.id] : []
-          })
-        );
+        const input = {
+          email: $("st-email").value.trim(),
+          displayName: $("st-name").value.trim(),
+          phone: $("st-phone").value.trim(),
+          role: "staff"
+        };
+        // Absent, not empty, when there is nowhere to put them. The route reads both
+        // the same way; sending the key only when a branch was actually chosen keeps
+        // the body honest about what the person on the screen decided.
+        if (shop && shop.id) input.shopIds = [shop.id];
+        const result = await send(() => api.createUser(input));
         if (!result) return;
         if (result.state !== "ok") {
           say($("st-phone-warn"), describeFailure(result));
@@ -1833,7 +1836,8 @@ export function mountConsole({ api, me, onSignedOut }) {
       };
       // ONLY when the dialog actually offered it. Sending a shop the person never
       // saw is how a two-shop manager lost one of them, and how a company owner got a
-      // 422 they had no way to clear.
+      // 422 they had no way to clear -- and when there are no branches at all, the key
+      // is absent, which the route reads as "not placed yet".
       if (!$("st-shop-field").hidden) changes.shopIds = [$("st-shop").value];
       const result = await send(() => api.updateUser(stEditing.id, changes));
       if (!result) return;

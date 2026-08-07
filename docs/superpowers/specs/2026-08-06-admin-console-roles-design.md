@@ -380,6 +380,32 @@ validation error on a control it cannot focus.
 This sharpens §9.2 rather than answering it: if every person reliably has a phone and not
 every person reliably has an email, the phone is the better sign-in name.
 
+### 4A.5 A branch is not required to hire somebody
+
+**Reversed.** The API refused a staff row with no shop assignment, and §6.2 required at
+least one. The reasoning was sound as far as it went: a person assigned to no branch
+reaches nothing, and is invisible to every manager, because containment is *"staff at MY
+shops"* and they are at none.
+
+Both are still true. Neither is a reason to refuse the row.
+
+A company whose first branch has not been opened yet still hires people — and under the
+old rule the CEO of a brand-new company could not add a single person until the platform
+owner had opened somewhere to put them. A waiter moving between branches is unplaced for
+the hour in between. **Refusing the state does not prevent it; it stops the state being
+written down**, which is the mistake §3.0 already corrected about a manager holding two
+shops.
+
+So an empty list is legal, and so is an absent one. The console with no branches to offer
+hides the picker rather than showing an empty one, and says what happens instead: *"No
+branches yet, so this person is not placed at one. Move them into a branch as soon as
+there is one."* The Staff screen shows them with a dash in the Shop column.
+
+**Who owns them until then: the CEO, and only the CEO.** No manager sees them, and that is
+the honest answer rather than a gap — nobody has been made responsible for them yet. The
+opposite refusal is unchanged: a company_admin may hold no shops at all, because
+company-wide means company-wide.
+
 ## 4B. Looking a record up
 
 A row carries four or five columns. Everything else about a record lives at the top of that

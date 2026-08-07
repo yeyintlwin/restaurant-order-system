@@ -61,19 +61,22 @@ function userIdFrom(req) {
 // zero-assignment tenant user reaches nothing AND is untouchable by any
 // shop_manager" -- a person who exists, cannot work, and cannot be found by the
 // only people who would notice.
-function validateShopIds(value, role, errors, { required }) {
-  if (value === undefined) {
-    if (required && SHOP_ASSIGNABLE_ROLES.includes(role)) {
-      errors.push({ field: "shopIds", code: "required" });
-    }
-    return undefined;
-  }
+// AN EMPTY LIST IS LEGAL, and so is an absent one. §6.2 required at least one shop
+// for staff and for a manager, on the reading that a person who belongs to no branch
+// can do nothing. True, and not a reason to refuse the row: a company whose first
+// branch has not been opened yet still hires people, and a waiter moving between
+// branches is unplaced for the hour in between. Refusing it does not prevent the
+// situation -- it just means the situation cannot be written down, which is the same
+// mistake §3.0 corrected about a manager holding two shops.
+//
+// Nothing downstream breaks. An unassigned person's scope carries no shops, so they
+// reach nothing; they are invisible to every manager, because containment is "staff
+// at MY shops" and they are at none; and only the CEO sees them, which is right,
+// because until somebody places them the CEO is the only person they belong to.
+function validateShopIds(value, role, errors) {
+  if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || !UUID_PATTERN.test(id))) {
     errors.push({ field: "shopIds", code: "invalid_uuid" });
-    return undefined;
-  }
-  if (SHOP_ASSIGNABLE_ROLES.includes(role) && value.length === 0) {
-    errors.push({ field: "shopIds", code: "too_short" });
     return undefined;
   }
   // A company_admin is company-wide; an assignment row for one would be a claim
@@ -162,7 +165,7 @@ route(
     if (language !== undefined && language !== null && !LANGUAGE_PATTERN.test(String(language))) {
       errors.push({ field: "language", code: "pattern" });
     }
-    const shopIds = validateShopIds(has(body, "shopIds") ? body.shopIds : undefined, role, errors, { required: true });
+    const shopIds = validateShopIds(has(body, "shopIds") ? body.shopIds : undefined, role, errors);
     if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
 
     // The lattice, checked before anything is hashed or written. Strictly below,
@@ -322,7 +325,7 @@ route(
       const nextRole = has(body, "role") ? body.role : before.role;
       const nextShopIds = has(body, "shopIds") ? body.shopIds : undefined;
       const shopErrors = [];
-      validateShopIds(nextShopIds, nextRole, shopErrors, { required: has(body, "role") });
+      validateShopIds(nextShopIds, nextRole, shopErrors);
       if (shopErrors.length > 0) throw new ApiError(422, "validation_failed", shopErrors);
 
       const changes = {
