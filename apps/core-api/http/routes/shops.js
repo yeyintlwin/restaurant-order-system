@@ -52,6 +52,12 @@ function shopDocument(row) {
     // Summed from the tables, the way a company's counts are summed from its shops.
     // The console prints it on every branch row and nothing anywhere stores it.
     tableCount: row.tableCount,
+    // Its OWN mark, which almost every branch does not have, and the one it actually
+    // WEARS, which every branch does -- the company's unless this is one of the few
+    // that needs a different one. Resolved on read; a stored copy of the second is
+    // right until somebody changes the company's.
+    logoKey: row.logoKey ?? null,
+    effectiveLogoKey: row.effectiveLogoKey ?? null,
     // THE PERSON WHO RUNS IT, named and reachable. The platform owner fits the
     // branch out -- screens on the tables, printed codes, a terminal that stops
     // pairing -- and the manager is who they ring about it. Making them ask the CEO

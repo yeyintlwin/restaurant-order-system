@@ -285,7 +285,10 @@ async function runPipeline(entry, req, res, deps) {
       assertOriginAndContentType({
         origin: req.headers.origin,
         contentType: req.headers["content-type"],
-        apiPublicOrigin: deps.apiPublicOrigin
+        apiPublicOrigin: deps.apiPublicOrigin,
+        // Declared by the route, defaulting to JSON. Three routes take an image;
+        // everything else says nothing and gets the rule it always had.
+        accepts: entry.method === "DELETE" && entry.options.body === null ? "none" : entry.options.accepts
       });
     } catch (error) {
       sendError(res, error, req.core.requestId);

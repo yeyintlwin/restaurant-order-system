@@ -111,6 +111,39 @@ export function mountConsole({ api, me, onSignedOut }) {
   // A platform admin reaches into a company for exactly one write and comes back.
   // The finally is the whole point: a throw halfway through must not leave them
   // scoped into somebody else's company with a platform owner's menu.
+  // THE MIRROR OF insideCompany, and it exists for the same reason in reverse.
+  //
+  // A platform admin who has stepped INTO a company holds a tenant scope, and a tenant
+  // scope cannot ask a question about every tenant -- the platform seam refuses it by
+  // design. Logos are exactly such a question: the file is named after the hash of its
+  // bytes, so two companies that picked the same picture share one file, and "may this
+  // one be deleted" spans all of them.
+  //
+  // So the operator steps out for the upload and steps straight back in. The platform
+  // owner is already outside and this is a no-op for them.
+  function asPlatform(run) {
+    if (state.persona !== "operator") return run();
+    const companyId = state.me.scope.companyId;
+    // The SAME queue as insideCompany. Two scope changes in flight at once would land
+    // the session wherever the slower one finished.
+    const mine = borrowQueue.then(() => stepOutOnce(companyId, run));
+    borrowQueue = mine.then(() => {}, () => {});
+    return mine;
+  }
+
+  async function stepOutOnce(companyId, run) {
+    const left = await send(() => api.selectScope(null));
+    if (left === null) return null;
+    if (left.state !== "ok") return left;
+    try {
+      return await run();
+    } finally {
+      // Back in even if the upload threw. Leaving an operator standing outside their
+      // own company would empty every screen behind the dialog.
+      await api.selectScope(companyId);
+    }
+  }
+
   async function borrowOnce(companyId, run) {
     const entered = await send(() => api.selectScope(companyId));
     if (entered === null) return null;
@@ -248,12 +281,17 @@ export function mountConsole({ api, me, onSignedOut }) {
       $("scope-sh").textContent = "Platform";
       $("scope-sh").hidden = false;
       scopeShopWrap.hidden = true;
+      // They are standing in no company, so there is no mark to wear.
+      $("scope-av").hidden = true;
       return;
     }
 
     // From /me, not from the Companies list: a CEO can never read that list, and
     // for a platform admin the two are the same company anyway.
-    $("scope-co").textContent = state.me.company ? state.me.company.name : "";
+    const company = state.me.company;
+    $("scope-co").textContent = company ? company.name : "";
+    paintMark($("scope-av"), company && company.logoKey, initials(company ? company.name : ""));
+    $("scope-av").hidden = false;
 
     // §3.0.1: two shops is a SWITCH, not a bigger screen. One shop and the line
     // simply names it; two and it becomes the control that says which one every
@@ -469,6 +507,145 @@ export function mountConsole({ api, me, onSignedOut }) {
     fading.set(element, setTimeout(() => say(element, ""), 4000));
   }
 
+  // ---- logos ---------------------------------------------------------------
+  //
+  // ONE picker, wired twice: a company's mark and a branch's are the same control
+  // with different consequences. The upload happens when the dialog is SAVED rather
+  // than when the file is chosen, because until then the record may not exist -- a
+  // company is created by the same Save that would carry its first logo.
+  //
+  // So the picker holds a File and paints a preview from it; `uploadLogo` is what the
+  // save path calls once it has an id to attach it to.
+
+  // The chosen-but-not-yet-sent file, per dialog. Cleared on open, and cleared again
+  // once it has been sent -- a stale File here would re-upload on the next Save of a
+  // dialog that was only meant to fix a name.
+  const pendingLogo = { co: null, sh: null };
+
+  // The blob: URL of the file being previewed. It pins the bytes in memory until it is
+  // revoked, and a picker that is opened, changed and closed all day would hold every
+  // picture ever chosen. One live URL per dialog, released before the next.
+  const previewUrl = { co: null, sh: null };
+
+  function showChosenFile(prefix, chosen) {
+    if (previewUrl[prefix]) URL.revokeObjectURL(previewUrl[prefix]);
+    previewUrl[prefix] = URL.createObjectURL(chosen);
+    paintLogoPreview(prefix, previewUrl[prefix]);
+  }
+
+  function dropChosenFile(prefix) {
+    if (!previewUrl[prefix]) return;
+    URL.revokeObjectURL(previewUrl[prefix]);
+    previewUrl[prefix] = null;
+  }
+
+  function wireLogoPicker(prefix) {
+    const file = $(`${prefix}-logo-file`);
+    $(`${prefix}-logo-btn`).addEventListener("click", () => file.click());
+    file.addEventListener("change", () => {
+      const chosen = file.files && file.files[0];
+      if (!chosen) return;
+      // Refused HERE as well as by the route. The route is the rule; this is so
+      // somebody who picked a 6 MB photograph finds out before they press Save and
+      // wait for it to upload.
+      if (chosen.size > 2 * 1024 * 1024) {
+        say($(`${prefix}-logo-warn`), "That picture is larger than 2 MB. Try a smaller one.");
+        file.value = "";
+        return;
+      }
+      say($(`${prefix}-logo-warn`), "");
+      pendingLogo[prefix] = chosen;
+      showChosenFile(prefix, chosen);
+      // Only a branch has a way back, and picking a file is what gives it something to
+      // go back FROM. The company dialog has no such button: see the note beside it.
+      if (prefix === "sh") $("sh-logo-clear").hidden = false;
+    });
+  }
+
+  // A mark inside an avatar circle, falling back to initials -- the same circle a
+  // person gets, because in a list of rows a company and a person are the same shape.
+  // Decorative: the name is always right beside it, so an alt text would be read out
+  // twice.
+  function paintMark(box, key, fallbackText) {
+    const url = api.logoUrl(key || null);
+    box.textContent = "";
+    box.classList.toggle("has-image", Boolean(url));
+    if (!url) {
+      box.textContent = fallbackText || "";
+      return;
+    }
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = "";
+    box.append(image);
+  }
+
+  // The dialog preview, which also has to show a file that has not been uploaded yet
+  // and therefore has a blob: URL rather than a key.
+  function paintLogoPreview(prefix, url, fallbackText) {
+    const box = $(`${prefix}-logo-preview`);
+    box.textContent = "";
+    box.classList.toggle("has-image", Boolean(url));
+    if (url) {
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = "";
+      box.append(image);
+      return;
+    }
+    box.textContent = fallbackText || "";
+  }
+
+  // Called by the save path, once there is an id. Returns true when there was nothing
+  // to do OR it worked, so the caller can carry on; false means it was refused and
+  // the reason is already on the dialog.
+  async function uploadLogo(prefix, id) {
+    const chosen = pendingLogo[prefix];
+    if (!chosen) return true;
+    const result = await asPlatform(() =>
+      send(() => (prefix === "co" ? api.putCompanyLogo(id, chosen) : api.putShopLogo(id, chosen)))
+    );
+    if (!result || result.state !== "ok") {
+      say($(`${prefix}-logo-warn`), result ? describeFailure(result) : "");
+      return false;
+    }
+    pendingLogo[prefix] = null;
+    return true;
+  }
+
+  wireLogoPicker("co");
+  wireLogoPicker("sh");
+
+  // A branch going back to the company's mark is a real action, and it happens
+  // immediately rather than on Save: it is the only control here that takes something
+  // away, and it should not be possible to do it by accident and then not notice.
+  $("sh-logo-clear").addEventListener("click", async () => {
+    pendingLogo.sh = null;
+    dropChosenFile("sh");
+    if (!shEditing || !shEditing.logoKey) {
+      // Nothing stored yet -- they are just undoing the file they picked a moment ago.
+      paintLogoPreview("sh", api.logoUrl(shopCompanyLogoKey()), "");
+      $("sh-logo-clear").hidden = true;
+      return;
+    }
+    const result = await asPlatform(() => send(() => api.clearShopLogo(shEditing.id)));
+    if (!result || result.state !== "ok") {
+      say($("sh-logo-warn"), result ? describeFailure(result) : "");
+      return;
+    }
+    shEditing.logoKey = null;
+    paintLogoPreview("sh", api.logoUrl(shopCompanyLogoKey()), "");
+    $("sh-logo-clear").hidden = true;
+    await refresh(state.screen);
+  });
+
+  // What this branch falls back to. The company's, read from whichever list the
+  // current persona is allowed to hold.
+  function shopCompanyLogoKey() {
+    const company = shopDialogCompany();
+    return company ? company.logoKey : null;
+  }
+
   // ---- Companies (the platform owner's only list) -------------------------
 
   function paintCompanies() {
@@ -488,6 +665,7 @@ export function mountConsole({ api, me, onSignedOut }) {
           ? twoLine(company.ceo.displayName, company.ceo.email, "CEO")
           : cell("No CEO yet", { label: "CEO", className: "gap" })
       );
+      if (!company.logoKey) row.classList.add("no-logo");
       row.append(cell(String(company.shopCount), { label: "Shops" }));
       row.append(cell(String(company.tableCount), { label: "Tables" }));
       row.append(
@@ -529,6 +707,8 @@ export function mountConsole({ api, me, onSignedOut }) {
   // to be reachable from a keyboard.
   function discloseCell(company) {
     const td = whoCell(company.name, company.slug);
+    // The mark itself, in place of the initials.
+    paintMark(td.querySelector(".av"), company.logoKey, initials(company.name));
     const disc = document.createElement("button");
     disc.type = "button";
     disc.className = "disc";
@@ -596,6 +776,7 @@ export function mountConsole({ api, me, onSignedOut }) {
         text: [contactFor(shop, company), shop.address, `${shop.tableCount} tables`]
           .filter(Boolean)
           .join("  ·  "),
+        logoKey: shop.effectiveLogoKey,
         onOpen: () => openShopDialog(shop, { companyId: company.id })
       });
     }
@@ -626,13 +807,23 @@ export function mountConsole({ api, me, onSignedOut }) {
     return `${slot.label} — ${standIn}`;
   }
 
-  function appendTwig(after, { name, text, onOpen }) {
+  function appendTwig(after, { name, text, onOpen, logoKey }) {
     const tr = document.createElement("tr");
     tr.className = "sub";
     const td = document.createElement("td");
     td.colSpan = 6;
     const twig = document.createElement("div");
     twig.className = "twig";
+
+    // The EFFECTIVE mark: its own if it has one, otherwise the company's. Which is
+    // the whole point of the branch logo -- the platform owner needs to see, at a
+    // glance down the list, which branches wear something different.
+    if (logoKey !== undefined) {
+      const mark = document.createElement("span");
+      mark.className = "av sm";
+      paintMark(mark, logoKey, "");
+      twig.append(mark);
+    }
 
     const label = document.createElement("span");
     label.className = "twig-name";
@@ -744,7 +935,12 @@ export function mountConsole({ api, me, onSignedOut }) {
       const manager = managerOf(shop);
       const slot = managerState(shop, manager);
       const row = document.createElement("tr");
-      row.append(whoCell(shop.name, shop.address || shop.slug));
+      // The mark this branch actually wears: its own if it has one, the company's
+      // otherwise. Not a flag when it is missing, unlike a company -- a branch with
+      // no mark of its own is the normal case, not an unfinished one.
+      const who = whoCell(shop.name, shop.address || shop.slug);
+      paintMark(who.querySelector(".av"), shop.effectiveLogoKey, initials(shop.name));
+      row.append(who);
       row.append(
         slot.kind === "person"
           ? twoLine(slot.label, slot.detail, "Manager")
@@ -1134,6 +1330,12 @@ export function mountConsole({ api, me, onSignedOut }) {
     // named, with the two things that can be done to them from out here.
     coReplacing = false;
     coFixingCeo = false;
+    // A File chosen for the LAST company must not ride along into this one.
+    pendingLogo.co = null;
+    dropChosenFile("co");
+    say($("co-logo-warn"), "");
+    $("co-logo-file").value = "";
+    paintLogoPreview("co", company && api.logoUrl(company.logoKey), initials(company ? company.name : "?"));
     unfinish("co-dialog");
     // AFTER unfinish, which puts every block back. Hiding it earlier was undone.
     $("co-status-box").hidden = !company;
@@ -1241,6 +1443,10 @@ export function mountConsole({ api, me, onSignedOut }) {
           say($("co-slug-warn"), describeFailure(result));
           return;
         }
+        // Replacing the mark takes the old file off the disk, unless another company
+        // is still wearing the same picture. The server decides that, because only
+        // the server can see every company.
+        if (!(await uploadLogo("co", coEditing.id))) return;
 
         // Correcting the sitting CEO is a PATCH, not an appointment. Asked second
         // for the same reason as an appointment: a refusal here must not undo the
@@ -1277,12 +1483,27 @@ export function mountConsole({ api, me, onSignedOut }) {
         return;
       }
 
+      // §4E: a company's mark is REQUIRED. Checked here rather than in the database
+      // because it cannot be a NOT NULL column -- the row has to exist before a file
+      // can be attached to it -- and the platform owner is the only person who can
+      // create a company at all.
+      if (!pendingLogo.co) {
+        say($("co-logo-warn"), "A company needs a logo. Choose a picture.");
+        return;
+      }
+
       const created = await send(() => api.createCompany({ name, slug }));
       if (!created) return;
       if (created.state !== "ok") {
         say($("co-slug-warn"), describeFailure(created));
         return;
       }
+
+      // The mark, now that there is an id to attach it to. A company is REQUIRED to
+      // have one, and this is the first moment it can: a file cannot be attached to a
+      // row that does not exist. If it is refused the company still exists and the
+      // Companies row says "No logo yet", which is the same shape as no CEO.
+      await uploadLogo("co", created.data.id);
 
       // Two writes, and the second can fail on its own. That is not hidden: the
       // company exists, the Companies row says "No CEO yet", and the same dialog
@@ -1592,6 +1813,21 @@ export function mountConsole({ api, me, onSignedOut }) {
     // Hiding the group left the previous shop's choice checked, so a CEO who once
     // said "they have left" suspended the next departing manager without being asked
     // -- and one "keep them" quietly kept every later one active.
+    // ITS OWN if it has one, otherwise the company's -- which is what it is actually
+    // wearing, and what the preview should show. The Use-the-company's button only
+    // appears when there is something of its own to take away.
+    pendingLogo.sh = null;
+    dropChosenFile("sh");
+    say($("sh-logo-warn"), "");
+    $("sh-logo-file").value = "";
+    $("sh-logo-field").hidden = !owner;
+    $("sh-logo-clear").hidden = !(owner && !opening && shop.logoKey);
+    paintLogoPreview(
+      "sh",
+      api.logoUrl(opening ? shopCompanyLogoKey() : shop.effectiveLogoKey),
+      ""
+    );
+
     $("handover").hidden = true;
     for (const radio of all('input[name="handover"]', shopDialog)) {
       radio.checked = radio.value === "staff";
@@ -1689,6 +1925,10 @@ export function mountConsole({ api, me, onSignedOut }) {
       say($("sh-country-warn"), describeFailure(result));
       return;
     }
+    // Only if one was chosen: almost no branch has its own, and the ones that do are
+    // the exception this control exists for.
+    await uploadLogo("sh", result.data.id);
+
     closeModal(shopDialog);
     confirm($(state.screen === "companies" ? "co-done" : "shop-done"), "Branch opened.");
     await refresh(state.screen);
@@ -1731,6 +1971,8 @@ export function mountConsole({ api, me, onSignedOut }) {
         say($("sh-slug-warn"), describeFailure(result));
         return;
       }
+      if (!(await uploadLogo("sh", shEditing.id))) return;
+
       closeModal(shopDialog);
       confirm($(state.screen === "companies" ? "co-done" : "shop-done"), "Saved.");
       const reopen = shopDialog.dataset.companyId;

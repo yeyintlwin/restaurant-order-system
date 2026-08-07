@@ -106,7 +106,7 @@ test("0001_init.sql is installed verbatim from the design appendix", () => {
   // this line is a migration nobody meant to add.
   assert.deepEqual(
     fs.readdirSync(MIGRATIONS_DIR).sort(),
-    ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
+    ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql", "0004_logos.sql"]
   );
   const text = fs.readFileSync(path.join(MIGRATIONS_DIR, "0001_init.sql"), "utf8");
 
@@ -441,7 +441,7 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
     await withSession(database, async (session) => {
       const log = collectLog();
       const first = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
-      assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]);
+      assert.deepEqual(first.applied, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql", "0004_logos.sql"]);
       assert.deepEqual(first.skipped, []);
 
       // ORDER BY is load-bearing now that there is more than one row: the
@@ -450,10 +450,10 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
       const ledger = await database.unscoped(
         "SELECT filename, checksum, applied_at, duration_ms FROM schema_migrations ORDER BY filename"
       );
-      assert.equal(ledger.rowCount, 3);
+      assert.equal(ledger.rowCount, 4);
       assert.deepEqual(
         ledger.rows.map((row) => row.filename),
-        ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
+        ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql", "0004_logos.sql"]
       );
       assert.equal(ledger.rows[0].checksum.length, 32);
       assert.ok(ledger.rows[0].duration_ms >= 0);
@@ -461,7 +461,7 @@ test("applies the migration set once and re-runs as a no-op", { skip: skipDataba
 
       const second = await runMigrations(session, { directory: MIGRATIONS_DIR, log });
       assert.deepEqual(second.applied, []);
-      assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]);
+      assert.deepEqual(second.skipped, ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql", "0004_logos.sql"]);
       const reread = await database.unscoped(
         "SELECT applied_at FROM schema_migrations WHERE filename = '0001_init.sql'"
       );
@@ -510,7 +510,9 @@ test("0003 backfills a legal slug for every existing row", { skip: skipDatabaseT
 
     await withSession(database, async (session) => {
       const result = await runMigrations(session, { directory: MIGRATIONS_DIR, log: collectLog() });
-      assert.deepEqual(result.applied, ["0003_admin_console.sql"]);
+      // Both of the migrations that were pending: this test starts from a 0002
+      // database, so 0004 rides along behind the one it is about.
+      assert.deepEqual(result.applied, ["0003_admin_console.sql", "0004_logos.sql"]);
     });
 
     // The CHECK is in the database, so a bad slug would have failed the apply
@@ -771,7 +773,7 @@ test("node db/migrate.js applies the migration set and exits 0", { skip: skipDat
     const ledger = await database.unscoped("SELECT filename FROM schema_migrations ORDER BY filename");
     assert.deepEqual(
       ledger.rows.map((row) => row.filename),
-      ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql"]
+      ["0001_init.sql", "0002_identity.sql", "0003_admin_console.sql", "0004_logos.sql"]
     );
     const probe = await database.unscoped("SELECT to_regclass('public.companies') AS present");
     assert.equal(probe.rows[0].present, "companies");

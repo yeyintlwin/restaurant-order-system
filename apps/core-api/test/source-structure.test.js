@@ -603,11 +603,11 @@ const CROSS_TENANT_NEEDLE = rule(
   "// await dangerously" + "QueryAcrossTenants(scope, sql, params);"
 );
 
-test("C6: the platform exempt zone is budgeted at exactly twelve functions", () => {
+test("C6: the platform exempt zone is budgeted at exactly seventeen functions", () => {
   // Asserted unconditionally: the literal IS the budget, and it must stay sorted
   // and duplicate-free whether or not the modules exist yet.
-  assert.equal(PLATFORM_EXPORTS.length, 12);
-  assert.equal(new Set(PLATFORM_EXPORTS).size, 12);
+  assert.equal(PLATFORM_EXPORTS.length, 17);
+  assert.equal(new Set(PLATFORM_EXPORTS).size, 17);
   assert.deepEqual(PLATFORM_EXPORTS, [...PLATFORM_EXPORTS].sort());
 });
 
@@ -755,7 +755,15 @@ const PLATFORM_EXPORTS = [
   "createPlatformAdmin",
   "dangerouslyQueryAcrossTenants",
   "getCompany",
+  // The five that attach a mark to a record and take the old file off the disk.
+  // They are cross-tenant for one reason said twice: a logo key is the hash of the
+  // file, so the same picture used by two companies is ONE file -- which makes
+  // "is this still needed" a question about every company and every shop, and
+  // makes a tenant-scoped answer to it a way to delete another company mark.
+  "getCompanyLogo",
   "getPlatformAdmin",
+  "getShopLogo",
+  "isReferenced",
   "listCompanies",
   // The contact directory's platform half: every company's CEO and every shop's
   // manager, in one list, which is a shape that has no company_id in it by
@@ -765,6 +773,8 @@ const PLATFORM_EXPORTS = [
   "listContactsAcrossTenants",
   "listPlatformAdmins",
   "resetPlatformAdminPassword",
+  "setCompanyLogo",
+  "setShopLogo",
   "updateCompany",
   "updatePlatformAdmin"
 ];

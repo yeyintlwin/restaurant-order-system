@@ -71,7 +71,10 @@ const RESOLVE_SESSION = `
          -- company anywhere in the console: there is no route that hands a tenant
          -- user their company row, and the platform one is not theirs to call.
          COALESCE(acting.name, own.name) AS "companyName",
-         COALESCE(acting.slug, own.slug) AS "companySlug"
+         COALESCE(acting.slug, own.slug) AS "companySlug",
+         -- The company's mark, on the same terms as its name: the rail prints it,
+         -- and a CEO has no other route that would hand it to them.
+         COALESCE(acting.logo_key, own.logo_key) AS "companyLogoKey"
     FROM user_sessions s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN companies own    ON own.id = u.company_id

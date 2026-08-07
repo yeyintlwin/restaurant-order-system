@@ -78,7 +78,6 @@ test("assertPlatformStatement refuses a write to a tenant table", () => {
   // already sees; one that can WRITE widely edits another company's rows with no
   // company_id anywhere in the statement.
   for (const sql of [
-    "UPDATE shops SET name = $1 WHERE id = $2",
     "DELETE FROM shop_tables WHERE id = $1",
     "INSERT INTO user_shops (user_id, shop_id, company_id) VALUES ($1, $2, $3)",
     "insert into terminals (id) values ($1)"
@@ -87,12 +86,15 @@ test("assertPlatformStatement refuses a write to a tenant table", () => {
   }
 });
 
-test("assertPlatformStatement allows writes to the three platform-owned tables", () => {
+test("assertPlatformStatement allows writes to the four platform-owned tables", () => {
   for (const sql of [
     "INSERT INTO companies (name, slug) VALUES ($1, $2)",
     "UPDATE companies SET status = $1 WHERE id = $2",
     "UPDATE users SET status = $1 WHERE id = $2",
     "INSERT INTO audit_events (action) VALUES ($1)",
+    // The fourth table, and the one column it is here for. A branch's mark is set
+    // from a screen where the platform owner is inside no company at all.
+    "UPDATE shops SET logo_key = $1 WHERE id = $2",
     // Schema-qualified and quoted are ordinary ways to write an ordinary
     // statement. The first version of the guard refused both, and a guard that
     // refuses legitimate SQL teaches people to route around it.
@@ -109,7 +111,7 @@ test("assertPlatformStatement refuses a write hidden in a common table expressio
   // only the leading verb, and a write to a tenant table to Postgres -- through the
   // one hatch that is allowed to ignore company_id.
   for (const sql of [
-    "WITH x AS (SELECT 1) UPDATE shops SET name = $1",
+    "WITH x AS (SELECT 1) UPDATE shop_tables SET label = $1",
     "WITH d AS (DELETE FROM shop_tables RETURNING id) SELECT * FROM d",
     "WITH n AS (INSERT INTO user_shops (user_id) VALUES ($1) RETURNING 1) SELECT * FROM n",
     // A legal platform write in the outer statement does not license a tenant

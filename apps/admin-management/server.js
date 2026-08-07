@@ -22,8 +22,14 @@ const SECURITY_HEADERS = Object.freeze({
   // No inline script, no external anything. 'self' covers /app.js and /api.js;
   // connect-src 'self' covers the proxied /api calls. If a later screen needs an
   // inline script, add a hash -- never 'unsafe-inline'.
+  //
+  // blob: is on img-src for ONE thing: showing somebody the logo they just picked,
+  // before it has been uploaded and therefore before it has a URL. A blob: URL can
+  // only be minted by this page's own script from bytes it already holds, so it
+  // reaches nothing 'self' does not -- which is why it is here and not on any other
+  // directive.
   "Content-Security-Policy":
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
 });
 
 const CONTENT_TYPES = Object.freeze({

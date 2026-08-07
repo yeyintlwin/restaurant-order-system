@@ -10,7 +10,11 @@ const CONFIG = Object.freeze({
   databaseMigrationUrl: "postgres://core_api_owner:owner-secret@127.0.0.1:5433/core",
   databaseAppPassword: "app-secret",
   dbPoolMax: 12,
-  scryptSlots: 2
+  scryptSlots: 2,
+  // The logo directory is part of the configuration a real start() reads, and
+  // createLogoStore refuses an empty one -- on purpose, so a service that would
+  // write files nowhere fails at boot rather than on the first upload.
+  logoRoot: "/tmp/core-api-logos-bootstrap-test"
 });
 
 // A stand-in for the pool checkout. Recording its identity is how the test pins runMigrations'

@@ -187,6 +187,68 @@ test("the stylesheet uses the house palette rather than inventing one", () => {
   assert.match(css, /Inter/);
 });
 
+test("a logo is chosen by a real file input, and only the kinds the server keeps", () => {
+  const html = read("index.html");
+
+  // Both dialogs, the same control. A company MUST have one; a branch may.
+  for (const prefix of ["co", "sh"]) {
+    assert.match(html, new RegExp(`id="${prefix}-logo-file"`));
+    assert.match(html, new RegExp(`id="${prefix}-logo-preview"`));
+    assert.match(html, new RegExp(`id="${prefix}-logo-btn"`));
+    assert.match(html, new RegExp(`id="${prefix}-logo-warn"`));
+  }
+
+  // The accept list is the storage layer's sniffer, spelled for the file picker.
+  // SVG is absent from both on purpose: it is a document that can carry script.
+  const accepts = html.match(/accept="[^"]*"/g) || [];
+  assert.equal(accepts.length, 2);
+  for (const value of accepts) {
+    assert.equal(value, 'accept="image/png,image/jpeg,image/webp"');
+  }
+  assert.doesNotMatch(html, /svg/i);
+});
+
+test("only a branch can go back to the company's mark", () => {
+  const html = read("index.html");
+
+  // A branch with no logo of its own wears the company's, so taking its own away is
+  // a real thing to want. A company has nothing to fall back TO, so the same button
+  // must not exist on that dialog -- §4E says a company always has one.
+  assert.match(html, /id="sh-logo-clear"/);
+  assert.doesNotMatch(html, /id="co-logo-clear"/);
+});
+
+test("a picture is never sent to a record that does not exist yet", () => {
+  const js = read("console.js");
+
+  // A company is CREATED by the same Save that carries its first logo, so the upload
+  // cannot happen when the file is picked -- there is no id to attach it to. The
+  // picker holds the File and the save path sends it.
+  assert.match(js, /const pendingLogo = \{ co: null, sh: null \}/);
+  assert.match(js, /await uploadLogo\("co", created\.data\.id\)/);
+  assert.match(js, /await uploadLogo\("sh", result\.data\.id\)/);
+});
+
+test("a company cannot be created without a mark", () => {
+  const js = read("console.js");
+
+  // It cannot be a NOT NULL column -- the row has to exist before a file can be
+  // attached to it -- so this is the only place the rule can live, and it has to
+  // refuse BEFORE the company is created rather than complain afterwards.
+  const create = js.slice(js.indexOf("if (!pendingLogo.co)"), js.indexOf("api.createCompany({ name, slug })"));
+  assert.ok(create.length > 0 && create.length < 700, "the check must sit immediately before the create");
+  assert.match(create, /A company needs a logo/);
+});
+
+test("a branch row shows the mark it actually wears, not only its own", () => {
+  const js = read("console.js");
+
+  // effectiveLogoKey, not logoKey: a branch with none of its own wears the company's,
+  // and the list exists so the platform owner can see which ones differ.
+  assert.match(js, /logoKey: shop\.effectiveLogoKey/);
+  assert.doesNotMatch(js, /logoKey: shop\.logoKey/);
+});
+
 test("the repository test script runs this app's suite", () => {
   // Without this line the suite exists and nothing runs it -- not locally, not in
   // the deploy gate. Same reasoning as source-structure.test.js's C11.

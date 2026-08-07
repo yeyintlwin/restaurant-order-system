@@ -1001,6 +1001,90 @@ It would have filled the screen, but it invents a fallback nobody asked for and 
 be right for Japan, Thailand and Myanmar at once. The screen admits it is empty instead, the
 same way the Dashboard does.
 
+## 4E. Logos — a company must have one, a branch may
+
+The platform owner sets the company's mark, and it is **required**. A branch's is
+**optional**, and a branch without one wears its company's.
+
+### 4E.1 Why a branch gets its own at all
+
+Because the same company is not always allowed the same name. The developer's example:
+Logic Tech cannot trade under that mark in Japan. A branch in a country that refuses the
+company's name needs a different one on its receipts and its table screens, and that is a
+fact about the country, not a preference of the shop.
+
+So the branch logo sits beside the other things §7A already says the branch owns by
+country — its time zone, its currency, its language — and it is set by the same person, the
+platform owner, for the same reason: it is not frequently changed, and a mis-click reaches
+into a company from outside it.
+
+The **effective** mark is the branch's own if it has one and the company's otherwise. Every
+screen draws the effective mark, never the raw one, so what a row shows is what that branch
+actually wears.
+
+### 4E.2 A company with no mark is incomplete, the same way a company with no CEO is
+
+Required, but it cannot be a NOT NULL column: the row has to exist before a file can be
+attached to it, so the first logo is uploaded immediately after the company is created.
+The rule therefore lives in the console, which refuses to create a company without one, and
+the Companies list flags any company that has none — amber, on the circle where the picture
+would be. That is the same shape as "No CEO yet": a row that is not finished says so.
+
+A branch is the opposite case. Having no mark of its own is the **normal** state, not an
+unfinished one, so nothing is flagged and there is no warning anywhere.
+
+### 4E.3 The file is named after its own bytes
+
+A stored logo's key is `sha256(bytes).ext`. Three things follow, and all three are the
+reason for the choice:
+
+- **Two companies that upload the same picture share one file.** No copy, no comparison.
+- **"Is this still used?" is an exact question** — does any company or shop still carry
+  this key — rather than a guess about who might be pointing at it.
+- **A key cannot be forged into something else.** It is 64 hex characters and an extension,
+  checked by a database domain, so a key from a request body cannot name a path.
+
+Deleting is what the developer asked for: *when a picture is no longer used anywhere, do not
+keep it on the server; when a logo is replaced, delete the old one.* So on every replace the
+new key is committed **first**, then the old one is asked about across every company and
+every shop, and only then removed. The order matters: delete-then-write has a window where
+a record points at a file that is gone. This way the worst case is a file nobody references,
+which the next upload of the same picture simply reuses.
+
+The reference check spans all tenants because the key does. A check scoped to one company
+would delete another company's mark the moment they happened to choose the same picture.
+
+### 4E.4 What is accepted, and what is not
+
+PNG, JPEG and WebP, up to 2 MB, recognised by their **magic bytes** rather than by the
+filename or the declared type. SVG is deliberately excluded from both the sniffer and the
+file picker: it is a document that can carry script, and this one is served back to
+browsers.
+
+The upload is a **raw body**, not multipart — a logo is one file with no fields beside it,
+and multipart would be a parser to write and a parser to get wrong. The Origin gate that
+normally insists on `application/json` accepts `image/png` here for the same reason it
+insists on JSON elsewhere: an HTML form cannot send either, so a cross-site form post still
+cannot reach it.
+
+### 4E.5 Where the files live
+
+A Docker named volume, `core-api-logos`, mounted at `/var/lib/core-api/logos`, so the
+pictures survive a container rebuild. `GET /api/logos/:key` serves them and is public and
+immutably cacheable — the key is the hash, so the bytes behind a key never change.
+
+### 4E.6 An operator has to step outside to set one
+
+Logos are on the platform seam, because the reference count spans every tenant and a tenant
+scope cannot ask a question about all of them.
+
+A platform admin who has **selected a company** holds a tenant scope, so they cannot reach
+the logo routes from where they are standing. The console handles it the way it already
+handles the reverse: the platform owner borrows a company's scope to write inside it
+(`insideCompany`), and an operator releases theirs for the upload and takes it straight back
+(`asPlatform`). Both go through the same queue, because two scope changes in flight at once
+would leave the session wherever the slower one finished.
+
 ## 8A. Renaming a shop reaches inside a company
 
 Worth writing down because it is the one place this change can do damage invisibly.

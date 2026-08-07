@@ -35,7 +35,8 @@ const SELECT_FOR_LOGIN = `
          u.failed_login_count    AS "failedLoginCount",
          c.status                AS "companyStatus",
          c.name                  AS "companyName",
-         c.slug                  AS "companySlug"
+         c.slug                  AS "companySlug",
+         c.logo_key              AS "companyLogoKey"
     FROM users u
     LEFT JOIN companies c ON c.id = u.company_id
    WHERE u.email = lower(btrim($1))
@@ -69,7 +70,8 @@ const SELECT_BY_ID = `
          u.status,
          c.status                AS "companyStatus",
          c.name                  AS "companyName",
-         c.slug                  AS "companySlug"
+         c.slug                  AS "companySlug",
+         c.logo_key              AS "companyLogoKey"
     FROM users u
     LEFT JOIN companies c ON c.id = u.company_id
    WHERE u.id = $1

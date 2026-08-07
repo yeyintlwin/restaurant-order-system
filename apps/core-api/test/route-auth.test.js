@@ -30,13 +30,23 @@ test("rule 1: every entry declares one of the three auth modes", () => {
 test("rule 2: the public set is exactly the Plan 1 set", () => {
   const publicKeys = new Set(entries.filter((entry) => entry.options.auth === "public").map((entry) => entry.key));
 
-  // Set EQUALITY, not containment: adding a fourth fails and so does removing one.
+  // Set EQUALITY, not containment: adding a fifth fails and so does removing one.
   // Three of the eight that identity spec 6.2 enumerates. The next five are Plan 2d's
-  // recovery routes; POST /api/terminal/pair makes nine and arrives with the terminal
-  // plan. Widen this literal in the same commit as the route, never ahead of it.
+  // recovery routes; POST /api/terminal/pair arrives with the terminal plan. Widen
+  // this literal in the same commit as the route, never ahead of it.
+  //
+  // THE FOURTH IS A LOGO, and it has to be public: the same file is drawn on a table
+  // screen and at the top of a customer's menu, neither of which carries a session.
+  // The key is the SHA-256 of the bytes, so the URL names nothing and enumerates
+  // nothing -- a logo cannot be asked for by anybody who was not given its name.
   assert.deepEqual(
     publicKeys,
-    new Set(["GET /health", "GET /health/ready", "POST /api/admin/auth/login"])
+    new Set([
+      "GET /health",
+      "GET /health/ready",
+      "POST /api/admin/auth/login",
+      "GET /api/logos/:key"
+    ])
   );
 });
 
@@ -54,6 +64,11 @@ test("the origin-gated set is derived and pinned, so a new public POST cannot sk
   // cookie-authenticated write cannot be added without the gate coming with it, and
   // the only way to notice it happened is that this literal had to be widened.
   assert.deepEqual(gated, new Set([
+    // The three logo writes. Cookie-authenticated and state-changing, so they are
+    // behind the Origin gate like every other write in the admin surface.
+    "DELETE /api/platform/shops/:shopId/logo",
+    "PUT /api/platform/companies/:companyId/logo",
+    "PUT /api/platform/shops/:shopId/logo",
     "POST /api/admin/auth/login",
     "POST /api/admin/auth/logout",
     "POST /api/admin/auth/logout-all",

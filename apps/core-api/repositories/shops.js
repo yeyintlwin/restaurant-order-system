@@ -38,6 +38,17 @@ const COLUMNS = `
   run_by_owner AS "runByOwner",
   status,
   created_at AS "createdAt",
+  -- ITS OWN mark, which almost every branch does not have, and the one it actually
+  -- WEARS, which every branch does. A chain trades under one name until a country
+  -- makes that impossible; the exception has to be expressible or the branch prints
+  -- the wrong thing.
+  --
+  -- Resolved on read, never stored. A stored copy of "the company's logo" is right
+  -- until somebody changes the company's, and then it is wrong everywhere at once
+  -- with nothing to notice it.
+  logo_key AS "logoKey",
+  COALESCE(shops.logo_key,
+           (SELECT c.logo_key FROM companies c WHERE c.id = shops.company_id)) AS "effectiveLogoKey",
   -- Counted, never stored, for the same reason the company's counts are: the tables
   -- ARE the count, and a column beside them is a second copy that is right until
   -- somebody adds a table without updating it.
@@ -151,12 +162,18 @@ const GET_ADMINISTERED = {
 // company_id is NOT named here: the helper injects the column and the scope's
 // value, and naming it would be refused. That is what makes "a shop cannot be
 // created in another company" a property of the seam rather than of this SQL.
+// ITS OWN COLUMNS ONLY. ${COLUMNS} resolves the logo fallback with a subquery that
+// names the tenant column, and the helper refuses those words anywhere inside an
+// INSERT -- it reads the statement as text and cannot tell a subquery from a caller
+// trying to pick their own tenant. The id is enough: createShop reads the row back
+// through the ordinary SELECT, so a created branch and a fetched one are the same
+// shape, resolved the same way, by one piece of SQL.
 const INSERT = {
   sql: `
     INSERT INTO shops (name, slug, address, time_zone, business_day_rollover_hour,
                        currency, language, created_by_user_id)
     VALUES ($2, $3, $4, $5, $6, $7, $8, $9)
-    RETURNING ${COLUMNS}
+    RETURNING id
   `,
   shopScoped: false,
   conflicts: CONFLICTS
@@ -253,25 +270,17 @@ async function createShop(scope, input) {
     input.language,
     input.createdByUserId
   ]);
-  const shop = rows[0];
+  const shopId = rows[0].id;
   for (let number = 1; number <= input.tableCount; number += 1) {
-    await tenantQuery(scope, INSERT_TABLE, [shop.id, String(number), input.createdByUserId]);
+    await tenantQuery(scope, INSERT_TABLE, [shopId, String(number), input.createdByUserId]);
   }
-  // The INSERT's RETURNING ran BEFORE the tables existed, so its count is zero and
-  // would tell the caller their twelve tables were not made. Corrected from the
-  // number that made them rather than by a second read: they are in this
-  // transaction, so nothing else could have changed it.
-  // Same reason as tableCount: the RETURNING ran before the tables existed. A brand
-  // new branch has nobody in it, and those two zeros are facts rather than defaults.
-  return {
-    ...shop,
-    tableCount: input.tableCount,
-    managerUserId: null,
-    managerName: null,
-    managerPhone: null,
-    managerEmail: null,
-    staffCount: 0
-  };
+  // Read back INSIDE the caller's transaction, after the tables exist. One extra
+  // SELECT on the rarest write in the service, and it buys the thing that kept going
+  // wrong by hand: every derived column -- the table count, the manager, the staff
+  // count, the logo it falls back to -- is computed by the same statement that
+  // computes it for every other read.
+  const shop = await getShop(scope, shopId);
+  return shop;
 }
 
 async function updateShop(scope, shopId, changes) {

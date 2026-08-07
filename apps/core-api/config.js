@@ -41,6 +41,14 @@ const UNBOUNDED = Number.MAX_SAFE_INTEGER;
  */
 const DEFAULTS = Object.freeze({
   PORT: "3200",
+  // WHERE THE LOGO FILES LIVE. Defaulted rather than required because there is one
+  // right value on the box and it is not a secret: docker-compose.yml mounts the
+  // named volume core-api-logos here. A test points it at a temporary directory.
+  //
+  // Under /var/lib rather than /data or /uploads: it is state this service owns and
+  // must survive a redeploy, which is what /var/lib means on the filesystem this
+  // container inherits.
+  LOGO_ROOT: "/var/lib/core-api/logos",
   HOST: "0.0.0.0",
   TERMINAL_ALLOWED_ORIGINS: "",
   // The compose service name of apps/epaper-hub, reached over the `default` bridge that
@@ -394,6 +402,7 @@ function startupConfiguration(env) {
     passwordAbuseThreshold: readInteger(env, "PASSWORD_ABUSE_THRESHOLD", 1, UNBOUNDED),
     rotateRatePerHour: readInteger(env, "ROTATE_RATE_PER_HOUR", 1, UNBOUNDED),
     auditRetentionDays: readInteger(env, "AUDIT_RETENTION_DAYS", 1, UNBOUNDED),
+    logoRoot: readValue(env, "LOGO_ROOT") ?? DEFAULTS.LOGO_ROOT,
     // Sized against max_connections=40, leaving room for psql, pg_dump and the
     // migration connection.
     dbPoolMax: readInteger(env, "DB_POOL_MAX", 1, 20)

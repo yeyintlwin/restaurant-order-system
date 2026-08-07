@@ -129,9 +129,15 @@ test("a correct password returns the me-document and a __Host- cookie", async ()
     // what every client is handed on every page load, and this line is what makes
     // that decision arrive in a diff.
     assert.deepEqual(Object.keys(body).sort(), ["company", "scope", "session", "user"]);
-    // The company the session ACTS in, named. A CEO has no other way to learn the
-    // name of their own company -- no route hands a tenant user their company row.
-    assert.deepEqual(body.company, { id: COMPANY, name: "Sakura Kitchen", slug: "sakura" });
+    // The company the session ACTS in, named and marked. A CEO has no other way to
+    // learn either -- no route hands a tenant user their company row, and the rail
+    // prints both. logoKey is null here because this company has not set one.
+    assert.deepEqual(body.company, {
+      id: COMPANY,
+      name: "Sakura Kitchen",
+      slug: "sakura",
+      logoKey: null
+    });
     assert.deepEqual(body.user, {
       id: USER,
       email: "till@example.test",

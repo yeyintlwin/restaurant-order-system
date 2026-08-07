@@ -57,6 +57,7 @@ const SELECT_COLUMNS = `
   c.slug,
   c.status,
   c.created_at AS "createdAt",
+  c.logo_key AS "logoKey",
   (SELECT count(*) FROM shops s WHERE s.company_id = c.id)::int AS "shopCount",
   (SELECT count(*) FROM shop_tables t WHERE t.company_id = c.id)::int AS "tableCount",
   ${CEO("c.id")}
@@ -83,7 +84,7 @@ const INSERT = {
   sql: `
     INSERT INTO companies (name, slug, created_by_user_id)
     VALUES ($1, $2, $3)
-    RETURNING id, name, slug, status, created_at AS "createdAt",
+    RETURNING id, name, slug, status, created_at AS "createdAt", logo_key AS "logoKey",
               0::int AS "shopCount", 0::int AS "tableCount",
               -- A company one statement old has nobody in it yet. Spelling that out
               -- as NULL keeps the created document the same shape as every read of
@@ -104,7 +105,7 @@ const UPDATE = {
            slug   = COALESCE($3, slug),
            status = COALESCE($4, status)
      WHERE id = $1
-    RETURNING id, name, slug, status, created_at AS "createdAt",
+    RETURNING id, name, slug, status, created_at AS "createdAt", logo_key AS "logoKey",
               (SELECT count(*) FROM shops s WHERE s.company_id = companies.id)::int AS "shopCount",
               (SELECT count(*) FROM shop_tables t WHERE t.company_id = companies.id)::int AS "tableCount",
               ${CEO("companies.id")}

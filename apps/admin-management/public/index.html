@@ -58,6 +58,9 @@
 
       <aside class="rail" id="rail">
         <div class="scope">
+          <!-- The company's mark, where its name already is. Empty for the platform
+               owner, who is standing in no company. -->
+          <span class="av scope-av" id="scope-av" aria-hidden="true" hidden></span>
           <div>
             <div class="co" id="scope-co">Restaurant OS</div>
             <!-- One of these is shown at a time. A manager running a single shop reads their
@@ -373,6 +376,25 @@
 
 
 
+        <!-- REQUIRED. A company is the thing being hosted, and its mark is on every
+             receipt and every table screen underneath it. It is uploaded after the
+             company exists, because a file cannot be attached to a row that has no
+             id yet -- so the Companies list flags a company that has none, the same
+             way it flags one with no CEO. -->
+        <div class="field" id="co-logo-field">
+          <span class="lbl">Logo</span>
+          <div class="logo-set">
+            <span class="av lg" id="co-logo-preview"></span>
+            <button type="button" class="ghost" id="co-logo-btn">Choose a picture</button>
+            <!-- No way back here, unlike a branch. A branch that gives up its own mark
+                 wears the company's; a company that gave up its mark would wear nothing,
+                 and §4E says it must have one. Replacing it is the only move. -->
+            <input type="file" id="co-logo-file" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+          <p class="hint">Shown wherever the company appears, and on every branch that has no mark of its own. PNG, JPEG or WebP, up to 2 MB.</p>
+          <p class="warn" id="co-logo-warn" role="alert" hidden></p>
+        </div>
+
         <div class="field">
           <label for="co-name">Company name</label>
           <input id="co-name" />
@@ -545,6 +567,23 @@
 
         <!-- CEO mode only: the place, stated rather than offered. Rendered by facts(). -->
         <div class="facts" id="sh-facts" hidden></div>
+
+        <!-- OPTIONAL, and the reason is a sentence: a chain does not always trade
+             under one name. The name that works at home can be unusable in another
+             country, so a branch may need a different mark on its receipts and its
+             table screens. With none it wears the company's, which is what almost
+             every branch does. -->
+        <div class="field" id="sh-logo-field">
+          <span class="lbl">Branch logo</span>
+          <div class="logo-set">
+            <span class="av lg" id="sh-logo-preview"></span>
+            <button type="button" class="ghost" id="sh-logo-btn">Choose a picture</button>
+            <button type="button" class="ghost" id="sh-logo-clear" hidden>Use the company's</button>
+            <input type="file" id="sh-logo-file" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+          <p class="hint">Only for a branch that cannot use the company's mark. Leave it and this branch uses the company's.</p>
+          <p class="warn" id="sh-logo-warn" role="alert" hidden></p>
+        </div>
 
         <div class="field" id="sh-name-field">
           <label for="sh-name">Shop name</label>

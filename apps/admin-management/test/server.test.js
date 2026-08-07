@@ -62,6 +62,23 @@ test("every response carries the security headers, including on the 404", async 
   });
 });
 
+// THE WHOLE POLICY, character for character. Every directive here is a decision about
+// what this page may reach, and a widened one is invisible in a diff that only greps
+// for the header's presence. Loosening any of them should have to be typed twice.
+//
+// blob: on img-src, and nowhere else, is the logo picker showing somebody the file
+// they just chose -- bytes this page already holds, before they have a URL.
+test("the content security policy is exactly this, and widening it is a decision", async () => {
+  await withServer({ coreApiUrl: "http://127.0.0.1:1" }, async (base) => {
+    const response = await fetch(base);
+    assert.equal(
+      response.headers.get("content-security-policy"),
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; " +
+        "img-src 'self' data: blob:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
+    );
+  });
+});
+
 const http = require("node:http");
 
 // A stand-in for core-api that records exactly what reached it and answers with a

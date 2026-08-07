@@ -62,7 +62,12 @@ function meDocument({ user, scope, session }) {
     company:
       scope.companyId == null
         ? null
-        : { id: scope.companyId, name: user.companyName ?? null, slug: user.companySlug ?? null }
+        : {
+            id: scope.companyId,
+            name: user.companyName ?? null,
+            slug: user.companySlug ?? null,
+            logoKey: user.companyLogoKey ?? null
+          }
   };
   // Present ONLY for company_admin and scoped platform_admin -- db/scope.js throws
   // if any other role is handed one, so its absence here is the same fact.
@@ -93,7 +98,8 @@ function userFromSession(session) {
     // login path builds its user from the login row and /me from the session row,
     // and both rows join companies -- but only one of them is called `session`.
     companyName: session.companyName ?? null,
-    companySlug: session.companySlug ?? null
+    companySlug: session.companySlug ?? null,
+    companyLogoKey: session.companyLogoKey ?? null
   };
 }
 

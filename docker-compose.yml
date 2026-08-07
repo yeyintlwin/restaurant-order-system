@@ -121,7 +121,21 @@ services:
       PASSWORD_ABUSE_THRESHOLD: 5
       ROTATE_RATE_PER_HOUR: 5
       AUDIT_RETENTION_DAYS: 365
+      # The mount point below, spelled once here and once in `volumes:`. Under
+      # /var/lib because it is state this service OWNS and that must survive a
+      # redeploy -- the image is replaced on every push and anything written
+      # inside it goes with the old container.
+      LOGO_ROOT: /var/lib/core-api/logos
       DB_POOL_MAX: 8
+    volumes:
+      # THE LOGO FILES. A named volume, not a bind mount: nothing on the host needs
+      # to read these, and a bind mount would put the container's uid in charge of a
+      # host directory's permissions on every deploy.
+      #
+      # The name says which service owns it and what is in it, the way core-db-data
+      # does -- `docker volume ls` on the box is read by somebody deciding what is
+      # safe to remove, and `data` would tell them nothing.
+      - core-api-logos:/var/lib/core-api/logos
     depends_on:
       core-db:
         condition: service_healthy
@@ -238,3 +252,9 @@ services:
 volumes:
   epaper-data:
   core-db-data:
+  # Company and branch marks. Each file is named after the SHA-256 of its own
+  # bytes, so the same picture used by two companies is one file here, and a file
+  # nothing points at any more is deleted when the record that pointed at it
+  # changes. Losing this volume loses every logo and nothing else -- the rows
+  # survive and each one says which file it wants.
+  core-api-logos:

@@ -48,16 +48,33 @@ function requiresOriginCheck(entry) {
 // endsWith(".yeyintlwin.com") would admit every sibling this cookie's __Host-
 // prefix exists to exclude. Origin is case-sensitive per the URL standard, and
 // config.js already normalises API_PUBLIC_ORIGIN through new URL().origin.
-function assertOriginAndContentType({ origin, contentType, apiPublicOrigin }) {
+// The three a logo upload may arrive as, and the property that matters is not that
+// they are images -- it is that an HTML FORM CANNOT SEND THEM. A form's enctype is
+// one of three values (urlencoded, multipart, text/plain), which is the whole reason
+// the JSON requirement is a CSRF defence rather than a formality. image/png is as
+// unreachable from a form as application/json is, so a route that takes bytes keeps
+// exactly the same guarantee.
+//
+// The list is closed and does not include multipart: allowing that would give the
+// gate away, and the upload routes take a raw body precisely so it is not needed.
+const IMAGE_CONTENT_TYPE = new RegExp("^image[/](png|jpeg|webp)[ ]*(;|$)", "i");
+
+function assertOriginAndContentType({ origin, contentType, apiPublicOrigin, accepts = "json" }) {
   if (typeof apiPublicOrigin !== "string" || apiPublicOrigin === "") {
     throw new Error("csrf: apiPublicOrigin is required (config.js makes it a required variable)");
   }
   if (typeof origin !== "string" || origin !== apiPublicOrigin) {
     throw new ApiError(403, "origin_not_allowed");
   }
-  if (!JSON_CONTENT_TYPE.test(String(contentType || ""))) {
+  // A DELETE with no body has no Content-Type to check, and demanding one would be
+  // asking a request with nothing in it to describe its nothing. The Origin check
+  // above is the CSRF defence for it, and that has already run.
+  if (accepts === "none") return;
+  // A route that declares nothing gets the JSON rule, which is every route but three.
+  const allowed = accepts === "image" ? IMAGE_CONTENT_TYPE : JSON_CONTENT_TYPE;
+  if (!allowed.test(String(contentType || ""))) {
     throw new ApiError(415, "unsupported_media_type");
   }
 }
 
-module.exports = { ORIGIN_GATED_PUBLIC_KEYS, requiresOriginCheck, assertOriginAndContentType };
+module.exports = { ORIGIN_GATED_PUBLIC_KEYS, requiresOriginCheck, assertOriginAndContentType, IMAGE_CONTENT_TYPE };

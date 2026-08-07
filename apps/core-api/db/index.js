@@ -265,7 +265,18 @@ async function tenantQuery(scope, descriptor, params = []) {
 // widely is an information-disclosure risk bounded by the role that already sees
 // the data, while one that can WRITE widely is a way to edit another company's
 // rows with no company_id in sight.
-const PLATFORM_WRITABLE_TABLES = Object.freeze(["companies", "users", "audit_events"]);
+// `shops` is the fourth, and it is here for exactly one column. A branch's LOGO is
+// the platform owner's, set from the Companies screen where they are above every
+// company and inside none -- so the statement that writes it has no company_id to
+// be scoped by, which is what this hatch is for.
+//
+// The guard is table-level and cannot say "only logo_key", so the narrowing lives
+// where it can be read: repositories/platform/logos.js is the only file that writes
+// shops through this seam, it is small, and its single UPDATE names one column and
+// binds one id. Everything else about a shop -- its name, its country, its manager
+// -- still goes through the tenant choke point after a company is selected, which
+// is why opening a branch did not need this and setting its mark does.
+const PLATFORM_WRITABLE_TABLES = Object.freeze(["companies", "users", "audit_events", "shops"]);
 
 // EVERY write target in the statement, not just the leading verb's.
 //

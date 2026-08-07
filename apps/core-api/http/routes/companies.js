@@ -47,6 +47,9 @@ function companyDocument(row) {
     createdAt: row.createdAt.toISOString(),
     shopCount: row.shopCount,
     tableCount: row.tableCount,
+    // null is a real state and the console draws it: a company with no mark yet is
+    // incomplete, and the row says so with the action that fixes it.
+    logoKey: row.logoKey ?? null,
     // null, not an omitted key: a company whose CEO has not been appointed yet is a
     // state the console draws ("No CEO yet", with the action to fix it), and a key
     // that vanishes is a state it would have to infer.

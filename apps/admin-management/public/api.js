@@ -19,7 +19,12 @@ const ROUTES = Object.freeze({
   platformAdmins: "/api/platform/admins",
   shops: "/api/admin/shops",
   users: "/api/admin/users",
-  contacts: "/api/admin/contacts"
+  contacts: "/api/admin/contacts",
+  // A shop reached as PLATFORM property rather than as something inside a company.
+  // Only its mark is here: what a branch IS belongs to the platform owner (see 8A),
+  // and the file behind it is shared by hash across every company.
+  platformShops: "/api/platform/shops",
+  logos: "/api/logos"
 });
 
 // Query strings are built here rather than by each caller, so a parameter the API
@@ -185,6 +190,35 @@ function createApi(fetchImpl) {
         // route: that one is bounded by what you may ADMINISTER, and this one reaches
         // upwards as well.
         listContacts: () => resource(ROUTES.contacts),
+
+        // THE BODY IS THE IMAGE. No multipart, no FormData: a logo is one file with
+        // no fields beside it, so the bytes go up as they are and the Content-Type
+        // says which of the three they are. The server sniffs them anyway -- this
+        // header is what gets the request past the Origin gate, which insists on a
+        // type no HTML form can produce.
+        putCompanyLogo: (companyId, file) =>
+          resource(`${ROUTES.companies}/${companyId}/logo`, {
+            method: "PUT",
+            headers: { "Content-Type": file.type },
+            body: file
+          }),
+
+        putShopLogo: (shopId, file) =>
+          resource(`${ROUTES.platformShops}/${shopId}/logo`, {
+            method: "PUT",
+            headers: { "Content-Type": file.type },
+            body: file
+          }),
+
+        // A branch's mark is the exception, so taking it away is a real action: the
+        // branch goes back to wearing the company's. There is deliberately no
+        // matching call for a company.
+        clearShopLogo: (shopId) =>
+          resource(`${ROUTES.platformShops}/${shopId}/logo`, { method: "DELETE" }),
+
+        // Where a logo is DRAWN from. Not a request -- the src of an <img>, and the
+        // response is immutable, so the browser fetches each one once ever.
+        logoUrl: (key) => (key ? `${ROUTES.logos}/${key}` : null),
 
         listUsers: (params) => resource(withQuery(ROUTES.users, params)),
         getUser: (id) => resource(`${ROUTES.users}/${id}`),

@@ -60,7 +60,9 @@ const AUDIT_ACTIONS = Object.freeze({
   // refuses the outcome, and a refusal inside the failure path would turn a 404
   // into a 500. scope.selected declares 'failure' because a platform admin probing
   // company ids is worth recording; a rename that lost a race is not.
-  "company.updated": entry(["user"], ["success"], "company", ["name", "slug", "status"]),
+  // "logo" joins the three that were here: a mark is a change to the record like a
+  // rename is, and the trail should say which one happened rather than "something".
+  "company.updated": entry(["user"], ["success"], "company", ["name", "slug", "status", "logo"]),
   // 'system' as well as 'user': scripts/create-platform-admin.js is the CLI that
   // writes the FIRST one, and there is no authenticated actor at that moment.
   // POST /api/platform/admins (Plan 2c) writes it as 'user'.
@@ -84,7 +86,7 @@ const AUDIT_ACTIONS = Object.freeze({
   // is free text and a 365-day retention window is not the place for it.
   "shop.day_to_day_updated": entry(["user"], ["success"], "shop", ["fields"]),
   "shop.manager_changed": entry(["user"], ["success"], "shop", ["managerUserId", "runByOwner", "replacedUserId"]),
-  "shop.updated": entry(["user"], ["success"], "shop", ["name", "slug", "status"]),
+  "shop.updated": entry(["user"], ["success"], "shop", ["name", "slug", "status", "logo"]),
   // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc
   // requires actor_user_id NOT NULL for 'user' and actor_terminal_id NOT NULL for
   // 'terminal'; POST /api/terminal/table-displays/:tableNumber authenticates a CONFIGURED
