@@ -60,6 +60,10 @@
             <span class="scope-shop" id="scope-shop-wrap" hidden>
               <select class="scope-pick" id="scope-shop" aria-label="Which shop you are looking at"></select>
             </span>
+            <!-- Crossing into a company, and back out of it, is a change of who you are.
+                 When it is refused nothing else on the screen moves, so this is the only
+                 place that can say so. -->
+            <p class="warn" id="scope-warn" role="alert" hidden></p>
           </div>
         </div>
 
@@ -580,6 +584,9 @@
                differently in two places. -->
           <select id="sh-mgr"></select>
           <p class="hint" id="sh-mgr-hint">Choosing someone else replaces whoever is there now.</p>
+          <!-- A refusal about WHO runs the shop belongs beside the picker. It used to land
+               under URL name, a box the CEO cannot even type into. -->
+          <p class="warn" id="sh-mgr-warn" role="alert" hidden></p>
         </div>
 
         <!-- The day-to-day three, shown to the CEO ONLY while the shop has no manager to own

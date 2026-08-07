@@ -26,9 +26,19 @@ function setError(element, text) {
 let console_ = null;
 
 function toSignedOut() {
+  // A CONSOLE THAT WAS MOUNTED IS TORN DOWN BY RELOADING. mountConsole binds
+  // listeners to nodes that outlive it -- the rail, the dialogs, the document --
+  // and nothing detached them, so signing in again in the same tab ran every
+  // handler twice: one press of Add issued two creates, the second failing 409
+  // beside a first password that may not be the one the server kept.
+  //
+  // The guard is load-bearing. apply() sends the FIRST /me here too when nobody is
+  // signed in, and reloading then would be an endless refresh.
   if (console_) {
     console_.unmount();
     console_ = null;
+    location.reload();
+    return;
   }
   $("email").value = "";
   $("password").value = "";

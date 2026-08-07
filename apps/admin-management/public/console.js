@@ -110,17 +110,29 @@ export function mountConsole({ api, me, onSignedOut }) {
   // A platform admin reaches into a company for exactly one write and comes back.
   // The finally is the whole point: a throw halfway through must not leave them
   // scoped into somebody else's company with a platform owner's menu.
-  async function insideCompany(companyId, run) {
+  async function borrowOnce(companyId, run) {
     const entered = await send(() => api.selectScope(companyId));
     if (entered === null) return null;
     if (entered.state !== "ok") return entered;
-    state.borrowing = true;
     try {
       return await run();
     } finally {
-      state.borrowing = false;
       await api.selectScope(null);
     }
+  }
+
+  // ONE AT A TIME. There is a single session scope, and two borrows racing for it
+  // means the first one's restore lands inside the second one's window -- so the
+  // second request arrives unscoped and is refused. Expanding two company rows in a
+  // row on a slow connection did exactly that, and the second company showed a raw
+  // refusal instead of the branches it has.
+  let borrowQueue = Promise.resolve();
+  function insideCompany(companyId, run) {
+    const mine = borrowQueue.then(() => borrowOnce(companyId, run));
+    // Swallowed on the QUEUE only, never on the returned promise: one failed borrow
+    // must not stop every later one, and the caller still sees its own rejection.
+    borrowQueue = mine.then(() => {}, () => {});
+    return mine;
   }
 
   // -------------------------------------------------------------------------
@@ -265,7 +277,13 @@ export function mountConsole({ api, me, onSignedOut }) {
     }
   }
 
+  // The shops a person WORKS IN, which is not the same as the shops they can reach.
+  // A company_admin's scope carries every active shop in the company -- that is reach
+  // -- so a CEO of a one-branch company had the branch's name printed in the rail
+  // where their role belongs, reading as that branch's manager, and their Account
+  // language claimed to follow a branch they belong to none of.
   function shopsIRun() {
+    if (state.persona !== "manager" && state.persona !== "staff") return [];
     const ids = state.me.scope.shopIds || [];
     return state.shops.filter((shop) => ids.includes(shop.id));
   }
@@ -434,11 +452,15 @@ export function mountConsole({ api, me, onSignedOut }) {
   // A confirmation that clears itself. It says the write landed, and then stops
   // saying it -- a "Saved" line still on the screen ten minutes later is describing
   // the wrong thing by then.
-  let fading = null;
+  // Keyed on the ELEMENT. One shared handle meant the second confirmation cancelled
+  // the first one's timer and adopted it, so the first "Saved." was never cleared --
+  // the exact thing this function exists to prevent.
+  const fading = new WeakMap();
   function confirm(element, text) {
+    if (!element) return;
     say(element, text);
-    clearTimeout(fading);
-    fading = setTimeout(() => say(element, ""), 4000);
+    clearTimeout(fading.get(element));
+    fading.set(element, setTimeout(() => say(element, ""), 4000));
   }
 
   // ---- Companies (the platform owner's only list) -------------------------
@@ -631,13 +653,24 @@ export function mountConsole({ api, me, onSignedOut }) {
   // them, which is the honest signal that they are no longer above every company.
   async function enterCompany(company) {
     const result = await send(() => api.selectScope(company.id));
-    if (!result || result.state !== "ok") return;
+    if (!result) return;
+    if (result.state !== "ok") {
+      say($("scope-warn"), describeFailure(result));
+      return;
+    }
     await rebootFromServer();
   }
 
+  // Crossing the boundary either way is a change of who you are, so a refusal has to
+  // say so: nothing moved on screen, and "Back to platform" doing nothing reads as
+  // being trapped inside somebody else's company.
   async function leaveCompany() {
     const result = await send(() => api.selectScope(null));
-    if (!result || result.state !== "ok") return;
+    if (!result) return;
+    if (result.state !== "ok") {
+      say($("scope-warn"), describeFailure(result));
+      return;
+    }
     await rebootFromServer();
   }
 
@@ -658,21 +691,30 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   // ---- Shops --------------------------------------------------------------
 
+  // WHO, from the shop row. Scanning the user list for a manager was a derivation
+  // that depended on which hundred people came back: past the cap a real manager
+  // read as "No manager yet", which raises the amber banner and hands the CEO the
+  // day-to-day fields for a shop somebody else runs.
+  //
+  // The row carries the id; the NAME still comes from the list, because a name is a
+  // person and the shop document deliberately holds none. When the list does not
+  // have them, the slot is still known to be filled -- which is the fact the screen
+  // is actually about.
   function managerOf(shop) {
+    if (!shop.managerUserId) return null;
     return (
-      state.users.find(
-        (user) => user.role === "shop_manager" && (user.shopIds || []).includes(shop.id)
-      ) || null
+      state.users.find((user) => user.id === shop.managerUserId) || {
+        id: shop.managerUserId,
+        displayName: "Manager assigned",
+        email: ""
+      }
     );
   }
 
-  // Joined here rather than counted by the server, because the CEO already holds
-  // the whole list to draw the Users screen and a second endpoint would be a second
-  // answer to the same question.
+  // Counted by the server, for the same reason. The client-side join was right only
+  // while everybody fitted in one page.
   function staffCount(shop) {
-    return state.users.filter(
-      (user) => user.role === "staff" && (user.shopIds || []).includes(shop.id)
-    ).length;
+    return shop.staffCount;
   }
 
   function paintShops() {
@@ -814,6 +856,9 @@ export function mountConsole({ api, me, onSignedOut }) {
       receiptFooter: $("m4").value.trim()
     };
     for (const [key, value] of Object.entries(wanted)) {
+      // null, not omitted: an emptied box means ERASE, and the route reads a present
+      // null as exactly that. An empty string would be a second spelling of the same
+      // thing, and every reader would have to know both.
       if (value !== (shop[key] || "")) changes[key] = value === "" ? null : value;
     }
     if (Object.keys(changes).length === 0) return;
@@ -861,7 +906,9 @@ export function mountConsole({ api, me, onSignedOut }) {
     const editable = state.persona !== "operator";
     $("a1").disabled = !editable;
     $("a4").disabled = !editable;
-    language.disabled = !editable;
+    // A platform admin has no shop to follow and their route takes no language at
+    // all. Left enabled it accepted a choice, sent nothing, and reverted on return.
+    language.disabled = !editable || state.persona === "platform";
     say(
       $("a1-note"),
       editable
@@ -983,12 +1030,15 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("co-name").value = company ? company.name : "";
     coSlug.reset(company ? company.slug : "");
 
-    $("co-status-box").hidden = !company;
-    if (company) {
-      const wanted = company.status === "active" ? "active" : "suspended";
-      for (const radio of all('input[name="co-status"]', coDialog)) {
-        radio.checked = radio.value === wanted;
-      }
+    // UNCONDITIONALLY, even when there is no company: a create inherited whatever
+    // the last edited company was set to, and the control was visible, because
+    // unfinish() un-hides every .group. The create branch sends no status at all, so
+    // it was a live-looking control that did nothing -- until the CEO half failed and
+    // the dialog turned into an edit, at which point Save suspended a company that was
+    // one second old.
+    const wanted = company && company.status !== "active" ? "suspended" : "active";
+    for (const radio of all('input[name="co-status"]', coDialog)) {
+      radio.checked = radio.value === wanted;
     }
 
     // Two shapes, and which one is showing depends on whether the company already
@@ -996,12 +1046,21 @@ export function mountConsole({ api, me, onSignedOut }) {
     // named, with the two things that can be done to them from out here.
     coReplacing = false;
     unfinish("co-dialog");
+    // AFTER unfinish, which puts every block back. Hiding it earlier was undone.
+    $("co-status-box").hidden = !company;
     paintCeoBlock();
     $("co-pname").value = "";
     $("co-pemail").value = "";
     $("co-pphone").value = "";
     $("co-pw-field").hidden = true;
+    // Same defect, one level up: this one decides whether a replaced CEO keeps an
+    // active login to a company they no longer run. It belongs in the open function
+    // rather than in paintCeoBlock -- within a single open, somebody who answers and
+    // then clicks Replace CEO again should keep their answer.
     $("co-out").hidden = true;
+    for (const radio of all('input[name="ceo-out"]', coDialog)) {
+      radio.checked = radio.value === "suspend";
+    }
     say($("co-slug-warn"), "");
     say($("co-phone-warn"), "");
     say($("co-reset-out"), "");
@@ -1030,7 +1089,11 @@ export function mountConsole({ api, me, onSignedOut }) {
       send(() => api.resetUserPassword(coEditing.ceo.id))
     );
     if (!result || result.state !== "ok") {
-      say($("co-phone-warn"), result ? describeFailure(result) : "");
+      // NOT co-phone-warn: paintCeoBlock hides #co-person exactly when a CEO exists,
+      // which is the only state this button is reachable in, so the message went
+      // into a hidden box. Success was visible and failure was not -- and this is
+      // the only recovery path a locked-out CEO has.
+      say($("co-reset-out"), result ? describeFailure(result) : "");
       return;
     }
     say($("co-reset-out"), `New password: ${result.data.initialPassword} — read it out now.`);
@@ -1115,7 +1178,10 @@ export function mountConsole({ api, me, onSignedOut }) {
       // a blank form, so a second attempt at the CEO is one field away and does not
       // try to create the company again.
       if (ceo.failed) {
-        coEditing = state.companies.find((c) => c.id === created.data.id) || null;
+        // The 201 body is the same shape the edit branch reads, so it is the right
+        // fallback when the list reload also failed: null here left the dialog
+        // labelled Edit while still submitting a CREATE.
+        coEditing = state.companies.find((c) => c.id === created.data.id) || created.data;
         $("co-h").textContent = "Edit company";
         $("co-save").textContent = "Save";
         $("co-status-box").hidden = false;
@@ -1283,6 +1349,12 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("shop-sub").textContent = opening ? "" : shop.name;
     $("shop-save").textContent = opening ? "Open branch" : "Save";
 
+    // BEFORE shSlug.reset, which paints the preview synchronously off this value.
+    // Assigned eighty lines later, the first branch dialog of a session read
+    // "app/company/bogyoke" -- the exact string the preview exists to prevent -- and
+    // every one after it wore the previously opened company's name.
+    shopDialog.dataset.companyId = companyId || state.me.scope.companyId || "";
+
     $("sh-name").value = opening ? "" : shop.name;
     shSlug.reset(opening ? "" : shop.slug);
     $("sh-addr").value = opening ? "" : shop.address || "";
@@ -1306,7 +1378,11 @@ export function mountConsole({ api, me, onSignedOut }) {
     fillSelect($("sh-tz"), TIME_ZONES.map((zone) => [zone, zone]), { placeholder: "Choose one…" });
     fillSelect($("sh-cur"), CURRENCIES, { placeholder: "Choose one…" });
     fillSelect($("sh-lang"), LANGUAGES, { placeholder: "Choose one…" });
-    $("sh-country").hidden = !opening;
+    // Shown to the owner on an EDIT too. Set once when the branch opens is the rule
+    // for who may change them, not a rule that they can never be wrong: a branch
+    // opened with the wrong currency prints the wrong money on every receipt, and no
+    // persona anywhere could repair it. The CEO and the manager still only read them.
+    $("sh-country").hidden = !opening && !owner;
     if (!opening) {
       $("sh-tz").value = shop.timeZone;
       $("sh-cur").value = shop.currency;
@@ -1363,11 +1439,18 @@ export function mountConsole({ api, me, onSignedOut }) {
       ? "You open the branch and set what its country needs. Who runs it is the CEO's to decide."
       : "The branch itself — its name, address and table count — is the platform owner's.";
 
+    // THE ANSWER IS ABOUT ONE PERSON, and it decides whether they keep their login.
+    // Hiding the group left the previous shop's choice checked, so a CEO who once
+    // said "they have left" suspended the next departing manager without being asked
+    // -- and one "keep them" quietly kept every later one active.
     $("handover").hidden = true;
+    for (const radio of all('input[name="handover"]', shopDialog)) {
+      radio.checked = radio.value === "staff";
+    }
     say($("sh-name-warn"), "");
     say($("sh-country-warn"), "");
     say($("sh-slug-warn"), "");
-    shopDialog.dataset.companyId = companyId || state.me.scope.companyId || "";
+    say($("sh-mgr-warn"), "");
     openModal(shopDialog);
   }
 
@@ -1376,7 +1459,13 @@ export function mountConsole({ api, me, onSignedOut }) {
   function paintManagerChoices(shop) {
     const current = managerOf(shop);
     const candidates = state.users.filter(
-      (user) => user.role === "shop_manager" || user.role === "staff"
+      (user) =>
+        (user.role === "shop_manager" || user.role === "staff") &&
+        // A suspended account cannot sign in, so appointing one leaves the shop with
+        // nobody -- and the server refuses it with the reason landing under a field
+        // the CEO cannot even type into. The SITTING manager is never dropped: if
+        // they were, the select would fall back to "" and a Save would clear the slot.
+        (user.status === "active" || (current && user.id === current.id))
     );
     const select = $("sh-mgr");
     fillSelect(
@@ -1429,7 +1518,6 @@ export function mountConsole({ api, me, onSignedOut }) {
     const input = {
       name: $("sh-name").value.trim(),
       slug: $("sh-slug").value.trim(),
-      address: $("sh-addr").value.trim() || null,
       timeZone: $("sh-tz").value,
       currency: $("sh-cur").value,
       language: $("sh-lang").value,
@@ -1440,6 +1528,9 @@ export function mountConsole({ api, me, onSignedOut }) {
       say($("sh-country-warn"), "A branch needs all three before it can open.");
       return;
     }
+    const address = $("sh-addr").value.trim();
+    if (address) input.address = address;
+
     const companyId = shopDialog.dataset.companyId;
     const run = () => send(() => api.createShop(input));
     const result =
@@ -1463,11 +1554,22 @@ export function mountConsole({ api, me, onSignedOut }) {
         say($("sh-slug-warn"), problem);
         return;
       }
+      if (!$("sh-tz").value || !$("sh-cur").value || !$("sh-lang").value) {
+        say($("sh-country-warn"), "A branch needs all three.");
+        return;
+      }
       const changes = {
         name: $("sh-name").value.trim(),
         slug: $("sh-slug").value.trim(),
-        address: $("sh-addr").value.trim() || null
+        timeZone: $("sh-tz").value,
+        currency: $("sh-cur").value,
+        language: $("sh-lang").value
       };
+      // Omitted rather than sent as null when blank. The route validates a present
+      // key, and `address: null` is refused as the wrong TYPE -- so a branch with no
+      // address could not be opened, and one that had none could not be saved.
+      const address = $("sh-addr").value.trim();
+      if (address) changes.address = address;
       // Same split as opening one: an operator already stands in the company, and a
       // platform owner reaches into it for this one write and comes back.
       const write = () => send(() => api.updateShop(shEditing.id, changes));
@@ -1502,7 +1604,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     const result = await send(() => api.setShopManager(shEditing.id, body));
     if (!result) return;
     if (result.state !== "ok") {
-      say($("sh-slug-warn"), describeFailure(result));
+      say($("sh-mgr-warn"), describeFailure(result));
       return;
     }
 
@@ -1517,7 +1619,15 @@ export function mountConsole({ api, me, onSignedOut }) {
         if (value !== (shEditing[key] || "")) changes[key] = value === "" ? null : value;
       }
       if (Object.keys(changes).length > 0) {
-        await send(() => api.updateShopDayToDay(shEditing.id, changes));
+        const day = await send(() => api.updateShopDayToDay(shEditing.id, changes));
+        // The manager slot already landed; this half can still be refused, and the
+        // dialog used to close and say "Saved." over a receipt footer that was thrown
+        // away by the refresh behind it.
+        if (!day) return;
+        if (day.state !== "ok") {
+          say($("sh-slug-warn"), describeFailure(day));
+          return;
+        }
       }
     }
 
@@ -1552,17 +1662,32 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("st-email").disabled = !adding;
     $("st-phone").value = adding ? "" : user.phone || "";
 
-    // A manager appoints staff into the shop they are standing in, so there is
-    // nothing to choose. A CEO chooses, because they hold all of them.
+    // WHICH RECORD, not which viewer. Keyed on the persona alone, this offered a
+    // single-value picker for a manager who runs two shops -- and Save sent the one
+    // it happened to be showing, so the OTHER shop silently lost its manager and read
+    // "No manager yet". §3.0 forbids exactly this control by name: a manager's shops
+    // are the slots that name them, set one shop at a time on the Shops screen.
+    //
+    // A company_admin has none at all, and sending them any is a 422 with no control
+    // on the dialog able to clear it -- their row could never be saved.
     const shopField = $("st-shop-field");
-    shopField.hidden = asManager;
-    if (!asManager) {
+    const offerShop = !asManager && (adding || user.role === "staff");
+    shopField.hidden = !offerShop;
+    if (offerShop) {
       fillSelect($("st-shop"), state.shops.map((shop) => [shop.id, shop.name]));
       const held = (user && user.shopIds) || [];
       if (held.length > 0) $("st-shop").value = held[0];
     }
 
+    // Somebody has to belong to a branch, and a company with none cannot be given
+    // one. Saying so beats a 422 about a control that was visibly empty.
+    const noBranches = offerShop && adding && state.shops.length === 0;
+    $("staff-save").disabled = noBranches;
+
     $("st-temp-field").hidden = true;
+    // say() sets hidden = !text, so nothing ever put this back. A refused "Add user"
+    // left its red line under the phone number of every person opened afterwards.
+    say($("st-phone-warn"), "");
     // The reset handler rewrites this line, and a dialog is reused. Without putting
     // it back, every person opened afterwards is told to read out a password that is
     // not on the screen.
@@ -1577,7 +1702,13 @@ export function mountConsole({ api, me, onSignedOut }) {
     $("st-reset").hidden = adding;
     $("st-limit").textContent = asManager
       ? "Only your CEO can make someone a manager or move them to another shop."
-      : "A person you add here signs in with the password you read out to them.";
+      : noBranches
+        ? "No branches yet. Everybody belongs to a branch, so the platform owner opens one first."
+        : !adding && user.role === "shop_manager"
+          ? "Which shops this manager runs is set on the Shops screen, one at a time. They can run more than one."
+          : !adding && user.role === "company_admin"
+            ? "The owner is company-wide and belongs to no single branch."
+            : "A person you add here signs in with the password you read out to them.";
     openModal(staffDialog);
   }
 
@@ -1621,7 +1752,10 @@ export function mountConsole({ api, me, onSignedOut }) {
         phone: $("st-phone").value.trim(),
         status
       };
-      if (!asManager) changes.shopIds = [$("st-shop").value];
+      // ONLY when the dialog actually offered it. Sending a shop the person never
+      // saw is how a two-shop manager lost one of them, and how a company owner got a
+      // 422 they had no way to clear.
+      if (!$("st-shop-field").hidden) changes.shopIds = [$("st-shop").value];
       const result = await send(() => api.updateUser(stEditing.id, changes));
       if (!result) return;
       if (result.state !== "ok") {
@@ -1639,7 +1773,13 @@ export function mountConsole({ api, me, onSignedOut }) {
   $("st-reset-btn").addEventListener("click", async () => {
     if (!stEditing) return;
     const result = await send(() => api.resetUserPassword(stEditing.id));
-    if (!result || result.state !== "ok") return;
+    if (!result) return;
+    if (result.state !== "ok") {
+      // The button looked dead: no password, no error, and the hint still promising
+      // one. Somebody was on the phone waiting for it.
+      $("st-reset-hint").textContent = describeFailure(result);
+      return;
+    }
     showFirstPassword($("st-temp"), $("st-temp-field"), result.data.initialPassword);
     $("st-reset-hint").textContent = "Read it out. It is not shown again.";
   });
@@ -1678,6 +1818,10 @@ export function mountConsole({ api, me, onSignedOut }) {
     // Handed back so the shell can put the console away again on sign-out without
     // reaching into its DOM.
     unmount() {
+      // A <dialog> opened with showModal() sits in the top layer, which is OUTSIDE
+      // #signedIn -- hiding the console leaves it on screen, modal, over a sign-in
+      // card the person cannot type into.
+      for (const dialog of all("dialog[open]")) dialog.close();
       $("signedIn").hidden = true;
       delete document.body.dataset.as;
     }
