@@ -257,6 +257,83 @@ route(
 );
 
 route(
+  "PATCH",
+  "/api/admin/shops/:shopId/day-to-day",
+  {
+    auth: "user",
+    // The manager alias, so a shop_manager reaches it -- containment then limits
+    // them to the shops they are actually assigned to, because getShop below is
+    // driven by their scope.
+    roles: ["manager"],
+    params: { shopId: "uuid" },
+    body: { phone: "string?", openingHours: "string?", receiptFooter: "string?" },
+    audit: "shop.day_to_day_updated",
+    sample: { params: { shopId: "00000000-0000-4000-8000-000000000000" }, body: { phone: "09 77 123 4567" } }
+  },
+  async (req, res) => {
+    const deps = req.core.deps;
+    const shopId = shopIdFrom(req);
+
+    // The platform owner opens the branch and does not run it. They set the
+    // country facts; the phone on the receipt belongs to whoever answers it.
+    if (req.core.scope.role === "platform_admin") throw new ApiError(403, "forbidden");
+
+    const body = await readJsonBody(req);
+    const errors = [];
+    const fields = ["phone", "openingHours", "receiptFooter"].filter((key) => has(body, key));
+    if (fields.length === 0) throw new ApiError(400, "invalid_request");
+
+    for (const [field, max] of [["phone", 40], ["openingHours", 120], ["receiptFooter", 200]]) {
+      if (!has(body, field)) continue;
+      if (typeof body[field] !== "string" || body[field].trim().length === 0) {
+        errors.push({ field, code: "too_short" });
+      } else if (body[field].trim().length > max) {
+        errors.push({ field, code: "too_long" });
+      }
+    }
+    if (errors.length > 0) throw new ApiError(422, "validation_failed", errors);
+
+    const result = await withTenantScope(req.core.scope, async () => {
+      const shop = await deps.shops.getShop(req.core.scope, shopId);
+      if (shop === null) return { shop: null };
+
+      // §3.1B: these three are the CEO's ONLY while no manager owns them, and they
+      // "disappear the moment a manager is named, because that is the moment those
+      // fields stop being the CEO's". Enforced here and not only in the console: a
+      // screen that hides a control is a courtesy, and a route that refuses the
+      // write is the rule.
+      if (req.core.scope.administeredShopIds !== undefined) {
+        const manager = await deps.shops.getShopManager(req.core.scope, shopId);
+        if (manager !== null) return { shop: null, refusal: "has_a_manager" };
+      }
+
+      const updated = await deps.shops.updateShopDayToDay(req.core.scope, shopId, {
+        phone: has(body, "phone") ? body.phone.trim() : null,
+        openingHours: has(body, "openingHours") ? body.openingHours.trim() : null,
+        receiptFooter: has(body, "receiptFooter") ? body.receiptFooter.trim() : null
+      });
+      await deps.appendAuditEvent({
+        companyId: req.core.scope.companyId,
+        shopId,
+        actorKind: "user",
+        actorUserId: req.core.session.userId,
+        action: "shop.day_to_day_updated",
+        outcome: "success",
+        targetKind: "shop",
+        targetId: shopId,
+        sourceIp: req.core.clientIp,
+        detail: { fields: fields.join(",") }
+      });
+      return { shop: updated };
+    });
+
+    if (result.refusal === "has_a_manager") throw new ApiError(403, "forbidden");
+    if (result.shop === null) throw new ApiError(404, "not_found");
+    sendJson(res, 200, shopDocument(result.shop));
+  }
+);
+
+route(
   "PUT",
   "/api/admin/shops/:shopId/manager",
   {

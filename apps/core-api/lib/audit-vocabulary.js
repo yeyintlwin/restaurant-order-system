@@ -65,6 +65,8 @@ const AUDIT_ACTIONS = Object.freeze({
   // writes the FIRST one, and there is no authenticated actor at that moment.
   // POST /api/platform/admins (Plan 2c) writes it as 'user'.
   "platform.admin_created": entry(["user", "system"], ["success"], "user", ["email"]),
+  "platform.admin_password_reset": entry(["user"], ["success"], "user", []),
+  "platform.admin_updated": entry(["user"], ["success"], "user", ["status"]),
   // Clearing a selection names no company, so both target columns are NULL --
   // the same conditional-target shape auth.password_reset_requested carries.
   "scope.cleared": entry(["user"], ["success"], null, []),
@@ -78,6 +80,9 @@ const AUDIT_ACTIONS = Object.freeze({
   "shop.created": entry(["user"], ["success"], "shop", ["name", "slug", "timeZone", "tableCount"]),
   // The CEO's one job on a shop. detail names the three states this route can
   // leave behind -- a person, the owner, or nobody -- and who was displaced.
+  // detail names WHICH of the three moved, never their values: a receipt footer
+  // is free text and a 365-day retention window is not the place for it.
+  "shop.day_to_day_updated": entry(["user"], ["success"], "shop", ["fields"]),
   "shop.manager_changed": entry(["user"], ["success"], "shop", ["managerUserId", "runByOwner", "replacedUserId"]),
   "shop.updated": entry(["user"], ["success"], "shop", ["name", "slug", "status"]),
   // 'system', and the arc is what settles it rather than taste. audit_events_actor_arc

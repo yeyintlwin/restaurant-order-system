@@ -24,6 +24,7 @@ const shopsRepository = require("./repositories/shops");
 const tenantUsersRepository = require("./repositories/users");
 const companiesRepository = require("./repositories/platform/companies");
 const platformAuditRepository = require("./repositories/platform/audit");
+const platformAdminsRepository = require("./repositories/platform/admins");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
@@ -34,6 +35,7 @@ require("./http/routes/auth");
 require("./http/routes/companies");
 require("./http/routes/shops");
 require("./http/routes/users");
+require("./http/routes/platform-admins");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -153,6 +155,7 @@ async function start(options = {}) {
     // path uses, and the two answer different questions about the word "user".
     tenantUsers: options.tenantUsers || tenantUsersRepository,
     companies: options.companies || companiesRepository,
+    platformAdmins: options.platformAdmins || platformAdminsRepository,
     platformAudit: options.platformAudit || platformAuditRepository
   });
   return listen(app, config.port, config.host);

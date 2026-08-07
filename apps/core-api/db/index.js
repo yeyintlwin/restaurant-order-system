@@ -284,13 +284,20 @@ const PLATFORM_WRITABLE_TABLES = Object.freeze(["companies", "users", "audit_eve
 // people to route around it.
 const WRITE_TARGET = /\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?/gi;
 const WRITE_VERB = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i;
+// SELECT ... FOR UPDATE is a READ that takes a row lock, and the word UPDATE in it
+// is not a verb. Left in, the scan below sees a write verb, finds no table after
+// it, and fails closed -- refusing the exact statement that makes the
+// last-platform-admin check race-free. A guard that refuses correct SQL teaches
+// people to route around it, which is how the guard stops guarding anything.
+const LOCKING_CLAUSE = /\bFOR\s+(?:NO\s+KEY\s+)?UPDATE\b|\bFOR\s+(?:KEY\s+)?SHARE\b/gi;
 
 function assertPlatformStatement(sql) {
-  if (!WRITE_VERB.test(sql)) return;
+  const scanned = sql.replace(LOCKING_CLAUSE, " ");
+  if (!WRITE_VERB.test(scanned)) return;
 
   WRITE_TARGET.lastIndex = 0;
   const targets = [];
-  for (let m = WRITE_TARGET.exec(sql); m !== null; m = WRITE_TARGET.exec(sql)) {
+  for (let m = WRITE_TARGET.exec(scanned); m !== null; m = WRITE_TARGET.exec(scanned)) {
     targets.push({ verb: m[1].toUpperCase().replace(/\s+/g, " "), table: m[2].toLowerCase() });
   }
   // A write verb is present but no target parsed out of it. Fail CLOSED: an

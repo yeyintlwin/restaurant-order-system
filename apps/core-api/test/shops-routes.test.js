@@ -565,6 +565,70 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
+  // --- the day-to-day three: owned by whoever RUNS the shop -----------------
+
+  const dayToDay = (base, id, body) =>
+    fetch(`${base}/api/admin/shops/${id}/day-to-day`, { method: "PATCH", headers: POST_HEADERS, body: JSON.stringify(body) });
+
+  test("the CEO sets them while nobody manages the shop, and stops the moment somebody does", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+
+    await withServer(ceo().deps, async (base) => {
+      // §3.1B, and it closes a hole the console screen had for real: the Shops
+      // screen promised "you can already do everything a manager can there" while
+      // the CEO could not reach the shop's phone number at all.
+      const set = await dayToDay(base, shopId, { phone: "09 66 100 2003", openingHours: "09:00 - 21:00" });
+      assert.equal(set.status, 200);
+      assert.equal((await set.json()).phone, "09 66 100 2003");
+
+      // Name a manager, and the three stop being the CEO's.
+      await putManager(base, shopId, { managerUserId: STAFF_A });
+      const refused = await dayToDay(base, shopId, { phone: "09 00 000 0000" });
+      // A screen that hides a control is a courtesy; a route that refuses the
+      // write is the rule.
+      assert.equal(refused.status, 403);
+    });
+  });
+
+  test("the manager sets them for their own shop and cannot reach another", async () => {
+    await reset();
+    await seedStaff();
+    const first = await openShop();
+    let second;
+    await withServer(harness().deps, async (base) => {
+      second = (await (await post(base, { ...NEW_SHOP, name: "Hledan", slug: "hledan" })).json()).id;
+    });
+    await withServer(ceo().deps, async (base) => { await putManager(base, first, { managerUserId: STAFF_A }); });
+
+    const manager = harness({
+      scope: createScope({
+        kind: "tenant", userId: STAFF_A, sessionId: SESSION_ID, companyId: COMPANY,
+        role: "shop_manager", shopIds: [first]
+      }),
+      userId: STAFF_A,
+      role: "shop_manager"
+    });
+    await withServer(manager.deps, async (base) => {
+      assert.equal((await dayToDay(base, first, { receiptFooter: "Thank you." })).status, 200);
+      // Containment, not a second permission check: getShop is driven by their
+      // scope, so the shop they do not run reads as absent.
+      assert.equal((await dayToDay(base, second, { receiptFooter: "Nope." })).status, 404);
+    });
+  });
+
+  test("the operator opens the branch and does not answer its phone", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+    await withServer(harness().deps, async (base) => {
+      const refused = await dayToDay(base, shopId, { phone: "09 11 111 1111" });
+      assert.equal(refused.status, 403);
+      assert.equal((await refused.json()).error.code, "forbidden");
+    });
+  });
+
   test("?status is honoured for an administering scope", async () => {
     await reset();
     await withServer(harness().deps, async (base) => {

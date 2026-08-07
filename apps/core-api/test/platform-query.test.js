@@ -60,7 +60,13 @@ test("assertPlatformStatement lets any read through", () => {
     "SELECT * FROM companies",
     "SELECT count(*) FROM shops WHERE company_id = $1",
     "  select c.id, count(s.id) from companies c left join shops s on s.company_id = c.id group by c.id",
-    "WITH x AS (SELECT 1) SELECT * FROM x"
+    "WITH x AS (SELECT 1) SELECT * FROM x",
+    // A row lock is a READ, and the word UPDATE in it is not a verb. The first
+    // version failed closed here and refused the exact statement that makes the
+    // last-platform-admin check race-free.
+    "SELECT id FROM users WHERE role = 'platform_admin' FOR UPDATE",
+    "SELECT id FROM companies FOR NO KEY UPDATE",
+    "SELECT id FROM companies FOR SHARE"
   ]) {
     assert.doesNotThrow(() => assertPlatformStatement(sql), sql);
   }
