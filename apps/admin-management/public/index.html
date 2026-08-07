@@ -401,7 +401,12 @@
         <div class="group" id="co-ceo">
           <strong class="who">CEO</strong>
           <p class="ask" id="co-ceo-who"></p>
+          <!-- §4C: a CEO cannot correct their own name or number, so somebody has to be
+               able to, and the platform owner is the person above them. Without this
+               button the rule had no second half and a typo in a CEO's phone number had
+               nowhere to go. -->
           <div class="pair start">
+            <button type="button" class="ghost" id="co-edit-ceo">Edit details</button>
             <button type="button" class="ghost" id="co-reset">Reset password</button>
             <button type="button" class="ghost" id="co-replace">Replace CEO</button>
           </div>

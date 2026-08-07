@@ -1103,6 +1103,10 @@ export function mountConsole({ api, me, onSignedOut }) {
   const coSlug = wireSlug($("co-name"), $("co-slug"), $("co-slug-url"), $("co-slug-warn"), () => "app/");
   let coEditing = null;
   let coReplacing = false;
+  // Three things the person block can be doing: appointing the first CEO, replacing
+  // the sitting one, or CORRECTING them. The third is §4C's second half -- a CEO
+  // cannot fix their own name or number, so the platform owner has to be able to.
+  let coFixingCeo = false;
 
   function openCompanyDialog(company) {
     coEditing = company;
@@ -1129,6 +1133,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     // has a CEO. Appointing collects the three person fields; an existing CEO is
     // named, with the two things that can be done to them from out here.
     coReplacing = false;
+    coFixingCeo = false;
     unfinish("co-dialog");
     // AFTER unfinish, which puts every block back. Hiding it earlier was undone.
     $("co-status-box").hidden = !company;
@@ -1154,16 +1159,35 @@ export function mountConsole({ api, me, onSignedOut }) {
   function paintCeoBlock() {
     const ceo = coEditing && coEditing.ceo;
     const appointing = !coEditing || ceo === null || coReplacing;
-    $("co-person").hidden = !appointing;
+    $("co-person").hidden = !(appointing || coFixingCeo);
     $("co-ceo").hidden = !ceo;
     if (ceo) $("co-ceo-who").textContent = `${ceo.displayName} · ${ceo.email}`;
     // Only when a replacement is being appointed, because only then is there an
     // outgoing person for the question to be about.
     $("co-out").hidden = !(ceo && coReplacing);
     if (ceo && coReplacing) $("co-out-who").textContent = ceo.displayName;
+
+    // Correcting somebody is not creating them: the address is their sign-in name and
+    // is set once, and no password is minted, so the two controls that belong to a
+    // NEW person go away.
+    $("co-pemail").disabled = coFixingCeo;
     $("co-pname-l").textContent = coReplacing ? "New CEO name" : "CEO name";
     $("co-pemail-l").textContent = coReplacing ? "New CEO sign-in email" : "CEO sign-in email";
+    for (const id of ["co-edit-ceo", "co-reset", "co-replace"]) $(id).hidden = coFixingCeo;
   }
+
+  // §4C's second half. A CEO cannot correct their own name or number -- so a typo in
+  // one has to have somewhere to go, and this is it.
+  $("co-edit-ceo").addEventListener("click", () => {
+    if (!coEditing || !coEditing.ceo) return;
+    coFixingCeo = true;
+    coReplacing = false;
+    $("co-pname").value = coEditing.ceo.displayName;
+    $("co-pemail").value = coEditing.ceo.email;
+    $("co-pphone").value = coEditing.ceo.phone || "";
+    paintCeoBlock();
+    $("co-pname").focus();
+  });
 
   // §5.1: read out loud, never mailed. The platform owner is the only person above
   // a CEO, so when a CEO is locked out this button is the whole recovery path.
@@ -1185,6 +1209,10 @@ export function mountConsole({ api, me, onSignedOut }) {
 
   $("co-replace").addEventListener("click", () => {
     coReplacing = true;
+    coFixingCeo = false;
+    $("co-pname").value = "";
+    $("co-pemail").value = "";
+    $("co-pphone").value = "";
     paintCeoBlock();
     $("co-pname").focus();
   });
@@ -1211,6 +1239,18 @@ export function mountConsole({ api, me, onSignedOut }) {
         if (!result) return;
         if (result.state !== "ok") {
           say($("co-slug-warn"), describeFailure(result));
+          return;
+        }
+
+        // Correcting the sitting CEO is a PATCH, not an appointment. Asked second
+        // for the same reason as an appointment: a refusal here must not undo the
+        // rename that already worked.
+        if (coFixingCeo) {
+          const fixed = await fixCeo(coEditing.id, coEditing.ceo.id);
+          await refresh("companies");
+          if (!fixed) return;
+          closeModal(coDialog);
+          confirm($("co-done"), "Saved.");
           return;
         }
 
@@ -1277,6 +1317,26 @@ export function mountConsole({ api, me, onSignedOut }) {
       button.disabled = false;
     }
   });
+
+  // The name and the number, and nothing else. The address is a sign-in name, and the
+  // role is not in question -- this is the platform owner fixing what §4C stops a CEO
+  // fixing for themselves.
+  async function fixCeo(companyId, ceoUserId) {
+    const displayName = $("co-pname").value.trim();
+    const phone = $("co-pphone").value.trim();
+    if (!displayName || !phone) {
+      say($("co-phone-warn"), "A CEO needs a name and a number.");
+      return false;
+    }
+    const result = await insideCompany(companyId, () =>
+      send(() => api.updateUser(ceoUserId, { displayName, phone }))
+    );
+    if (!result || result.state !== "ok") {
+      say($("co-phone-warn"), result ? describeFailure(result) : "");
+      return false;
+    }
+    return true;
+  }
 
   // Three outcomes, and they are three different things the caller must do:
   //   {done:false}            nothing was asked for -- close, the company is saved
