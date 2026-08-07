@@ -49,7 +49,29 @@ const COLUMNS = `
   -- statement as text, comments included, and cannot tell a subquery from a caller
   -- trying to pick their own tenant. That is why this paragraph does not spell the
   -- column out either: it would fail the same check, from a comment.
-  (SELECT count(*) FROM shop_tables t WHERE t.shop_id = shops.id)::int AS "tableCount"
+  (SELECT count(*) FROM shop_tables t WHERE t.shop_id = shops.id)::int AS "tableCount",
+  -- WHO RUNS IT AND HOW MANY WORK HERE, as an id and a number.
+  --
+  -- The console used to derive both by scanning the user list it had already
+  -- fetched, and that list stops at a hundred people. Past that, a manager whose row
+  -- fell off the end made their shop read "No manager yet" -- which raises the amber
+  -- "until you appoint one, that shop is yours to run" banner and hands the CEO the
+  -- day-to-day fields for a shop somebody else is running. A derivation that depends
+  -- on which hundred rows came back is not a derivation.
+  --
+  -- An ID and a COUNT, never a name or an address. A platform admin acting inside a
+  -- company reads this row, and §6 of the console design is built on their never
+  -- seeing a person in it. A uuid names nobody; the console looks the name up in the
+  -- user list it is allowed to hold.
+  (SELECT u.id FROM users u
+     JOIN user_shops us ON us.user_id = u.id
+    WHERE us.shop_id = shops.id AND u.role = 'shop_manager' AND u.status = 'active'
+    ORDER BY u.created_at, u.id LIMIT 1) AS "managerUserId",
+  -- Active only, because the column is answering "how many people work here" and a
+  -- suspended account cannot take an order.
+  (SELECT count(*) FROM users u
+     JOIN user_shops us ON us.user_id = u.id
+    WHERE us.shop_id = shops.id AND u.role = 'staff' AND u.status = 'active')::int AS "staffCount"
 `;
 
 // ?status is honoured for an administering scope only. A shop_manager or staff
@@ -146,9 +168,9 @@ const UPDATE = {
 const UPDATE_DAY_TO_DAY = {
   sql: `
     UPDATE shops
-       SET phone          = COALESCE($3, phone),
-           opening_hours  = COALESCE($4, opening_hours),
-           receipt_footer = COALESCE($5, receipt_footer)
+       SET phone          = CASE WHEN $3::boolean THEN $4 ELSE phone END,
+           opening_hours  = CASE WHEN $5::boolean THEN $6 ELSE opening_hours END,
+           receipt_footer = CASE WHEN $7::boolean THEN $8 ELSE receipt_footer END
      WHERE company_id = $1 AND id = $2
     RETURNING ${COLUMNS}
   `,
@@ -218,7 +240,9 @@ async function createShop(scope, input) {
   // would tell the caller their twelve tables were not made. Corrected from the
   // number that made them rather than by a second read: they are in this
   // transaction, so nothing else could have changed it.
-  return { ...shop, tableCount: input.tableCount };
+  // Same reason as tableCount: the RETURNING ran before the tables existed. A brand
+  // new branch has nobody in it, and those two zeros are facts rather than defaults.
+  return { ...shop, tableCount: input.tableCount, managerUserId: null, staffCount: 0 };
 }
 
 async function updateShop(scope, shopId, changes) {
@@ -236,11 +260,17 @@ async function updateShop(scope, shopId, changes) {
   return rows.length === 0 ? null : rows[0];
 }
 
+// A present-flag beside each value, because null carries two meanings here and one
+// argument cannot hold both: absent means "leave it", and present-null means "erase
+// it". COALESCE could only express the first, so nothing could ever be cleared.
 async function updateShopDayToDay(scope, shopId, changes) {
   const { rows } = await tenantQuery(scope, UPDATE_DAY_TO_DAY, [
     shopId,
+    changes.setPhone === true,
     changes.phone ?? null,
+    changes.setOpeningHours === true,
     changes.openingHours ?? null,
+    changes.setReceiptFooter === true,
     changes.receiptFooter ?? null
   ]);
   return rows.length === 0 ? null : rows[0];

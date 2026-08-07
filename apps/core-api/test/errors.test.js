@@ -49,6 +49,7 @@ test("the field vocabulary is exactly the settled list", () => {
   assert.deepEqual([...FIELD_ERROR_CODES].sort(), [
     "ambiguous_business_day",
     "duplicate",
+    "empty",
     "immutable",
     "invalid_time_zone",
     "invalid_uuid",

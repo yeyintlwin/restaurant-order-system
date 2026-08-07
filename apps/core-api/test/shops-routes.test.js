@@ -666,6 +666,50 @@ describe("the shops routes", { skip: skipDatabaseTests() }, () => {
     });
   });
 
+  test("A DAY-TO-DAY FIELD CAN BE EMPTIED, and an empty string is not the way", async () => {
+    await reset();
+    await seedStaff();
+    const shopId = await openShop();
+
+    await withServer(ceo().deps, async (base) => {
+      await dayToDay(base, shopId, {
+        phone: "09 66 100 2003",
+        openingHours: "09:00 - 21:00",
+        receiptFooter: "Thank you."
+      });
+
+      // NULL ERASES. A shop that printed the wrong number for a week, or one that
+      // never had a receipt footer, had no way back: an empty box was refused, and
+      // because the console recomputes the patch from all three fields on every
+      // blur, the refused one was re-sent with the next edit and blocked the other
+      // two. One stuck field made the whole panel read-only.
+      const cleared = await dayToDay(base, shopId, { receiptFooter: null });
+      assert.equal(cleared.status, 200);
+      const body = await cleared.json();
+      assert.equal(body.receiptFooter, null);
+      // ...and only that one. An absent key still means "leave it".
+      assert.equal(body.phone, "09 66 100 2003");
+      assert.equal(body.openingHours, "09:00 - 21:00");
+
+      // An empty STRING is refused by its own name. Two spellings of "make this go
+      // away" is how one caller stores "" and another stores NULL, and every reader
+      // afterwards has to know both.
+      const blank = await dayToDay(base, shopId, { phone: "   " });
+      assert.equal(blank.status, 422);
+      assert.deepEqual((await blank.json()).error.errors, [{ field: "phone", code: "empty" }]);
+
+      // A number is neither, and says so as a type problem rather than an empty one.
+      const wrong = await dayToDay(base, shopId, { phone: 12345 });
+      assert.equal(wrong.status, 422);
+      assert.deepEqual((await wrong.json()).error.errors, [{ field: "phone", code: "type" }]);
+
+      // The read after it agrees, so nothing above was a RETURNING that lied.
+      const read = await (await get(base, `/api/admin/shops/${shopId}`)).json();
+      assert.equal(read.receiptFooter, null);
+      assert.equal(read.phone, "09 66 100 2003");
+    });
+  });
+
   test("the manager sets them for their own shop and cannot reach another", async () => {
     await reset();
     await seedStaff();

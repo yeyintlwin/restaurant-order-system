@@ -57,6 +57,11 @@ const TOP_LEVEL_ERROR_CODES = Object.freeze({
 const FIELD_ERROR_CODES = Object.freeze([
   "required",
   "type",
+  // DISTINCT from too_short, and the difference is what the caller should do about
+  // it. too_short means "give me more"; empty means "you sent nothing, and if you
+  // meant to remove the value, send null". Reporting an emptied box as too_short
+  // told a manager their blank receipt footer needed to be LONGER.
+  "empty",
   "too_short",
   "too_long",
   "pattern",

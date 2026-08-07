@@ -14,7 +14,7 @@ const { readJsonBody } = require("../body");
 const { sendJson } = require("../respond");
 const { ApiError } = require("../../db/errors");
 const { withTenantScope } = require("../../db");
-const { mayActOnRole, permitsSelfPatch } = require("../../lib/authorization");
+const { mayActOnRole, permitsSelfPatch, permits } = require("../../lib/authorization");
 const { hashPassword, generateInitialPassword } = require("../../lib/password");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -206,10 +206,21 @@ route(
 route(
   "GET",
   "/api/admin/users/:userId",
-  { auth: "user", roles: ["manager"], params: { userId: "uuid" }, sample: {} },
+  // anyUser, not manager. Everybody reads their OWN record -- it is what Account
+  // settings draws -- and a member of staff, whose whole console is a dashboard and
+  // their own account, could not read it at all. The containment for somebody
+  // ELSE's record is unchanged and enforced below.
+  { auth: "user", roles: ["anyUser"], params: { userId: "uuid" }, sample: {} },
   async (req, res) => {
     const deps = req.core.deps;
     const userId = userIdFrom(req);
+    // Widening the alias widened WHO may ask, not WHAT they may ask about. A staff
+    // caller reading a colleague is 404, the same answer as a stranger: the
+    // repository would have let them through GET_CONTAINED, which pins role=staff
+    // and their own shop -- exactly their colleagues.
+    if (userId !== req.core.session.userId && !permits(req.core.scope, ["manager"])) {
+      throw new ApiError(404, "not_found");
+    }
     const user = await withTenantScope(req.core.scope, () => deps.tenantUsers.getUser(req.core.scope, userId));
     if (user === null) throw new ApiError(404, "not_found");
     sendJson(res, 200, userDocument(user));
@@ -221,7 +232,10 @@ route(
   "/api/admin/users/:userId",
   {
     auth: "user",
-    roles: ["manager"],
+    // anyUser for the same reason as the GET, and it needs no extra guard: for
+    // anybody else's row mayActOnRole("staff", ...) is false, and for their own the
+    // body is already limited to SELF_PATCHABLE_FIELDS.
+    roles: ["anyUser"],
     params: { userId: "uuid" },
     body: {
       displayName: "string?",

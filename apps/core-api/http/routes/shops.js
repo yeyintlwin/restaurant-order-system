@@ -51,7 +51,11 @@ function shopDocument(row) {
     createdAt: row.createdAt.toISOString(),
     // Summed from the tables, the way a company's counts are summed from its shops.
     // The console prints it on every branch row and nothing anywhere stores it.
-    tableCount: row.tableCount
+    tableCount: row.tableCount,
+    // An id and a count, never a name: a platform admin acting inside a company
+    // reads this document, and they do not see the people in it.
+    managerUserId: row.managerUserId,
+    staffCount: row.staffCount
   };
 }
 
@@ -285,10 +289,21 @@ route(
     const fields = ["phone", "openingHours", "receiptFooter"].filter((key) => has(body, key));
     if (fields.length === 0) throw new ApiError(400, "invalid_request");
 
+    // null is a VALUE here, and it means "there is no such thing" -- a shop with no
+    // second phone number, a receipt with no footer. Refusing an empty box as
+    // too_short left no way to undo a wrong one, and because the console recomputes
+    // the patch from all three fields on every blur, the refused one was re-sent
+    // with the next edit and blocked the other two.
     for (const [field, max] of [["phone", 40], ["openingHours", 120], ["receiptFooter", 200]]) {
       if (!has(body, field)) continue;
-      if (typeof body[field] !== "string" || body[field].trim().length === 0) {
-        errors.push({ field, code: "too_short" });
+      if (body[field] === null) continue;
+      if (typeof body[field] !== "string") {
+        errors.push({ field, code: "type" });
+      } else if (body[field].trim().length === 0) {
+        // An empty STRING is not the way to erase one -- null is. Two spellings of
+        // "make this go away" is how a client ends up storing "" in one place and
+        // NULL in another, and every reader has to know both.
+        errors.push({ field, code: "empty" });
       } else if (body[field].trim().length > max) {
         errors.push({ field, code: "too_long" });
       }
@@ -309,10 +324,17 @@ route(
         if (manager !== null) return { shop: null, refusal: "has_a_manager" };
       }
 
+      // PRESENT-FLAG plus value, because null now has to mean two different things
+      // depending on whether the key was there: absent is "leave it", present-null
+      // is "erase it". One nullable argument cannot carry both.
+      const trimmed = (key) => (body[key] === null ? null : String(body[key]).trim());
       const updated = await deps.shops.updateShopDayToDay(req.core.scope, shopId, {
-        phone: has(body, "phone") ? body.phone.trim() : null,
-        openingHours: has(body, "openingHours") ? body.openingHours.trim() : null,
-        receiptFooter: has(body, "receiptFooter") ? body.receiptFooter.trim() : null
+        setPhone: has(body, "phone"),
+        phone: has(body, "phone") ? trimmed("phone") : null,
+        setOpeningHours: has(body, "openingHours"),
+        openingHours: has(body, "openingHours") ? trimmed("openingHours") : null,
+        setReceiptFooter: has(body, "receiptFooter"),
+        receiptFooter: has(body, "receiptFooter") ? trimmed("receiptFooter") : null
       });
       await deps.tenantAudit.appendTenantAuditEvent(req.core.scope, {
         shopId,
