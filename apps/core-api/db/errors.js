@@ -25,6 +25,14 @@ const TOP_LEVEL_ERROR_CODES = Object.freeze({
   method_not_allowed: 405,
   company_name_taken: 409,
   shop_name_taken: 409,
+  // A URL name collides the same way a display name does, so it answers the same
+  // way. Two codes rather than one `slug_taken`, because the two have different
+  // scopes and the caller has to know which: a company's is unique across the
+  // PLATFORM, a shop's only inside its company (0003_admin_console.sql), so the
+  // remedy for one is "pick another" and for the other it may be "you are looking
+  // at the wrong company".
+  company_slug_taken: 409,
+  shop_slug_taken: 409,
   table_label_taken: 409,
   terminal_name_taken: 409,
   email_unavailable: 409,

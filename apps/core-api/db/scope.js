@@ -128,4 +128,26 @@ function assertTenantScope(scope) {
   return scope;
 }
 
-module.exports = { createScope, assertTenantScope };
+// The mirror of assertTenantScope, and the reason spec §5.4 insists the
+// cross-tenant entry point takes a scope parameter at all: "a version taking
+// no scope would be structurally incapable of checking anything."
+//
+// The stamp check is the load-bearing one. Without it any object literal with
+// kind:"platform" opens the cross-tenant door, and the shape is trivially
+// reachable from a request body a handler forwarded without thinking.
+function assertPlatformScope(scope) {
+  if (scope === null || typeof scope !== "object") {
+    throw new Error("platform scope is required");
+  }
+  if (scope[SCOPE_STAMP] !== true) {
+    throw new Error("platform scope was not produced by createScope()");
+  }
+  if (scope.kind !== "platform") {
+    throw new Error(
+      `a ${scope.kind} scope cannot drive a cross-tenant query; this is the platform seam`
+    );
+  }
+  return scope;
+}
+
+module.exports = { createScope, assertTenantScope, assertPlatformScope };

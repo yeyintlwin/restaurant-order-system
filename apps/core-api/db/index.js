@@ -2,7 +2,7 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 
 const pool = require("./pool");
 const { ApiError, pgErrorToHttp } = require("./errors");
-const { assertTenantScope } = require("./scope");
+const { assertTenantScope, assertPlatformScope } = require("./scope");
 
 const SHOP_SCOPE_VALUES = [false, "active", "administered"];
 
@@ -233,6 +233,137 @@ async function tenantQuery(scope, descriptor, params = []) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The platform seam
+// ---------------------------------------------------------------------------
+// Spec §5.4: repositories/platform/ holds only genuinely cross-tenant operations
+// and exports the deliberately alarming name that fronts them. That NAME is not
+// written here -- structural rule C5 and the spec's own definition-of-done grep
+// both require it to appear only under repositories/platform/, which is what makes
+// "the entire cross-tenant surface is one grep" true. The primitive
+// lives HERE rather than there for the reason C2 and C4 exist: db/ is the one
+// directory allowed to hold a raw connection, and putting it anywhere else would
+// mean widening an allowlist whose own comment says that adding a file is always
+// the wrong repair.
+//
+// There is no company_id to bind and no app.company_id to set, which is the whole
+// point -- so none of buildTenantStatement's predicates can apply. What replaces
+// them is narrower than it looks:
+//
+//   1. The scope must be STAMPED and kind === 'platform'. An unscoped platform
+//      admin is the only actor who has one.
+//   2. A WRITE may only target a platform-owned table. Reads stay open, because a
+//      platform admin legitimately reads across tenants -- the console's Companies
+//      screen counts every company's shops and tables. Writes do not: a platform
+//      admin changing something inside a company does it by selecting that company
+//      and driving the ORDINARY tenant repositories under an ordinary tenant
+//      scope, which is what §5.4 says and what keeps the tenant choke point on the
+//      path that mutates tenant rows.
+//
+// Rule 2 is the one that would be missing if this were written from the spec
+// sentence alone, and it is the half that matters: a hatch that can only READ
+// widely is an information-disclosure risk bounded by the role that already sees
+// the data, while one that can WRITE widely is a way to edit another company's
+// rows with no company_id in sight.
+const PLATFORM_WRITABLE_TABLES = Object.freeze(["companies", "users", "audit_events"]);
+const WRITE_TARGET = /^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-z_][a-z0-9_]*)/i;
+
+function assertPlatformStatement(sql) {
+  const kind = statementKind(sql);
+  if (!["INSERT", "UPDATE", "DELETE"].includes(kind)) return;
+  const match = sql.match(WRITE_TARGET);
+  if (match === null) {
+    throw new Error(`platformQuery: cannot identify the table this ${kind} writes to`);
+  }
+  const table = match[2].toLowerCase();
+  if (!PLATFORM_WRITABLE_TABLES.includes(table)) {
+    throw new Error(
+      `platformQuery: ${kind} into "${table}" is not a platform-owned table ` +
+      `(${PLATFORM_WRITABLE_TABLES.join(", ")}); select the company and use the tenant repository`
+    );
+  }
+}
+
+const platformStorage = new AsyncLocalStorage();
+
+// One client, one transaction, NO app.company_id -- there is no company to set it
+// to, and setting it to anything would be a lie the tenant helpers might later read.
+async function withPlatformScope(scope, fn) {
+  assertPlatformScope(scope);
+  if (typeof fn !== "function") throw new Error("withPlatformScope requires a function");
+
+  const open = platformStorage.getStore();
+  if (open !== undefined) {
+    if (open.scope !== scope) {
+      throw new Error("withPlatformScope() cannot open a second scope inside an open transaction");
+    }
+    return fn();
+  }
+  // Nesting the two seams would mean one transaction holding both a company_id and
+  // a claim to be above all of them. Refused rather than resolved.
+  if (transactionStorage.getStore() !== undefined) {
+    throw new Error("withPlatformScope() cannot open inside a tenant transaction");
+  }
+
+  const client = await pool.acquireRuntimeClient();
+  let committed = false;
+  try {
+    await client.query("BEGIN");
+    const result = await platformStorage.run({ client, scope }, fn);
+    await client.query("COMMIT");
+    committed = true;
+    return result;
+  } finally {
+    if (!committed) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        // The connection is already gone; releasing it is all that is left.
+      }
+    }
+    client.release();
+  }
+}
+
+// The only way to issue SQL under a platform scope. `descriptor` is { sql,
+// conflicts } -- the same shape tenantQuery takes minus shopScoped, which has no
+// meaning here.
+async function platformQuery(scope, descriptor, params = []) {
+  const store = platformStorage.getStore();
+  if (store === undefined) {
+    throw new Error("platformQuery() must run inside withPlatformScope()");
+  }
+  if (store.scope !== scope) {
+    throw new Error("platformQuery() was given a different scope than the open transaction");
+  }
+  if (descriptor === null || typeof descriptor !== "object") {
+    throw new Error("platformQuery requires a descriptor object { sql, conflicts }");
+  }
+  const { sql, conflicts } = descriptor;
+  if (typeof sql !== "string" || sql.trim() === "") {
+    throw new Error("platformQuery descriptor requires sql");
+  }
+  if (!Array.isArray(params)) {
+    throw new Error("platformQuery params must be an array");
+  }
+  assertPlatformStatement(sql);
+
+  const highest = highestPlaceholder(sql);
+  if (highest !== params.length) {
+    throw new Error(
+      `platformQuery: the SQL uses $${highest} but ${params.length} value${
+        params.length === 1 ? " is" : "s are"
+      } bound`
+    );
+  }
+
+  try {
+    return await store.client.query(sql, params);
+  } catch (error) {
+    throw translatePgError(error, conflicts);
+  }
+}
+
 // Deliberately narrow: pre-tenant lookups (login, session resolution, bearer
 // resolution, the pre-tenant audit writer) run before any company_id exists.
 // The caller set is pinned by structural test C4, not by good intentions.
@@ -249,6 +380,9 @@ async function withUnscopedConnection(fn) {
 module.exports = {
   withTenantScope,
   tenantQuery,
+  withPlatformScope,
+  platformQuery,
+  assertPlatformStatement,
   withUnscopedConnection,
   buildTenantStatement,
   // Straight re-exports of db/pool.js. server.js and db/health.js reach the

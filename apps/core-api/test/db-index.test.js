@@ -340,17 +340,23 @@ test("db/index.js is the seam: it re-exports every db/pool.js function by identi
   // Spec 3.2 rule 1: everything outside db/ goes through db/index.js. Without
   // these, server.js would have to require("./db/pool") directly, which is the
   // exact reach-past this rule exists to forbid.
+  // The platform seam adds three. assertPlatformStatement is exported for the same
+  // reason buildTenantStatement is: it is the pure half, and a rule nobody can
+  // unit-test is a rule that quietly stops holding.
   assert.deepEqual(Object.keys(dbSeam).sort(), [
     "acquireMigrationClient",
     "acquireRuntimeClient",
+    "assertPlatformStatement",
     "buildTenantStatement",
     "closeAllPools",
     "closeMigrationPool",
     "isRuntimePoolOpen",
     "openMigrationPool",
     "openRuntimePool",
+    "platformQuery",
     "runtimePoolStats",
     "tenantQuery",
+    "withPlatformScope",
     "withTenantScope",
     "withUnscopedConnection"
   ]);

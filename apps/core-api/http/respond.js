@@ -38,6 +38,11 @@ const ERROR_MESSAGES = Object.freeze({
   method_not_allowed: "That method is not allowed for this path.",
   company_name_taken: "That company name is already in use.",
   shop_name_taken: "That shop name is already in use.",
+  // Two messages rather than one, because the scopes differ and so does the fix:
+  // a company's URL name is taken somewhere on the platform the caller cannot see,
+  // while a shop's is taken by a branch of the company they are looking at.
+  company_slug_taken: "That URL name is already in use.",
+  shop_slug_taken: "That URL name is already used by another branch of this company.",
   table_label_taken: "That table label is already in use.",
   terminal_name_taken: "That terminal name is already in use.",
   email_unavailable: "That email address is not available.",
