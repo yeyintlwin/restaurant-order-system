@@ -57,14 +57,19 @@ test("each persona reaches its own screens and no others", () => {
   // The platform owner has no Users screen at all. §2: they build the PLACES and
   // appoint only the CEO -- there is deliberately nothing here that lists a manager
   // or a member of staff.
-  assert.deepEqual(screensFor("platform"), ["dashboard", "companies", "settings", "account"]);
+  assert.deepEqual(screensFor("platform"), ["dashboard", "companies", "contacts", "settings", "account"]);
   assert.ok(!screensFor("platform").includes("users"));
   assert.ok(!screensFor("platform").includes("shops"));
 
   // A CEO has no Companies screen: there is one company and they are in it.
   assert.ok(!screensFor("company").includes("companies"));
-  // Staff have the two screens that are about them and nothing else.
-  assert.deepEqual(screensFor("staff"), ["dashboard", "account"]);
+  // Staff have the screens that are about them, and Contacts. Being able to reach
+  // the person running your shift is not a privilege that scales with rank, so it
+  // is the one list that appears on EVERY line.
+  assert.deepEqual(screensFor("staff"), ["dashboard", "contacts", "account"]);
+  for (const persona of ["platform", "operator", "company", "manager", "staff"]) {
+    assert.ok(screensFor(persona).includes("contacts"), `${persona} has no Contacts`);
+  }
 });
 
 test("a screen somebody cannot reach falls back rather than throwing", () => {

@@ -26,6 +26,7 @@ const companiesRepository = require("./repositories/platform/companies");
 const platformAuditRepository = require("./repositories/platform/audit");
 const tenantAuditRepository = require("./repositories/audit");
 const platformAdminsRepository = require("./repositories/platform/admins");
+const platformContactsRepository = require("./repositories/platform/contacts");
 
 // Route modules register themselves with route() at require time. server.js is the one place
 // that pulls them in; route-auth.test.js asserts this list matches http/routes/ exactly, so a
@@ -37,6 +38,7 @@ require("./http/routes/companies");
 require("./http/routes/shops");
 require("./http/routes/users");
 require("./http/routes/platform-admins");
+require("./http/routes/contacts");
 
 function listenServer(app, port, host) {
   return new Promise((resolve, reject) => {
@@ -157,6 +159,7 @@ async function start(options = {}) {
     tenantUsers: options.tenantUsers || tenantUsersRepository,
     companies: options.companies || companiesRepository,
     platformAdmins: options.platformAdmins || platformAdminsRepository,
+    platformContacts: options.platformContacts || platformContactsRepository,
     platformAudit: options.platformAudit || platformAuditRepository,
     // The THIRD audit writer. deps.appendAuditEvent opens its own connection and
     // cannot see a row created in the caller's still-open transaction, which is

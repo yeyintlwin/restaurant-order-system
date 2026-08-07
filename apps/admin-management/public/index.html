@@ -89,6 +89,10 @@
                That is also why there is ONE link here and not two: once the two said the
                same thing, the second was a copy waiting to drift from the first. -->
           <a href="#" data-go="users" data-for="operator company manager" data-title="Staff" data-action="Add staff" data-opens="staff">Staff</a>
+          <!-- EVERYBODY has this one, staff included -- their console is otherwise a
+               dashboard and their own account. Being able to reach the person running
+               your shift is not a privilege that scales with rank. -->
+          <a href="#" data-go="contacts" data-for="platform operator company manager staff" data-title="Contacts">Contacts</a>
           <a href="#" data-go="settings" data-for="platform operator company manager" data-title="Settings">Settings</a>
         </nav>
 
@@ -178,6 +182,19 @@
                 <tbody id="staff-rows"></tbody>
               </table>
               </div>
+            </div>
+          </section>
+
+          <!-- ══ Contacts — who you can ring, and how ══ -->
+          <!-- A different question from the Staff screen. That one is who you may
+               ADMINISTER; this one reaches upwards too -- a manager needs their CEO's
+               number and cannot edit a thing about them. The reach per person is in
+               §2.5 of the design and is enforced by the route, not by this markup. -->
+          <section class="view" id="v-contacts">
+            <p class="blank" id="contact-none" hidden>Nobody to show yet.<span>As soon as
+            there is somebody to reach, they appear here with their number.</span></p>
+            <div class="panel">
+              <div class="facts" id="contact-rows"></div>
             </div>
           </section>
 

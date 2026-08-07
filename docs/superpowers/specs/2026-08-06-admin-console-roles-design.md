@@ -90,7 +90,7 @@ anyone looked at it, and someone would make a decision on it.
 
 What belongs on it differs by level and is not yet decided, so nothing has been guessed.
 
-### 2.2 Where a boundary is felt, it is stated
+### 2.3 Where a boundary is felt, it is stated
 
 Omitting a field silently reads as an oversight. Each dialog carries one line naming the
 limit:
@@ -108,11 +108,43 @@ limit:
 The last two are the same dialog read by two people. Each names the person whose job the
 other half is, so neither reads as a gap in the screen.
 
-### 2.3 The boundary changes the controls, not just the data
+### 2.4 The boundary changes the controls, not just the data
 
 When the platform owner replaces a CEO, the new CEO is **typed in by name and address**.
 There is no picker, because a picker would require listing the people inside a company —
 which the platform owner may not do. The restriction is visible in the shape of the form.
+
+### 2.5 Contacts — who you can ring, and how
+
+A screen every person has, staff included, and the only one whose reach goes **upwards**.
+
+| Signed in as   | Can reach                                                    |
+| -------------- | ------------------------------------------------------------ |
+| Platform owner | Every company's CEO, every shop's manager                     |
+| CEO            | The platform operators, their managers, their staff           |
+| Manager        | The platform operators, their CEO, their own shops' staff     |
+| Staff          | The manager of their shop — and nobody else                   |
+
+**It is deliberately not symmetric, and each asymmetry is a job.** The platform owner
+reaches no staff at all, because nothing about fitting a branch out involves one. A
+waiter reaches one person, because one person is who they call about a shift; everything
+past that, the manager escalates. A manager has no peers here — another branch's manager
+is somebody the CEO coordinates.
+
+**It is a separate route from the Staff screen, and that is the whole point.**
+`/api/admin/users` answers *"who may I administer"*: it is bounded by the rank lattice,
+and everything it returns is something you can edit. This answers *"who may I reach"*.
+Serving both from one place would have meant widening containment to cover the upward
+half — which is how a manager ends up with an Edit button on their own CEO.
+
+**The number is a link, not a label.** This screen exists to be tapped: on the phone in
+somebody's apron pocket, *call* is the whole feature, and a number that has to be read off
+a screen and retyped is a number that gets dialled wrong once a week. Where a person has
+no number on their record the address stands in — worse for a shift that started ten
+minutes ago, better than a row with nothing on it.
+
+**Suspended people are not on it, at any level.** The list answers "who can I ring about
+this", and somebody who cannot sign in is not that person.
 
 ## 3. A manager is a slot on the shop, not a badge on the person
 

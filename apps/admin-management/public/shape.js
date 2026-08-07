@@ -57,12 +57,15 @@ function roleLabel(persona) {
 // The screens a persona may reach, in menu order. The markup carries the same
 // information in data-for, and the CSS hides on it; this is the copy the JavaScript
 // navigates by, so a link that is hidden can also never be the current view.
+// "contacts" is on EVERY line, including staff -- whose console is otherwise a
+// dashboard and their own account. Being able to reach the person running your shift
+// is not a privilege that scales with rank.
 const SCREENS = Object.freeze({
-  platform: ["dashboard", "companies", "settings", "account"],
-  operator: ["dashboard", "shops", "users", "settings", "account"],
-  company: ["dashboard", "shops", "users", "settings", "account"],
-  manager: ["dashboard", "users", "settings", "account"],
-  staff: ["dashboard", "account"]
+  platform: ["dashboard", "companies", "contacts", "settings", "account"],
+  operator: ["dashboard", "shops", "users", "contacts", "settings", "account"],
+  company: ["dashboard", "shops", "users", "contacts", "settings", "account"],
+  manager: ["dashboard", "users", "contacts", "settings", "account"],
+  staff: ["dashboard", "contacts", "account"]
 });
 
 function screensFor(persona) {

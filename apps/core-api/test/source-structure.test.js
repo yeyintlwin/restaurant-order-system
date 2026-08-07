@@ -603,11 +603,11 @@ const CROSS_TENANT_NEEDLE = rule(
   "// await dangerously" + "QueryAcrossTenants(scope, sql, params);"
 );
 
-test("C6: the platform exempt zone is budgeted at exactly eleven functions", () => {
+test("C6: the platform exempt zone is budgeted at exactly twelve functions", () => {
   // Asserted unconditionally: the literal IS the budget, and it must stay sorted
   // and duplicate-free whether or not the modules exist yet.
-  assert.equal(PLATFORM_EXPORTS.length, 11);
-  assert.equal(new Set(PLATFORM_EXPORTS).size, 11);
+  assert.equal(PLATFORM_EXPORTS.length, 12);
+  assert.equal(new Set(PLATFORM_EXPORTS).size, 12);
   assert.deepEqual(PLATFORM_EXPORTS, [...PLATFORM_EXPORTS].sort());
 });
 
@@ -757,6 +757,12 @@ const PLATFORM_EXPORTS = [
   "getCompany",
   "getPlatformAdmin",
   "listCompanies",
+  // The contact directory's platform half: every company's CEO and every shop's
+  // manager, in one list, which is a shape that has no company_id in it by
+  // definition. Widening the budget is the point of the budget -- it makes the
+  // twelfth cross-tenant function a line in a diff rather than a file nobody
+  // noticed appearing under this directory.
+  "listContactsAcrossTenants",
   "listPlatformAdmins",
   "resetPlatformAdminPassword",
   "updateCompany",

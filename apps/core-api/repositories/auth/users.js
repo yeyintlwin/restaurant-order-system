@@ -75,6 +75,39 @@ const SELECT_BY_ID = `
    WHERE u.id = $1
 `;
 
+// THE PEOPLE WHO RUN THE PLATFORM, as a contact card and nothing else.
+//
+// Read from a TENANT session -- a CEO or a manager asking who to call when the
+// system itself is wrong -- and that is why it lives in this file rather than in a
+// repository under repositories/platform/. A platform admin has no company_id at
+// all, so no tenant-scoped statement can ever return one: the read is pre-tenant by
+// construction, which is the exemption this file already holds.
+//
+// It is also strictly narrower than what this file does two functions up. The login
+// lookup selects password_hash for ANY user by email; this selects four columns for
+// a role that has no tenant to leak across.
+const SELECT_PLATFORM_CONTACTS = `
+  SELECT u.id,
+         u.display_name AS "displayName",
+         u.phone,
+         u.email
+    FROM users u
+   WHERE u.company_id IS NULL
+     AND u.role = 'platform_admin'
+     AND u.status = 'active'
+   ORDER BY u.display_name, u.id
+   LIMIT 50
+`;
+
+// Active only: this list answers "who can I ring about this", and a suspended
+// operator is not that person.
+async function listPlatformContacts() {
+  return withUnscopedConnection(async (connection) => {
+    const { rows } = await connection.query(SELECT_PLATFORM_CONTACTS);
+    return rows;
+  });
+}
+
 async function findById(userId) {
   return withUnscopedConnection(async (connection) => {
     const { rows } = await connection.query(SELECT_BY_ID, [userId]);
@@ -313,6 +346,7 @@ async function countActivePlatformAdmins() {
 }
 
 module.exports = {
+  listPlatformContacts,
   PRE_TENANT_REASON,
   findByEmailForLogin,
   findById,

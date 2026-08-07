@@ -155,6 +155,105 @@ async function listUsers(scope, options = {}) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// The contact directory
+// ---------------------------------------------------------------------------
+//
+// A DIFFERENT QUESTION FROM listUsers, and the difference is the point. listUsers
+// answers "who may I administer" -- it is the Staff screen, and it is bounded by the
+// lattice. This answers "who may I ring", which reaches UPWARDS as well: a manager
+// needs their CEO's number and cannot administer them.
+//
+// So the two must not share a statement. Widening containment to cover this would
+// hand a manager an edit button on their own CEO.
+//
+// Every row is a contact card: name, role, number, and the shops that place them.
+const CONTACT_COLUMNS = `
+  u.id,
+  u.display_name AS "displayName",
+  u.role,
+  u.phone,
+  u.email,
+  COALESCE(
+    (SELECT array_agg(s.name ORDER BY s.name)
+       FROM user_shops us JOIN shops s ON s.id = us.shop_id
+      WHERE us.user_id = u.id),
+    '{}'
+  ) AS "shopNames"
+`;
+
+// A CEO reaches everybody in their company. They answer for all of them, and the
+// Staff screen already lists the same people -- this adds the numbers, not the reach.
+const CONTACTS_FOR_COMPANY_ADMIN = {
+  sql: `
+    SELECT ${CONTACT_COLUMNS} FROM users u
+     WHERE u.company_id = $1
+       AND u.status = 'active'
+       AND u.id <> $2
+     ORDER BY u.role, u.display_name, u.id
+     LIMIT $3
+  `,
+  shopScoped: false
+};
+
+// A manager reaches their CEO -- upwards, which containment does not do -- and the
+// staff of the shops they run. Not other managers: §2's table says so, and a manager
+// at another branch is somebody the CEO coordinates.
+const CONTACTS_FOR_MANAGER = {
+  sql: `
+    SELECT ${CONTACT_COLUMNS} FROM users u
+     WHERE u.company_id = $1
+       AND u.status = 'active'
+       AND u.id <> $3
+       AND (
+         u.role = 'company_admin'
+         OR (u.role = 'staff'
+             AND EXISTS (SELECT 1 FROM user_shops us
+                          WHERE us.user_id = u.id AND us.shop_id = ANY($2::uuid[])))
+       )
+     ORDER BY u.role, u.display_name, u.id
+     LIMIT $4
+  `,
+  shopScoped: false
+};
+
+// A member of staff reaches the manager of their shop, and nobody else in the
+// company. Their CEO is two levels up and is not who they call about a shift.
+const CONTACTS_FOR_STAFF = {
+  sql: `
+    SELECT ${CONTACT_COLUMNS} FROM users u
+     WHERE u.company_id = $1
+       AND u.status = 'active'
+       AND u.id <> $3
+       AND u.role = 'shop_manager'
+       AND EXISTS (SELECT 1 FROM user_shops us
+                    WHERE us.user_id = u.id AND us.shop_id = ANY($2::uuid[]))
+     ORDER BY u.display_name, u.id
+     LIMIT $4
+  `,
+  shopScoped: false
+};
+
+// Keyed on the scope's own role rather than on a caller-supplied argument: which
+// list you get is not a parameter of the request.
+async function listContacts(scope, options = {}) {
+  const { limit = 200 } = options;
+  if (scope.role === "company_admin" || scope.role === "platform_admin") {
+    const { rows } = await tenantQuery(scope, CONTACTS_FOR_COMPANY_ADMIN, [scope.userId, limit]);
+    return rows;
+  }
+  if (scope.role === "shop_manager") {
+    const { rows } = await tenantQuery(scope, CONTACTS_FOR_MANAGER, [
+      scope.shopIds, scope.userId, limit
+    ]);
+    return rows;
+  }
+  const { rows } = await tenantQuery(scope, CONTACTS_FOR_STAFF, [
+    scope.shopIds, scope.userId, limit
+  ]);
+  return rows;
+}
+
 async function getUser(scope, userId) {
   // Yourself first, and before either containment rule. Everybody can read their own
   // record whatever their role is -- it is what Account settings draws -- and neither
@@ -222,4 +321,5 @@ async function resetUserPassword(scope, userId, passwordHash) {
   return rows.length === 0 ? null : getUser(scope, userId);
 }
 
-module.exports = { listUsers, getUser, createUser, updateUser, resetUserPassword };
+module.exports = {
+  listContacts, listUsers, getUser, createUser, updateUser, resetUserPassword };

@@ -83,6 +83,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     companies: [],
     shops: [],
     users: [],
+    contacts: [],
     // The shop a manager holding more than one is currently looking at (§3.0.1).
     // Every screen below the rail is about ONE shop, and this is what says which.
     activeShopId: null,
@@ -311,6 +312,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     // the shop on Settings is two different answers to "where am I". The lists are
     // small and the read is one request.
     if (state.persona !== "platform") await loadTenant();
+    if (screen === "contacts") await loadContacts();
     if (screen === "account") await loadAccount();
     paintRail();
     paint(screen);
@@ -334,6 +336,11 @@ export function mountConsole({ api, me, onSignedOut }) {
       const mine = shopsIRun();
       state.activeShopId = mine.length > 0 ? mine[0].id : null;
     }
+  }
+
+  async function loadContacts() {
+    const result = await send(() => api.listContacts());
+    if (result && result.state === "ok") state.contacts = result.data.contacts;
   }
 
   async function loadAccount() {
@@ -363,6 +370,7 @@ export function mountConsole({ api, me, onSignedOut }) {
     if (screen === "companies") paintCompanies();
     if (screen === "shops") paintShops();
     if (screen === "users") paintUsers();
+    if (screen === "contacts") paintContacts();
     if (screen === "settings") paintSettings();
     if (screen === "account") paintAccount();
     tagCardLines();
@@ -826,6 +834,54 @@ export function mountConsole({ api, me, onSignedOut }) {
       );
       row.append(actionsCell([["Edit", () => openPersonDialog(user)]]));
       body.append(row);
+    }
+  }
+
+  // ---- Contacts -----------------------------------------------------------
+
+  // The one screen that is about REACHING somebody rather than administering them,
+  // and the only one a member of staff has besides their own account. It carries no
+  // Edit button anywhere: half these people outrank the person reading it.
+  function paintContacts() {
+    const box = $("contact-rows");
+    box.textContent = "";
+    $("contact-none").hidden = state.contacts.length > 0;
+
+    for (const person of state.contacts) {
+      const line = document.createElement("div");
+
+      const who = document.createElement("span");
+      who.className = "k";
+      who.textContent = person.displayName;
+
+      const rest = document.createElement("span");
+      // "Manager · Insein", or just the role for somebody who is above every branch.
+      rest.textContent = [person.roleLabel, person.where].filter(Boolean).join(" · ");
+
+      // THE NUMBER IS A LINK. This screen exists to be tapped: on the phone in
+      // somebody's apron pocket, "call" is the whole feature, and a number you have
+      // to read out and retype is a number you get wrong once a week.
+      const reach = document.createElement("span");
+      reach.className = "sub2";
+      if (person.phone) {
+        const call = document.createElement("a");
+        call.href = `tel:${person.phone.replace(/s+/g, "")}`;
+        call.textContent = person.phone;
+        reach.append(call);
+      } else if (person.email) {
+        // No number on their record. The address is worse for a shift that started
+        // ten minutes ago, but it beats a row with nothing on it.
+        const write = document.createElement("a");
+        write.href = `mailto:${person.email}`;
+        write.textContent = person.email;
+        reach.append(write);
+      } else {
+        reach.textContent = "No number yet";
+      }
+      rest.append(reach);
+
+      line.append(who, rest);
+      box.append(line);
     }
   }
 

@@ -18,7 +18,8 @@ const ROUTES = Object.freeze({
   companies: "/api/platform/companies",
   platformAdmins: "/api/platform/admins",
   shops: "/api/admin/shops",
-  users: "/api/admin/users"
+  users: "/api/admin/users",
+  contacts: "/api/admin/contacts"
 });
 
 // Query strings are built here rather than by each caller, so a parameter the API
@@ -179,6 +180,11 @@ function createApi(fetchImpl) {
         setShopManager: (id, input) => resource(`${ROUTES.shops}/${id}/manager`, json("PUT", input)),
         updateShopDayToDay: (id, changes) =>
           resource(`${ROUTES.shops}/${id}/day-to-day`, json("PATCH", changes)),
+
+        // Who you can ring. A different question from listUsers, and a different
+        // route: that one is bounded by what you may ADMINISTER, and this one reaches
+        // upwards as well.
+        listContacts: () => resource(ROUTES.contacts),
 
         listUsers: (params) => resource(withQuery(ROUTES.users, params)),
         getUser: (id) => resource(`${ROUTES.users}/${id}`),
