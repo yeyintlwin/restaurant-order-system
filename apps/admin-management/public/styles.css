@@ -577,3 +577,51 @@ tr.twig-last td{border-bottom:1px solid var(--line)}
 /* An empty list inside a table. The .blank rule above is written for a section, and
    a cell needs the column span rather than the padding. */
 td.blank{padding:40px 16px}
+
+/* ===========================================================================
+   A facts list inside a PANEL rather than inside a dialog.
+   =========================================================================== */
+
+/* .facts was written for the details sheet, where the dialog's own padding provides
+   the inset -- so its rows carry `padding: 11px 0` and nothing horizontal. Dropped
+   straight into a panel, every name sat flush against the panel's left edge, a pixel
+   from the border, while every table on every other screen is inset by 18px. It read
+   as a rendering fault rather than as a list.
+   Scoped to `.panel >` so the sheet keeps the spacing it was designed with. */
+.panel > .facts > div,
+.panel > .facts > button > div {
+  padding-left: 18px;
+  padding-right: 18px;
+  /* A panel is far wider than a dialog, and 112px for the name column left the two
+     halves crowded together in the left third with empty space beside them. */
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  gap: 20px;
+}
+
+/* The name is the thing being looked up, so in a panel it leads rather than labels.
+   In the sheet the left column is a field name -- "Time zone" -- and belongs quiet. */
+.panel > .facts .k {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+/* A number is there to be tapped. It is the only reason this screen exists. */
+.panel > .facts .sub2 a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 550;
+}
+.panel > .facts .sub2 a:hover { text-decoration: underline; }
+
+@media (max-width: 1049px) {
+  /* One column on a phone, the way the tables become cards at the same width. Two
+     columns at this size gives the name a third of the screen and wraps it.  */
+  .panel > .facts > div,
+  .panel > .facts > button > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding-top: 13px;
+    padding-bottom: 13px;
+  }
+}

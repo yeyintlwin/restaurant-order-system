@@ -95,30 +95,45 @@ $("signInForm").addEventListener("submit", (event) => {
   });
 });
 
-function changeHandler(currentId, newId, errorId, buttonId, okId) {
+function changeHandler({ currentId, newId, confirmId, errorId, buttonId }) {
   return (event) => {
     event.preventDefault();
     return submitting($(buttonId), async () => {
       setError($(errorId), "");
-      if (okId) setError($(okId), "");
+
+      // CHECKED HERE, because the server never sees the confirmation field. It is
+      // the only place a typo can be caught, and on this form it is the difference
+      // between a second attempt and a locked-out account: the password that got
+      // them here is spent the moment this succeeds.
+      if ($(newId).value !== $(confirmId).value) {
+        setError($(errorId), "The two new passwords do not match.");
+        return;
+      }
+
       const result = await api.changePassword($(currentId).value, $(newId).value);
       if (result.state !== "signedIn") {
         setError($(errorId), describeFailure(result));
         return;
       }
-      $(currentId).value = "";
-      $(newId).value = "";
-      // 4.3: a success mints a fresh session and kills every other one. Saying so is
-      // why "you have been signed out on your phone" is not a surprise.
-      if (okId) setError($(okId), "Password updated. Every other session was signed out.");
+      for (const id of [currentId, newId, confirmId]) $(id).value = "";
       apply(result);
     });
   };
 }
 
-// The card's forced form. The console has its own, in Account settings, and that one
-// also asks for the new password twice.
-$("forcedForm").addEventListener("submit", changeHandler("forcedCurrent", "forcedNew", "forcedError", "forcedButton", null));
+// The card's forced form -- the screen somebody lands on the first time they ever
+// sign in, holding a password that was read out to them. The console has its own in
+// Account settings, and it asks twice for the same reason.
+$("forcedForm").addEventListener(
+  "submit",
+  changeHandler({
+    currentId: "forcedCurrent",
+    newId: "forcedNew",
+    confirmId: "forcedConfirm",
+    errorId: "forcedError",
+    buttonId: "forcedButton"
+  })
+);
 
 const pwDialog = $("pw-dialog");
 const pwFields = ["currentPassword", "newPassword", "confirmPassword"];

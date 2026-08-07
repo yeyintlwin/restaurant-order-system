@@ -42,6 +42,13 @@
           <input id="forcedCurrent" name="forcedCurrent" type="password" autocomplete="current-password" required />
           <label for="forcedNew">New password <span class="hint">at least 12 characters</span></label>
           <input id="forcedNew" name="forcedNew" type="password" autocomplete="new-password" required />
+          <!-- TYPED TWICE, and this is the screen where it matters most. The person got
+               here on a password read out to them over the phone, and it is spent the
+               moment this form succeeds. A single mistyped new password locks them out
+               of an account they have never actually used, and the only way back is to
+               ring the person above them and be given another one. -->
+          <label for="forcedConfirm">Confirm new password</label>
+          <input id="forcedConfirm" name="forcedConfirm" type="password" autocomplete="new-password" required />
           <p class="error" id="forcedError" role="alert" hidden></p>
           <button type="submit" id="forcedButton">Update password</button>
         </form>

@@ -30,6 +30,34 @@ test("the password fields are not autofilled into the wrong form", () => {
   assert.match(html, /id="newPassword"[\s\S]{0,240}autocomplete="new-password"/);
 });
 
+test("EVERY new password is typed twice, on both screens that set one", () => {
+  const html = read("index.html");
+  const js = read("app.js");
+
+  // There are two places a password is chosen: the forced screen somebody lands on
+  // the first time they sign in, and the dialog in Account settings. The first is
+  // the dangerous one -- the password that got them there is spent the moment it
+  // succeeds, so a single typo locks them out of an account they have never used,
+  // and the only way back is to ring the person above them for another one.
+  for (const id of ["forcedConfirm", "confirmPassword"]) {
+    assert.match(html, new RegExp('id="' + id + '"[^]{0,200}type="password"'), id + " is missing");
+    assert.match(html, new RegExp('id="' + id + '"[^]{0,300}autocomplete="new-password"'));
+  }
+
+  // And both are actually compared. The server never sees a confirmation field, so
+  // a box nobody reads is worse than no box: it looks like a check and is not one.
+  for (const pair of [
+    ['$("forcedNew").value !== $("forcedConfirm").value', "the forced screen"],
+    ['$("newPassword").value !== $("confirmPassword").value', "the account dialog"]
+  ]) {
+    const [needle, where] = pair;
+    const compared =
+      js.includes(needle) ||
+      js.includes('$(newId).value !== $(confirmId).value');
+    assert.ok(compared, `${where} does not compare its two boxes`);
+  }
+});
+
 test("the minimum length is stated before the request, not after", () => {
   // 5.1 sets it at 12. A form that only learns this from a 422 makes the user guess.
   assert.match(read("index.html"), /12/);
